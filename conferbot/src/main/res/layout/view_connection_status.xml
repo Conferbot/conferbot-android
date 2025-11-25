@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/2000/svg/1999/xlink"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/warning"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Reconnecting..."
+        android:textColor="@android:color/white"
+        android:textSize="12sp" />
+
+</LinearLayout>

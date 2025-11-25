@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/2000/svg/1999/xlink"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="56dp"
+    android:background="@color/primary"
+    android:elevation="4dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <ImageButton
+        android:id="@+id/backButton"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Back"
+        android:src="@drawable/ic_back"
+        android:tint="@android:color/white" />
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:text="Support Chat"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <ImageView
+        android:id="@+id/avatarImage"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:contentDescription="Avatar"
+        android:visibility="gone"
+        tools:src="@drawable/ic_bot_avatar" />
+
+</LinearLayout>

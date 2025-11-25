@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/2000/svg/1999/xlink"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white">
+
+    <!-- Header -->
+    <include
+        android:id="@+id/chatHeader"
+        layout="@layout/view_chat_header"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Connection Status -->
+    <include
+        android:id="@+id/connectionStatus"
+        layout="@layout/view_connection_status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/chatHeader" />
+
+    <!-- Messages RecyclerView -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/messagesRecyclerView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:padding="16dp"
+        app:layout_constraintBottom_toTopOf="@id/inputContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/connectionStatus"
+        tools:listitem="@layout/item_message_bot" />
+
+    <!-- Typing Indicator -->
+    <include
+        android:id="@+id/typingIndicator"
+        layout="@layout/view_typing_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/inputContainer"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Input Container -->
+    <LinearLayout
+        android:id="@+id/inputContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@android:color/white"
+        android:elevation="4dp"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <EditText
+            android:id="@+id/messageInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_message_input"
+            android:hint="Type a message..."
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="4"
+            android:padding="12dp"
+            android:textSize="14sp" />
+
+        <ImageButton
+            android:id="@+id/sendButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Send message"
+            android:src="@drawable/ic_send"
+            android:tint="@color/primary" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
