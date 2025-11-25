@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0100EC</color>
+    <color name="primary_dark">#0000BA</color>
+    <color name="accent">#FF6B6B</color>
+    <color name="bot_bubble">#F5F5F5</color>
+    <color name="user_bubble">#0100EC</color>
+    <color name="agent_bubble">#E8F5E9</color>
+    <color name="warning">#FFA726</color>
+    <color name="typing_dot">#999999</color>
+</resources>
