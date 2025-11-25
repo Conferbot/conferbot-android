@@ -153,11 +153,18 @@ object Conferbot {
             handleMessageReceived(args)
         })
 
-        // Agent accepted
+        // Agent accepted (embed-server sends agentDetails, not agent)
         socketClient?.on(SocketEvents.AGENT_ACCEPTED, Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
-            data?.optJSONObject("agent")?.let { agentJson ->
-                val agent = gson.fromJson(agentJson.toString(), Agent::class.java)
+            data?.optJSONObject("agentDetails")?.let { agentJson ->
+                // Map agentDetails to Agent
+                val agent = Agent(
+                    id = agentJson.optString("_id"),
+                    name = agentJson.optString("name"),
+                    email = agentJson.optString("email"),
+                    avatar = agentJson.optString("avatar", null),
+                    title = agentJson.optString("title", null)
+                )
                 _currentAgent.value = agent
                 eventListener?.onAgentJoined(agent)
             }
@@ -254,17 +261,15 @@ object Conferbot {
                 _chatSessionId.value = session.chatSessionId
                 _record.value = session.record
 
-                // Join chat room via socket
-                socketClient?.joinChatRoom(session.chatSessionId)
-
-                // Initialize mobile session
-                socketClient?.mobileInit(
+                // Join chat room via socket with device info
+                // This is the only call needed - no separate mobileInit
+                socketClient?.joinChatRoom(
                     chatSessionId = session.chatSessionId,
-                    visitorId = user?.id,
                     deviceInfo = mapOf(
-                        "platform" to "android",
-                        "version" to Build.VERSION.RELEASE,
-                        "sdkVersion" to Build.VERSION.SDK_INT.toString()
+                        "os" to "Android",
+                        "osVersion" to Build.VERSION.RELEASE,
+                        "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                        "deviceModel" to Build.MODEL
                     )
                 )
 
@@ -290,8 +295,8 @@ object Conferbot {
             return
         }
 
-        // Create user message
-        val userMessage = RecordItem.UserMessage(
+        // Create user message (use user-input-response type for chatbot flow)
+        val userMessage = RecordItem.UserInputResponse(
             id = System.currentTimeMillis().toString(),
             time = java.util.Date(),
             text = text
@@ -302,15 +307,24 @@ object Conferbot {
         currentRecord.add(userMessage)
         _record.value = currentRecord
 
-        // Send via socket
-        socketClient?.sendVisitorMessage(
+        // Send entire record via socket (embed-server expects full record)
+        socketClient?.sendResponseRecord(
             chatSessionId = sessionId,
-            record = mapOf(
-                "_id" to userMessage.id,
-                "type" to userMessage.type.value,
-                "time" to userMessage.time.toString(),
-                "text" to userMessage.text
-            ),
+            record = currentRecord.map { item ->
+                mapOf(
+                    "_id" to item.id,
+                    "type" to item.type.value,
+                    "time" to item.time.toString(),
+                    "text" to when (item) {
+                        is RecordItem.UserMessage -> item.text
+                        is RecordItem.UserInputResponse -> item.text
+                        is RecordItem.BotMessage -> item.text ?: ""
+                        is RecordItem.AgentMessage -> item.text
+                        is RecordItem.SystemMessage -> item.text
+                        else -> ""
+                    }
+                )
+            },
             answerVariables = emptyList()
         )
 

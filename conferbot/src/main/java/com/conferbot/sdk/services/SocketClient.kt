@@ -83,31 +83,19 @@ class SocketClient(
     }
 
     /**
-     * Initialize mobile session
+     * Join chat room as visitor
+     * This is the primary method to join a chat - no separate mobile-init needed
      */
-    fun mobileInit(
+    fun joinChatRoom(
         chatSessionId: String,
-        visitorId: String? = null,
         deviceInfo: Map<String, String>? = null
     ) {
         val data = JSONObject().apply {
-            put("botId", botId)
             put("chatSessionId", chatSessionId)
             put("platform", Constants.PLATFORM_IDENTIFIER)
-            visitorId?.let { put("visitorId", it) }
             deviceInfo?.let {
                 put("deviceInfo", JSONObject(it))
             }
-        }
-        emit(SocketEvents.MOBILE_INIT, data)
-    }
-
-    /**
-     * Join chat room as visitor
-     */
-    fun joinChatRoom(chatSessionId: String) {
-        val data = JSONObject().apply {
-            put("chatSessionId", chatSessionId)
         }
         emit(SocketEvents.JOIN_CHAT_ROOM, data)
     }
@@ -123,22 +111,23 @@ class SocketClient(
     }
 
     /**
-     * Send visitor message
+     * Send visitor response/message
+     * Uses 'response-record' event matching embed-server
      */
-    fun sendVisitorMessage(
+    fun sendResponseRecord(
         chatSessionId: String,
-        record: Map<String, Any>,
-        answerVariables: List<Any>,
+        record: List<Map<String, Any>>,
+        answerVariables: List<Any> = emptyList(),
         visitorMeta: Map<String, Any>? = null
     ) {
         val data = JSONObject().apply {
             put("chatSessionId", chatSessionId)
-            put("record", JSONObject(record))
-            put("answerVariables", answerVariables)
+            put("record", org.json.JSONArray(record.map { JSONObject(it) }))
+            put("answerVariables", org.json.JSONArray(answerVariables))
             put("botId", botId)
             visitorMeta?.let { put("visitorMeta", JSONObject(it)) }
         }
-        emit(SocketEvents.SEND_VISITOR_MESSAGE, data)
+        emit(SocketEvents.RESPONSE_RECORD, data)
     }
 
     /**

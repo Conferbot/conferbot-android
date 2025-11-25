@@ -13,6 +13,7 @@ import java.util.Date
  */
 enum class MessageType(val value: String) {
     USER_MESSAGE("user-message"),
+    USER_INPUT_RESPONSE("user-input-response"), // User input response in chatbot flow
     BOT_MESSAGE("bot-message"),
     AGENT_MESSAGE("agent-message"),
     AGENT_MESSAGE_FILE("agent-message-file"),
@@ -54,6 +55,25 @@ sealed class RecordItem {
         val metadata: Map<String, Any>? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.USER_MESSAGE
+    }
+
+    /**
+     * User input response record (for chatbot flow responses)
+     */
+    data class UserInputResponse(
+        @SerializedName("_id")
+        override val id: String,
+
+        @SerializedName("time")
+        override val time: Date,
+
+        @SerializedName("text")
+        val text: String,
+
+        @SerializedName("metadata")
+        val metadata: Map<String, Any>? = null
+    ) : RecordItem() {
+        override val type: MessageType = MessageType.USER_INPUT_RESPONSE
     }
 
     /**
@@ -179,6 +199,7 @@ class RecordItemDeserializer : JsonDeserializer<RecordItem> {
 
         return when (type) {
             MessageType.USER_MESSAGE -> context.deserialize(jsonObject, RecordItem.UserMessage::class.java)
+            MessageType.USER_INPUT_RESPONSE -> context.deserialize(jsonObject, RecordItem.UserInputResponse::class.java)
             MessageType.BOT_MESSAGE -> context.deserialize(jsonObject, RecordItem.BotMessage::class.java)
             MessageType.AGENT_MESSAGE -> context.deserialize(jsonObject, RecordItem.AgentMessage::class.java)
             MessageType.AGENT_MESSAGE_FILE -> context.deserialize(jsonObject, RecordItem.AgentMessageFile::class.java)

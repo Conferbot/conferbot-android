@@ -5,6 +5,7 @@ import java.util.Date
 
 /**
  * Chat session model matching embed-server Response schema
+ * Note: data classes auto-generate copy() function
  */
 data class ChatSession(
     @SerializedName("_id")
@@ -30,29 +31,4 @@ data class ChatSession(
 
     @SerializedName("isActive")
     val isActive: Boolean = true
-) {
-    /**
-     * Create a copy of the ChatSession with updated fields
-     */
-    fun copy(
-        id: String = this.id,
-        chatSessionId: String = this.chatSessionId,
-        botId: String = this.botId,
-        visitorId: String? = this.visitorId,
-        record: List<RecordItem> = this.record,
-        chatDate: Date? = this.chatDate,
-        visitorMeta: Map<String, Any>? = this.visitorMeta,
-        isActive: Boolean = this.isActive
-    ): ChatSession {
-        return ChatSession(
-            id = id,
-            chatSessionId = chatSessionId,
-            botId = botId,
-            visitorId = visitorId,
-            record = record,
-            chatDate = chatDate,
-            visitorMeta = visitorMeta,
-            isActive = isActive
-        )
-    }
-}
+)

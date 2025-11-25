@@ -5,17 +5,18 @@ package com.conferbot.sdk.models
  */
 object SocketEvents {
     // Client to server events
-    const val MOBILE_INIT = "mobile-init"
     const val GET_CHATBOT_DATA = "get-chatbot-data"
-    const val SEND_VISITOR_MESSAGE = "send-visitor-message"
+    const val RESPONSE_RECORD = "response-record" // Send visitor message/response
     const val JOIN_CHAT_ROOM = "join-chat-room-visitor"
     const val LEAVE_CHAT_ROOM = "leave-chat-room"
     const val VISITOR_TYPING = "visitor-typing"
     const val INITIATE_HANDOVER = "initiate-handover"
+    const val ACCEPT_HANDOVER = "accept-handover"
     const val END_CHAT = "end-chat"
     const val EMAIL_NODE_TRIGGER = "email-node-trigger"
     const val ZAPIER_NODE_TRIGGER = "zapier-node-trigger"
     const val CALENDAR_SLOT_SELECTION_RECORD = "calendar-slot-selection-record"
+    const val TOGGLE_VISITOR_INPUT = "toggle-visitor-input"
 
     // Server to client events
     const val FETCHED_CHATBOT_DATA = "fetched-chatbot-data"

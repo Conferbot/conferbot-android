@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -106,7 +109,7 @@ fun ChatHeader(
         navigationIcon = {
             IconButton(onClick = onBackClick) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
+                    imageVector = Icons.Filled.ArrowBack,
                     contentDescription = "Back"
                 )
             }
@@ -256,7 +259,7 @@ fun ChatInput(
                 enabled = text.isNotBlank()
             ) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.Send,
+                    imageVector = Icons.Filled.Send,
                     contentDescription = "Send",
                     tint = if (text.isNotBlank()) Color(0xFF0100EC) else Color.Gray
                 )
