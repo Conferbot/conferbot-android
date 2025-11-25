@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ConferBotExample" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#0100EC</item>
+        <item name="colorPrimaryVariant">#0000BA</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorSecondary">#FF6B6B</item>
+        <item name="colorSecondaryVariant">#FF5252</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+    </style>
+</resources>
