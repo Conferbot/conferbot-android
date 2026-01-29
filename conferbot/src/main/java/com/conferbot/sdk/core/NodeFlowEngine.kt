@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core
 
+import com.conferbot.sdk.core.analytics.ChatAnalytics
 import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.services.SocketClient
@@ -112,11 +113,18 @@ class NodeFlowEngine(
         _isProcessing.value = true
         _errorMessage.value = null
 
+        // Track node entry for analytics
+        val nodeName = nodeData["label"]?.toString()
+            ?: nodeData["name"]?.toString()
+            ?: nodeType
+        ChatAnalytics.trackNodeEntry(nodeId, nodeType, nodeName)
+
         val handler = NodeHandlerRegistry.getHandler(nodeType)
 
         if (handler == null) {
             // Unknown node type, skip to next
             _isProcessing.value = false
+            ChatAnalytics.trackNodeExit(nodeId, "skipped")
             proceedToNextNode(null)
             return
         }
@@ -127,6 +135,7 @@ class NodeFlowEngine(
         } catch (e: Exception) {
             _errorMessage.value = "Error processing node: ${e.message}"
             _isProcessing.value = false
+            ChatAnalytics.trackNodeExit(nodeId, "error")
             // Try to proceed anyway
             proceedToNextNode(null)
         }
@@ -150,6 +159,8 @@ class NodeFlowEngine(
                     result.uiState is NodeUIState.Html
                 ) {
                     delay(1000)  // Show message for 1 second
+                    // Track node exit for auto-proceed nodes
+                    currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
                     sendResponseToServer()
                     proceedToNextNode(null)
                 }
@@ -157,6 +168,8 @@ class NodeFlowEngine(
 
             is NodeResult.Proceed -> {
                 _isProcessing.value = false
+                // Track node exit
+                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
                 sendResponseToServer()
                 proceedToNextNode(result.targetPort)
             }
@@ -165,12 +178,16 @@ class NodeFlowEngine(
                 _isProcessing.value = true
                 delay(result.delayMs)
                 _isProcessing.value = false
+                // Track node exit after delay
+                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
                 sendResponseToServer()
                 proceedToNextNode(result.targetPort)
             }
 
             is NodeResult.JumpTo -> {
                 _isProcessing.value = false
+                // Track node exit for jump
+                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
                 sendResponseToServer()
                 jumpToNode(result.targetNodeId)
             }
@@ -178,12 +195,67 @@ class NodeFlowEngine(
             is NodeResult.Error -> {
                 _isProcessing.value = false
                 _errorMessage.value = result.message
+                // Track node exit with error
+                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "error") }
                 if (result.shouldProceed) {
                     sendResponseToServer()
                     proceedToNextNode(null)
                 }
             }
+
+            is NodeResult.ExecuteIntegration -> {
+                // Execute integration via socket and wait for result
+                _isProcessing.value = true
+                executeIntegration(result, nodeData)
+            }
         }
+    }
+
+    /**
+     * Execute a native integration via socket
+     */
+    private fun executeIntegration(result: NodeResult.ExecuteIntegration, nodeData: Map<String, Any?>) {
+        val chatSessionId = ChatState.chatSessionId ?: return
+        val botId = ChatState.botId ?: return
+        val workspaceId = ChatState.workspaceId
+        val answerVariables = ChatState.getAnswerVariablesMap()
+
+        socketClient.executeIntegration(
+            nodeType = result.nodeType,
+            nodeId = result.nodeId,
+            nodeData = result.nodeData,
+            chatSessionId = chatSessionId,
+            chatbotId = botId,
+            workspaceId = workspaceId,
+            answerVariables = answerVariables,
+            callback = { integrationResult ->
+                // Convert to IntegrationResultData and call the handler's callback
+                val resultData = IntegrationResultData(
+                    success = integrationResult.success,
+                    error = integrationResult.error,
+                    data = integrationResult.data,
+                    message = integrationResult.message,
+                    answerVariable = integrationResult.answerVariable,
+                    answerValue = integrationResult.answerValue
+                )
+
+                // Store answer variable if provided
+                if (integrationResult.answerVariable != null && integrationResult.answerValue != null) {
+                    ChatState.setAnswerVariableByKey(
+                        integrationResult.answerVariable,
+                        integrationResult.answerValue
+                    )
+                }
+
+                // Call the handler's callback to get the next result
+                val nextResult = result.onResult(resultData)
+
+                // Handle the next result on the main thread
+                scope.launch {
+                    handleNodeResult(nextResult, nodeData)
+                }
+            }
+        )
     }
 
     /**
@@ -197,22 +269,35 @@ class NodeFlowEngine(
             _isProcessing.value = true
             _errorMessage.value = null
 
+            // Track user message for analytics if it's a text response
+            if (response is String) {
+                ChatAnalytics.trackUserMessage(
+                    messageLength = response.length,
+                    messageText = response
+                )
+            }
+
             @Suppress("UNCHECKED_CAST")
             val nodeType = nodeData["type"]?.toString() ?: return@launch
 
             val handler = NodeHandlerRegistry.getHandler(nodeType)
             if (handler == null) {
                 _isProcessing.value = false
+                ChatAnalytics.trackNodeExit(nodeId, "skipped")
                 proceedToNextNode(null)
                 return@launch
             }
 
             try {
                 val result = handler.handleResponse(response, nodeData, nodeId)
+                // Track node exit with user input
+                val userInput = if (response is String) response else response.toString()
+                ChatAnalytics.trackNodeExit(nodeId, "proceeded", userInput = userInput)
                 handleNodeResult(result, nodeData)
             } catch (e: Exception) {
                 _errorMessage.value = e.message
                 _isProcessing.value = false
+                ChatAnalytics.trackNodeExit(nodeId, "error")
             }
         }
     }
@@ -363,6 +448,7 @@ class NodeFlowEngine(
 
     /**
      * Handle chat ended (for handover)
+     * Triggers post-chat survey if configured
      */
     fun handleChatEnded() {
         val nodeId = currentNodeId ?: return
@@ -375,6 +461,14 @@ class NodeFlowEngine(
             scope.launch {
                 val result = handler?.onChatEnded(nodeId, nodeData)
                 if (result != null) {
+                    // Track survey display for analytics
+                    if (result is NodeResult.DisplayUI && result.uiState is NodeUIState.PostChatSurvey) {
+                        ChatAnalytics.trackNodeEntry(
+                            nodeId = "${nodeId}_survey",
+                            nodeType = "post-chat-survey",
+                            nodeName = "Post Chat Survey"
+                        )
+                    }
                     handleNodeResult(result, nodeData)
                 }
             }
@@ -382,9 +476,38 @@ class NodeFlowEngine(
     }
 
     /**
+     * Handle post-chat survey response submission
+     * Sends survey responses to server via socket
+     */
+    fun handleSurveySubmission(nodeId: String, responses: List<NodeUIState.SurveyResponse>) {
+        val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
+                as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
+
+        // Get survey responses map for socket
+        val surveyData = handler?.getSurveyResponsesForSocket(nodeId)
+
+        // Send survey responses to server
+        if (surveyData != null && surveyData.isNotEmpty()) {
+            socketClient.sendPostChatSurveyResponse(
+                chatSessionId = ChatState.chatSessionId.value ?: "",
+                surveyResponses = surveyData
+            )
+        }
+
+        // Track survey completion for analytics
+        ChatAnalytics.trackNodeExit(
+            nodeId = "${nodeId}_survey",
+            exitType = "proceeded",
+            userInput = "Survey completed with ${responses.size} responses"
+        )
+    }
+
+    /**
      * Clean up resources
      */
     fun destroy() {
+        // Finalize analytics before cleanup
+        ChatAnalytics.finalizeChatAnalytics()
         scope.cancel()
         ChatState.reset()
     }
