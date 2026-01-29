@@ -6,6 +6,9 @@ import android.os.Build
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.conferbot.sdk.core.nodes.NodeHandlerRegistry
+import com.conferbot.sdk.core.nodes.NodeUIState
+import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.models.*
 import com.conferbot.sdk.services.ApiClient
 import com.conferbot.sdk.services.SocketClient
@@ -41,6 +44,20 @@ object Conferbot {
     private var apiClient: ApiClient? = null
     private var socketClient: SocketClient? = null
 
+    // Node flow engine for processing chatbot nodes
+    private var _flowEngine: NodeFlowEngine? = null
+
+    /**
+     * Access to the flow engine for UI components
+     * Allows direct observation of node states and submission of responses
+     */
+    val flowEngine: NodeFlowEngine?
+        get() = _flowEngine
+
+    // Keep backwards compatible alias
+    private val nodeFlowEngine: NodeFlowEngine?
+        get() = _flowEngine
+
     // State
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -62,6 +79,19 @@ object Conferbot {
 
     private val _isAgentTyping = MutableStateFlow(false)
     val isAgentTyping: StateFlow<Boolean> = _isAgentTyping.asStateFlow()
+
+    // Node flow engine state flows (exposed for UI consumption)
+    val currentUIState: StateFlow<NodeUIState?>
+        get() = nodeFlowEngine?.currentUIState ?: MutableStateFlow(null)
+
+    val isProcessingNode: StateFlow<Boolean>
+        get() = nodeFlowEngine?.isProcessing ?: MutableStateFlow(false)
+
+    val nodeErrorMessage: StateFlow<String?>
+        get() = nodeFlowEngine?.errorMessage ?: MutableStateFlow(null)
+
+    val isFlowComplete: StateFlow<Boolean>
+        get() = nodeFlowEngine?.isFlowComplete ?: MutableStateFlow(false)
 
     // Event listener
     private var eventListener: ConferBotEventListener? = null
@@ -112,6 +142,11 @@ object Conferbot {
             socketUrl = socketUrl ?: Constants.DEFAULT_SOCKET_URL
         )
 
+        // Initialize Node Flow Engine
+        socketClient?.let { client ->
+            _flowEngine = NodeFlowEngine(client)
+        }
+
         if (config.autoConnect) {
             connectSocket()
         }
@@ -143,9 +178,9 @@ object Conferbot {
             Log.d(TAG, "Socket disconnected")
         })
 
-        // Bot response
+        // Bot response - process through NodeFlowEngine for node-based messages
         socketClient?.on(SocketEvents.BOT_RESPONSE, Emitter.Listener { args ->
-            handleMessageReceived(args)
+            handleBotResponse(args)
         })
 
         // Agent message
@@ -166,6 +201,8 @@ object Conferbot {
                     title = agentJson.optString("title", null)
                 )
                 _currentAgent.value = agent
+                // Notify flow engine about agent connection
+                nodeFlowEngine?.handleAgentAccepted(agent.name)
                 eventListener?.onAgentJoined(agent)
             }
         })
@@ -188,8 +225,41 @@ object Conferbot {
         // Chat ended
         socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener {
             _currentAgent.value = null
+            nodeFlowEngine?.handleChatEnded()
             eventListener?.onSessionEnded(_chatSessionId.value ?: "")
         })
+
+        // No agents available (for human handover)
+        socketClient?.on(SocketEvents.NO_AGENTS_AVAILABLE, Emitter.Listener {
+            nodeFlowEngine?.handleNoAgentsAvailable()
+        })
+    }
+
+    /**
+     * Handle bot response from socket - processes through NodeFlowEngine
+     */
+    private fun handleBotResponse(args: Array<Any>) {
+        val data = args.firstOrNull() as? JSONObject ?: return
+        try {
+            // Convert JSONObject to Map for flow engine
+            val messageMap = jsonObjectToMap(data)
+
+            // Check if this is a node-based message (has nodeData or type field)
+            val hasNodeData = messageMap.containsKey("nodeData") ||
+                              (messageMap.containsKey("type") && NodeHandlerRegistry.hasHandler(messageMap["type"].toString()))
+
+            if (hasNodeData && nodeFlowEngine != null) {
+                // Process through flow engine for node-based UI
+                nodeFlowEngine?.handleServerMessage(messageMap)
+            }
+
+            // Also add to record for display in chat history
+            handleMessageReceived(args)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to handle bot response", e)
+            // Fall back to standard message handling
+            handleMessageReceived(args)
+        }
     }
 
     /**
@@ -210,7 +280,7 @@ object Conferbot {
             // Notify listener based on message type
             when (recordItem) {
                 is RecordItem.BotMessage -> {
-                    // Bot message received
+                    eventListener?.onMessageReceived(recordItem)
                 }
                 is RecordItem.AgentMessage -> {
                     eventListener?.onMessageReceived(recordItem)
@@ -220,6 +290,42 @@ object Conferbot {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse message", e)
         }
+    }
+
+    /**
+     * Convert JSONObject to Map for flow engine processing
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun jsonObjectToMap(json: JSONObject): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>()
+        json.keys().forEach { key ->
+            val value = json.get(key)
+            map[key] = when (value) {
+                is JSONObject -> jsonObjectToMap(value)
+                is org.json.JSONArray -> jsonArrayToList(value)
+                JSONObject.NULL -> null
+                else -> value
+            }
+        }
+        return map
+    }
+
+    /**
+     * Convert JSONArray to List
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun jsonArrayToList(array: org.json.JSONArray): List<Any?> {
+        val list = mutableListOf<Any?>()
+        for (i in 0 until array.length()) {
+            val value = array.get(i)
+            list.add(when (value) {
+                is JSONObject -> jsonObjectToMap(value)
+                is org.json.JSONArray -> jsonArrayToList(value)
+                JSONObject.NULL -> null
+                else -> value
+            })
+        }
+        return list
     }
 
     /**
@@ -271,6 +377,14 @@ object Conferbot {
                         "sdkVersion" to Build.VERSION.SDK_INT.toString(),
                         "deviceModel" to Build.MODEL
                     )
+                )
+
+                // Initialize ChatState for flow engine (steps/edges will be populated via socket)
+                ChatState.initialize(
+                    chatSessionId = session.chatSessionId,
+                    visitorId = session.visitorId ?: user?.id ?: "",
+                    botId = botId ?: "",
+                    workspaceId = null
                 )
 
                 eventListener?.onSessionStarted(session.chatSessionId)
@@ -388,7 +502,66 @@ object Conferbot {
         _chatSessionId.value = null
         _currentAgent.value = null
         _unreadCount.value = 0
+        ChatState.reset()
     }
+
+    // ==================== Node Flow Engine Methods ====================
+
+    /**
+     * Initialize the flow engine with bot configuration data
+     * Call this when you receive steps and edges from the server
+     *
+     * @param steps List of node step configurations
+     * @param edges List of edge connections between nodes
+     */
+    fun initializeFlowEngine(
+        steps: List<Map<String, Any>>,
+        edges: List<Map<String, Any>>
+    ) {
+        val sessionId = _chatSessionId.value ?: return
+        val visitorId = user?.id ?: ""
+        val currentBotId = botId ?: return
+
+        nodeFlowEngine?.initialize(
+            chatSessionId = sessionId,
+            visitorId = visitorId,
+            botId = currentBotId,
+            workspaceId = null,
+            stepsData = steps,
+            edgesData = edges
+        )
+    }
+
+    /**
+     * Start the flow engine processing from the first node
+     * Call this after initializing with steps/edges
+     */
+    fun startFlow() {
+        nodeFlowEngine?.start()
+    }
+
+    /**
+     * Submit a response to the current interactive node
+     * Use this for text input, button selections, ratings, etc.
+     *
+     * @param response The user's response (String, Int, List, or other type depending on node)
+     */
+    fun submitNodeResponse(response: Any) {
+        nodeFlowEngine?.submitResponse(response)
+    }
+
+    /**
+     * Clear any current error message from the flow engine
+     */
+    fun clearNodeError() {
+        nodeFlowEngine?.clearError()
+    }
+
+    /**
+     * Get the ChatState singleton for direct access to conversation state
+     * Useful for advanced scenarios where you need to read/modify answer variables
+     */
+    fun getChatState(): ChatState = ChatState
 
     /**
      * Set event listener
@@ -398,7 +571,7 @@ object Conferbot {
     }
 
     /**
-     * Disconnect socket
+     * Disconnect socket and clean up flow engine
      */
     fun disconnect() {
         val sessionId = _chatSessionId.value
@@ -406,6 +579,7 @@ object Conferbot {
             socketClient?.leaveChatRoom(sessionId)
         }
         socketClient?.disconnect()
+        nodeFlowEngine?.destroy()
         _isConnected.value = false
     }
 
