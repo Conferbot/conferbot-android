@@ -1,6 +1,7 @@
 package com.conferbot.sdk.core.nodes.handlers
 
 import com.conferbot.sdk.core.nodes.*
+import com.conferbot.sdk.core.state.ChatState
 
 /**
  * Handler for delay-node
@@ -19,7 +20,7 @@ class DelayNodeHandler : BaseNodeHandler() {
 
 /**
  * Handler for human-handover-node
- * Manages live agent handover flow
+ * Manages live agent handover flow including post-chat survey
  */
 class HumanHandoverNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.HUMAN_HANDOVER
@@ -29,9 +30,18 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
     private val postChatIndices = mutableMapOf<String, Int>()
     private var handoverState = mutableMapOf<String, NodeUIState.HumanHandover.HandoverState>()
 
+    // Store survey responses per node
+    private val surveyResponses = mutableMapOf<String, MutableList<NodeUIState.SurveyResponse>>()
+
+    // Track node data for post-chat survey
+    private val nodeDataCache = mutableMapOf<String, Map<String, Any?>>()
+
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val enablePreChatQuestions = getBoolean(nodeData, "enablePreChatQuestions", false)
         val preChatQuestions = getList<Map<String, Any?>>(nodeData, "preChatQuestions")
+
+        // Cache node data for later use (e.g., post-chat survey)
+        nodeDataCache[nodeId] = nodeData
 
         // Initialize state for this node
         if (!handoverState.containsKey(nodeId)) {
@@ -149,7 +159,7 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
                 handlePreChatResponse(response, nodeData, nodeId)
             }
             NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY -> {
-                handlePostChatResponse(response, nodeData, nodeId)
+                handlePostChatSurveyResponse(response, nodeData, nodeId)
             }
             NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED -> {
                 handleAgentChatMessage(response, nodeData, nodeId)
@@ -231,7 +241,71 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
         return initiateHandover(nodeData, nodeId)
     }
 
-    private fun handlePostChatResponse(
+    /**
+     * Handle post-chat survey response
+     * Receives list of SurveyResponse objects from the PostChatSurveyView
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun handlePostChatSurveyResponse(
+        response: Any,
+        nodeData: Map<String, Any?>,
+        nodeId: String
+    ): NodeResult {
+        // Response is a list of SurveyResponse objects
+        val responses = response as? List<NodeUIState.SurveyResponse> ?: emptyList()
+
+        if (responses.isEmpty()) {
+            // User skipped the survey
+            state.addToTranscript("bot", "Survey skipped")
+            recordResponse(
+                nodeId = nodeId,
+                shape = "postchat-survey-skipped",
+                text = "Survey skipped by user",
+                type = nodeType
+            )
+            cleanup(nodeId)
+            return NodeResult.Proceed()
+        }
+
+        // Store all survey responses
+        surveyResponses[nodeId] = responses.toMutableList()
+
+        // Build response summary for transcript
+        val surveyData = mutableMapOf<String, Any>()
+        responses.forEach { surveyResponse ->
+            surveyData[surveyResponse.questionId] = surveyResponse.value
+
+            // Record individual responses
+            val valueStr = when (val value = surveyResponse.value) {
+                is Int -> value.toString()
+                is List<*> -> value.joinToString(", ")
+                else -> value.toString()
+            }
+            state.addToTranscript("user", "Survey response: $valueStr")
+        }
+
+        // Record the complete survey submission
+        recordResponse(
+            nodeId = nodeId,
+            shape = "postchat-survey-response",
+            text = "Survey completed",
+            type = nodeType,
+            additionalData = mapOf(
+                "surveyResponses" to surveyData,
+                "responseCount" to responses.size
+            )
+        )
+
+        // Clean up and proceed to next node
+        cleanup(nodeId)
+        return NodeResult.Proceed()
+    }
+
+    /**
+     * Legacy handler for question-by-question post-chat survey
+     * Kept for backward compatibility
+     */
+    private fun handleLegacyPostChatResponse(
         response: Any,
         nodeData: Map<String, Any?>,
         nodeId: String
@@ -339,22 +413,25 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
             handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY
             postChatIndices[nodeId] = 0
 
-            val firstQuestion = postChatQuestions[0]
-            state.addToTranscript("bot", firstQuestion["questionText"]?.toString() ?: "")
+            // Cache the node data for survey response handling
+            nodeDataCache[nodeId] = nodeData
+
+            // Build survey questions for the new PostChatSurvey UI
+            val surveyQuestions = buildSurveyQuestions(postChatQuestions)
+
+            // Get survey configuration
+            val surveyTitle = getString(nodeData, "postChatSurveyTitle", "How was your experience?")
+            val surveyDescription = getString(nodeData, "postChatSurveyDescription", "")
+
+            state.addToTranscript("bot", surveyTitle)
 
             return NodeResult.DisplayUI(
-                NodeUIState.HumanHandover(
-                    state = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY,
-                    preChatQuestions = postChatQuestions.mapIndexed { i, q ->
-                        NodeUIState.HumanHandover.PreChatQuestion(
-                            id = q["id"]?.toString() ?: "q$i",
-                            questionText = q["questionText"]?.toString() ?: "",
-                            answerType = q["answerVariable"]?.toString() ?: "text",
-                            answerKey = q["id"]?.toString() ?: "postchat_$i"
-                        )
-                    },
+                NodeUIState.PostChatSurvey(
+                    questions = surveyQuestions,
                     currentQuestionIndex = 0,
-                    nodeId = nodeId
+                    nodeId = nodeId,
+                    surveyTitle = surveyTitle,
+                    surveyDescription = surveyDescription.ifEmpty { null }
                 )
             )
         }
@@ -364,9 +441,93 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
         return NodeResult.Proceed()
     }
 
+    /**
+     * Build survey questions from node configuration
+     * Maps the server-side question format to our SurveyQuestion data class
+     */
+    private fun buildSurveyQuestions(
+        questionConfigs: List<Map<String, Any?>>
+    ): List<NodeUIState.PostChatSurvey.SurveyQuestion> {
+        return questionConfigs.mapIndexed { index, config ->
+            val questionId = config["id"]?.toString() ?: "survey_q_$index"
+            val questionText = config["questionText"]?.toString() ?: config["question"]?.toString() ?: ""
+            val answerType = config["answerVariable"]?.toString()
+                ?: config["type"]?.toString()
+                ?: "text"
+
+            // Determine question type
+            val questionType = when (answerType.lowercase()) {
+                "rating", "star", "stars" -> NodeUIState.PostChatSurvey.SurveyQuestionType.RATING
+                "choice", "single", "single-choice", "radio" -> NodeUIState.PostChatSurvey.SurveyQuestionType.CHOICE
+                "multi", "multiple", "multi-choice", "checkbox" -> NodeUIState.PostChatSurvey.SurveyQuestionType.MULTI_CHOICE
+                else -> NodeUIState.PostChatSurvey.SurveyQuestionType.TEXT
+            }
+
+            // Get options for choice questions
+            @Suppress("UNCHECKED_CAST")
+            val options = (config["options"] as? List<String>)
+                ?: (config["choices"] as? List<String>)
+                ?: (config["answers"] as? List<Map<String, Any?>>)?.map { it["text"]?.toString() ?: "" }
+
+            // Get rating configuration
+            val minRating = when (val min = config["minRating"] ?: config["min"]) {
+                is Number -> min.toInt()
+                is String -> min.toIntOrNull() ?: 1
+                else -> 1
+            }
+            val maxRating = when (val max = config["maxRating"] ?: config["max"]) {
+                is Number -> max.toInt()
+                is String -> max.toIntOrNull() ?: 5
+                else -> 5
+            }
+
+            // Check if required
+            val required = when (val req = config["required"]) {
+                is Boolean -> req
+                is String -> req.lowercase() == "true"
+                else -> true // Default to required
+            }
+
+            NodeUIState.PostChatSurvey.SurveyQuestion(
+                id = questionId,
+                type = questionType,
+                question = questionText,
+                options = options,
+                required = required,
+                minRating = minRating,
+                maxRating = maxRating
+            )
+        }
+    }
+
+    /**
+     * Get cached node data for a given nodeId
+     * Useful when handling socket events that don't include full node data
+     */
+    fun getCachedNodeData(nodeId: String): Map<String, Any?>? {
+        return nodeDataCache[nodeId]
+    }
+
     private fun cleanup(nodeId: String) {
         handoverState.remove(nodeId)
         preChatIndices.remove(nodeId)
         postChatIndices.remove(nodeId)
+        surveyResponses.remove(nodeId)
+        nodeDataCache.remove(nodeId)
+    }
+
+    /**
+     * Send survey responses via socket
+     * Called by NodeFlowEngine after survey is submitted
+     */
+    fun getSurveyResponsesForSocket(nodeId: String): Map<String, Any>? {
+        val responses = surveyResponses[nodeId] ?: return null
+        if (responses.isEmpty()) return null
+
+        val responseMap = mutableMapOf<String, Any>()
+        responses.forEach { response ->
+            responseMap[response.questionId] = response.value
+        }
+        return responseMap
     }
 }
