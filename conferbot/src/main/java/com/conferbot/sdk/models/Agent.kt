@@ -36,5 +36,8 @@ data class AgentDetails(
     val name: String,
 
     @SerializedName("email")
-    val email: String
+    val email: String? = null,
+
+    @SerializedName("avatar")
+    val avatar: String? = null
 )
