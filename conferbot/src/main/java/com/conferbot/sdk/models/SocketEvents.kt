@@ -27,6 +27,7 @@ object SocketEvents {
     const val AGENT_TYPING_STATUS = "agent-typing-status"
     const val VISITOR_TYPING_STATUS = "visitor-typing-status"
     const val CHAT_ENDED = "chat-ended"
+    const val NO_AGENTS_AVAILABLE = "no-agents-available"
     const val VISITOR_DISCONNECTED = "visitor-disconnected"
     const val VISITOR_INPUT_TOGGLED = "visitor-input-toggled"
     const val DESTROY_NOTIFICATION = "destroy-notification"
