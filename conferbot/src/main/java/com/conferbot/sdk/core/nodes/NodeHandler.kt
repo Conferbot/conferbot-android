@@ -44,7 +44,30 @@ sealed class NodeResult {
         val message: String,
         val shouldProceed: Boolean = true
     ) : NodeResult()
+
+    /**
+     * Execute a native integration via socket and wait for the result
+     * Used for Stripe, Google integrations, etc. that require server-side processing
+     */
+    data class ExecuteIntegration(
+        val nodeType: String,
+        val nodeId: String,
+        val nodeData: Map<String, Any?>,
+        val onResult: (IntegrationResultData) -> NodeResult
+    ) : NodeResult()
 }
+
+/**
+ * Data class for integration result callback
+ */
+data class IntegrationResultData(
+    val success: Boolean,
+    val error: String? = null,
+    val data: Map<String, Any?>? = null,
+    val message: String? = null,
+    val answerVariable: String? = null,
+    val answerValue: Any? = null
+)
 
 /**
  * UI state for nodes that require display
@@ -118,8 +141,12 @@ sealed class NodeUIState {
         val questionText: String,
         val maxSizeMb: Int = 5,
         val allowedTypes: List<String>? = null,
+        val allowMultiple: Boolean = false,
+        val maxFiles: Int = 5,
+        val useSignedUrl: Boolean = true,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        val chatSessionId: String? = null
     ) : NodeUIState()
 
     /**
@@ -313,6 +340,50 @@ sealed class NodeUIState {
         val openInNewTab: Boolean = true,
         val nodeId: String
     ) : NodeUIState()
+
+    /**
+     * Post-chat survey for human handover
+     * Displays survey questions after agent chat ends
+     */
+    data class PostChatSurvey(
+        val questions: List<SurveyQuestion>,
+        val currentQuestionIndex: Int = 0,
+        val nodeId: String,
+        val surveyTitle: String? = null,
+        val surveyDescription: String? = null,
+        val isSubmitting: Boolean = false
+    ) : NodeUIState() {
+        /**
+         * Individual survey question
+         */
+        data class SurveyQuestion(
+            val id: String,
+            val type: SurveyQuestionType,
+            val question: String,
+            val options: List<String>? = null,
+            val required: Boolean = true,
+            val minRating: Int = 1,
+            val maxRating: Int = 5
+        )
+
+        /**
+         * Types of survey questions
+         */
+        enum class SurveyQuestionType {
+            RATING,      // 1-5 star rating
+            TEXT,        // Free text feedback
+            CHOICE,      // Single choice selection
+            MULTI_CHOICE // Multiple choice selection
+        }
+    }
+
+    /**
+     * Survey response data
+     */
+    data class SurveyResponse(
+        val questionId: String,
+        val value: Any  // Int for rating, String for text, String for choice, List<String> for multi-choice
+    )
 }
 
 /**
