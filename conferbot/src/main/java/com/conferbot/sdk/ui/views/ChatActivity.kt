@@ -1,8 +1,10 @@
 package com.conferbot.sdk.ui.views
 
+import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -11,13 +13,19 @@ import androidx.recyclerview.widget.RecyclerView
 import com.conferbot.sdk.R
 import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.databinding.ActivityChatBinding
+import com.conferbot.sdk.notifications.ConferbotNotificationManager
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 /**
  * Chat Activity for XML Views implementation
+ * Supports deep linking from notifications
  */
 class ChatActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "ChatActivity"
+    }
 
     private lateinit var binding: ActivityChatBinding
     private lateinit var messageAdapter: MessageAdapter
@@ -29,7 +37,64 @@ class ChatActivity : AppCompatActivity() {
 
         setupUI()
         setupObservers()
+        handleIntent(intent)
         ensureSessionInitialized()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.let { handleIntent(it) }
+    }
+
+    /**
+     * Handle deep link intents from notifications
+     */
+    private fun handleIntent(intent: Intent) {
+        // Check if launched from notification
+        val action = intent.action
+        val chatSessionId = intent.getStringExtra(ConferbotNotificationManager.EXTRA_CHAT_SESSION_ID)
+        val notificationData = intent.getSerializableExtra(ConferbotNotificationManager.EXTRA_NOTIFICATION_DATA) as? HashMap<String, String>
+
+        Log.d(TAG, "Handling intent - action: $action, sessionId: $chatSessionId")
+
+        when (action) {
+            ConferbotNotificationManager.ACTION_OPEN_CHAT -> {
+                // Opened from notification tap
+                Log.d(TAG, "Opened from notification with session: $chatSessionId")
+
+                // Cancel related notifications
+                Conferbot.cancelAllNotifications()
+
+                // If we have notification data, let Conferbot handle it
+                notificationData?.let {
+                    Conferbot.handleNotificationTap(it)
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                // Handle deep link scheme (conferbot://chat)
+                intent.data?.let { uri ->
+                    Log.d(TAG, "Deep link received: $uri")
+                    // Extract session ID from URI if present
+                    uri.getQueryParameter("sessionId")?.let { sessionId ->
+                        // Could restore specific session here
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Register this activity for in-app notification banners
+        Conferbot.setCurrentActivity(this)
+        // Clear unread count when chat is visible
+        // Note: unreadCount is a private field, handled internally
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Unregister from in-app banners
+        Conferbot.setCurrentActivity(null)
     }
 
     private fun setupUI() {
