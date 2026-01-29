@@ -8,4 +8,9 @@
     <color name="agent_bubble">#E8F5E9</color>
     <color name="warning">#FFA726</color>
     <color name="typing_dot">#999999</color>
+
+    <!-- Notification colors -->
+    <color name="conferbot_primary">#0100EC</color>
+    <color name="notification_background">#FFFFFF</color>
+    <color name="notification_text">#333333</color>
 </resources>
