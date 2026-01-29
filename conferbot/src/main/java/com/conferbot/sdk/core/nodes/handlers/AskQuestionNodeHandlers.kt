@@ -391,6 +391,13 @@ class AskCustomNodeHandler : BaseNodeHandler() {
 /**
  * Handler for ask-file-node
  * Asks user to upload a file
+ *
+ * Supports:
+ * - Single or multiple file uploads
+ * - File type restrictions (MIME types)
+ * - File size validation
+ * - Direct upload or S3 signed URL upload
+ * - Upload progress tracking
  */
 class AskFileNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_FILE
@@ -400,6 +407,19 @@ class AskFileNodeHandler : BaseNodeHandler() {
         val answerKey = getString(nodeData, "answerVariable", "file")
         val maxSizeMb = getInt(nodeData, "maxSize", 5)
 
+        // Parse allowed file types from node configuration
+        val allowedTypes = parseAllowedTypes(nodeData)
+
+        // Check if multiple file upload is enabled
+        val allowMultiple = getBoolean(nodeData, "allowMultiple", false)
+        val maxFiles = getInt(nodeData, "maxFiles", 5)
+
+        // Upload configuration
+        val useSignedUrl = getBoolean(nodeData, "useSignedUrl", true)
+
+        // Get chat session ID from state
+        val chatSessionId = state.chatSessionId
+
         state.addToTranscript("bot", questionText)
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -407,8 +427,13 @@ class AskFileNodeHandler : BaseNodeHandler() {
             NodeUIState.FileUpload(
                 questionText = questionText,
                 maxSizeMb = maxSizeMb,
+                allowedTypes = allowedTypes,
+                allowMultiple = allowMultiple,
+                maxFiles = maxFiles,
+                useSignedUrl = useSignedUrl,
                 nodeId = nodeId,
-                answerKey = answerKey
+                answerKey = answerKey,
+                chatSessionId = chatSessionId
             )
         )
     }
@@ -418,27 +443,178 @@ class AskFileNodeHandler : BaseNodeHandler() {
         nodeData: Map<String, Any?>,
         nodeId: String
     ): NodeResult {
-        // Response should be a map with url and fileName
         val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
+            is Map<*, *> -> @Suppress("UNCHECKED_CAST") (response as Map<String, Any?>)
             else -> mapOf("url" to response.toString())
         }
 
-        val fileUrl = responseMap["url"]?.toString() ?: return NodeResult.Error("Invalid file upload", shouldProceed = false)
-        val fileName = responseMap["fileName"]?.toString() ?: "uploaded_file"
+        // Handle different response actions
+        val action = responseMap["action"]?.toString()
 
+        when (action) {
+            "upload" -> {
+                // Files are being uploaded - this is handled by the UI layer
+                // The actual upload completion will trigger another handleResponse
+                return NodeResult.DisplayUI(
+                    NodeUIState.FileUpload(
+                        questionText = "",
+                        maxSizeMb = getInt(nodeData, "maxSize", 5),
+                        nodeId = nodeId,
+                        answerKey = getString(nodeData, "answerVariable", "file"),
+                        chatSessionId = state.chatSessionId
+                    )
+                )
+            }
+
+            "cancel" -> {
+                // Upload was cancelled - show picker again
+                return process(nodeData, nodeId)
+            }
+
+            "complete" -> {
+                // Upload completed successfully
+                return handleUploadComplete(responseMap, nodeData, nodeId)
+            }
+
+            else -> {
+                // Direct response with URL (legacy or simple case)
+                return handleUploadComplete(responseMap, nodeData, nodeId)
+            }
+        }
+    }
+
+    /**
+     * Handle completed file upload(s)
+     */
+    private fun handleUploadComplete(
+        responseMap: Map<String, Any?>,
+        nodeData: Map<String, Any?>,
+        nodeId: String
+    ): NodeResult {
+        // Check for multiple files
+        val uploadedFiles = responseMap["uploadedFiles"]
+        if (uploadedFiles != null && uploadedFiles is List<*>) {
+            return handleMultipleFilesComplete(
+                @Suppress("UNCHECKED_CAST")
+                uploadedFiles as List<Map<String, Any?>>,
+                nodeData,
+                nodeId
+            )
+        }
+
+        // Single file upload
+        val fileUrl = responseMap["url"]?.toString()
+            ?: return NodeResult.Error("Invalid file upload - no URL received", shouldProceed = false)
+        val fileName = responseMap["fileName"]?.toString() ?: "uploaded_file"
+        val fileSize = (responseMap["fileSize"] as? Number)?.toLong() ?: 0L
+        val mimeType = responseMap["mimeType"]?.toString() ?: "application/octet-stream"
+
+        // Store the file URL as the answer
         state.setAnswerVariable(nodeId, fileUrl)
         state.addToTranscript("user", "[File: $fileName]")
 
+        // Record the response with full file metadata
         recordResponse(
             nodeId = nodeId,
             shape = "user-ask-file-response",
             text = fileName,
             type = nodeType,
-            additionalData = mapOf("url" to fileUrl, "fileName" to fileName)
+            additionalData = mapOf(
+                "url" to fileUrl,
+                "fileName" to fileName,
+                "fileSize" to fileSize,
+                "mimeType" to mimeType
+            )
         )
 
         return NodeResult.Proceed()
+    }
+
+    /**
+     * Handle multiple files upload completion
+     */
+    private fun handleMultipleFilesComplete(
+        uploadedFiles: List<Map<String, Any?>>,
+        nodeData: Map<String, Any?>,
+        nodeId: String
+    ): NodeResult {
+        if (uploadedFiles.isEmpty()) {
+            return NodeResult.Error("No files were uploaded", shouldProceed = false)
+        }
+
+        // Extract URLs and file info
+        val fileUrls = uploadedFiles.mapNotNull { it["url"]?.toString() }
+        val fileNames = uploadedFiles.map { it["fileName"]?.toString() ?: "unknown" }
+
+        if (fileUrls.isEmpty()) {
+            return NodeResult.Error("File upload failed - no URLs received", shouldProceed = false)
+        }
+
+        // Store all URLs as the answer (comma-separated or as list based on configuration)
+        val storeAsList = getBoolean(nodeData, "storeAsList", false)
+        val answerValue: Any = if (storeAsList) {
+            fileUrls
+        } else {
+            fileUrls.joinToString(",")
+        }
+
+        state.setAnswerVariable(nodeId, answerValue)
+
+        // Add file summary to transcript
+        val filesSummary = if (fileNames.size == 1) {
+            "[File: ${fileNames.first()}]"
+        } else {
+            "[Files: ${fileNames.joinToString(", ")}]"
+        }
+        state.addToTranscript("user", filesSummary)
+
+        // Record the response with all file metadata
+        recordResponse(
+            nodeId = nodeId,
+            shape = "user-ask-file-response",
+            text = filesSummary,
+            type = nodeType,
+            additionalData = mapOf(
+                "urls" to fileUrls,
+                "files" to uploadedFiles,
+                "fileCount" to uploadedFiles.size
+            )
+        )
+
+        return NodeResult.Proceed()
+    }
+
+    /**
+     * Parse allowed file types from node configuration
+     * Supports both array format and comma-separated string
+     */
+    private fun parseAllowedTypes(nodeData: Map<String, Any?>): List<String>? {
+        // Try to get as list first
+        val typesList = nodeData["allowedTypes"] ?: nodeData["acceptedFileTypes"]
+
+        return when (typesList) {
+            is List<*> -> typesList.mapNotNull { it?.toString() }.takeIf { it.isNotEmpty() }
+            is String -> {
+                if (typesList.isBlank()) null
+                else typesList.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            }
+            else -> {
+                // Check for legacy format with specific type flags
+                val types = mutableListOf<String>()
+                if (getBoolean(nodeData, "acceptImages", false)) types.add("image/*")
+                if (getBoolean(nodeData, "acceptDocuments", false)) {
+                    types.addAll(listOf(
+                        "application/pdf",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    ))
+                }
+                if (getBoolean(nodeData, "acceptVideos", false)) types.add("video/*")
+                if (getBoolean(nodeData, "acceptAudio", false)) types.add("audio/*")
+
+                types.takeIf { it.isNotEmpty() }
+            }
+        }
     }
 }
 
