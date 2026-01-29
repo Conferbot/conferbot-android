@@ -1,16 +1,35 @@
 package com.conferbot.sdk.core
 
+import android.app.Activity
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.conferbot.sdk.core.analytics.ChatAnalytics
 import com.conferbot.sdk.core.nodes.NodeHandlerRegistry
 import com.conferbot.sdk.core.nodes.NodeUIState
+import com.conferbot.sdk.core.queue.OfflineManager
+import com.conferbot.sdk.core.queue.OfflineManagerListener
+import com.conferbot.sdk.core.queue.QueuedMessage
 import com.conferbot.sdk.core.state.ChatState
+import com.conferbot.sdk.core.state.MemoryUsageInfo
+import com.conferbot.sdk.core.state.PaginatedMessageManager
+import com.conferbot.sdk.core.state.PaginationConfig
+import com.conferbot.sdk.core.state.PaginationState
 import com.conferbot.sdk.models.*
+import com.conferbot.sdk.notifications.ConferbotNotification
+import com.conferbot.sdk.notifications.ConferbotNotificationManager
+import com.conferbot.sdk.notifications.NotificationHandler
+import com.conferbot.sdk.notifications.NotificationListener
+import com.conferbot.sdk.notifications.NotificationSettings
+import com.conferbot.sdk.notifications.NotificationTokenListener
 import com.conferbot.sdk.services.ApiClient
+import com.conferbot.sdk.services.FileUploadManager
+import com.conferbot.sdk.services.FileUploadService
+import com.conferbot.sdk.services.KnowledgeBaseService
 import com.conferbot.sdk.services.SocketClient
 import com.conferbot.sdk.ui.views.ChatActivity
 import com.conferbot.sdk.utils.Constants
@@ -22,11 +41,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
  * Main Conferbot SDK singleton
+ *
+ * Enhanced with:
+ * - Message pagination support to prevent OOM crashes
+ * - Memory management for background/low memory scenarios
+ * - Efficient message loading with lazy pagination
  */
 object Conferbot {
     private const val TAG = "ConferBot"
@@ -40,9 +65,47 @@ object Conferbot {
     private var baseUrl: String? = null
     private var socketUrl: String? = null
 
+    // Application context for memory management
+    private var appContext: Context? = null
+
     // Services
     private var apiClient: ApiClient? = null
     private var socketClient: SocketClient? = null
+
+    // Paginated message manager
+    private var messageManager: PaginatedMessageManager? = null
+
+    // Knowledge Base service
+    private var _knowledgeBaseService: KnowledgeBaseService? = null
+
+    // File Upload service
+    private var _fileUploadService: FileUploadService? = null
+    private var _fileUploadManager: FileUploadManager? = null
+
+    /**
+     * Access to file upload manager for UI components
+     */
+    val fileUploadManager: FileUploadManager?
+        get() = _fileUploadManager
+
+    /**
+     * Access to file upload service for direct uploads
+     */
+    val fileUploadService: FileUploadService?
+        get() = _fileUploadService
+
+    // Offline Manager for queue support
+    private var _offlineManager: OfflineManager? = null
+
+    // Notification components
+    private var _notificationManager: ConferbotNotificationManager? = null
+    private var _notificationHandler: NotificationHandler? = null
+
+    // Current push token
+    private var currentPushToken: String? = null
+
+    // Pagination configuration
+    private var paginationConfig = PaginationConfig()
 
     // Node flow engine for processing chatbot nodes
     private var _flowEngine: NodeFlowEngine? = null
@@ -80,6 +143,25 @@ object Conferbot {
     private val _isAgentTyping = MutableStateFlow(false)
     val isAgentTyping: StateFlow<Boolean> = _isAgentTyping.asStateFlow()
 
+    // ========== Offline Mode State ==========
+
+    private val _isOnline = MutableStateFlow(true)
+    val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+
+    private val _pendingMessageCount = MutableStateFlow(0)
+    val pendingMessageCount: StateFlow<Int> = _pendingMessageCount.asStateFlow()
+
+    private val _isSyncingQueue = MutableStateFlow(false)
+    val isSyncingQueue: StateFlow<Boolean> = _isSyncingQueue.asStateFlow()
+
+    // ========== Pagination State ==========
+
+    private val _paginationState = MutableStateFlow(PaginationState())
+    val paginationState: StateFlow<PaginationState> = _paginationState.asStateFlow()
+
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
     // Node flow engine state flows (exposed for UI consumption)
     val currentUIState: StateFlow<NodeUIState?>
         get() = nodeFlowEngine?.currentUIState ?: MutableStateFlow(null)
@@ -113,13 +195,15 @@ object Conferbot {
         customization: ConferBotCustomization? = null,
         user: ConferBotUser? = null,
         baseUrl: String? = null,
-        socketUrl: String? = null
+        socketUrl: String? = null,
+        paginationConfig: PaginationConfig = PaginationConfig()
     ) {
         if (_isInitialized.value) {
             Log.w(TAG, "SDK already initialized")
             return
         }
 
+        this.appContext = context.applicationContext
         this.apiKey = apiKey
         this.botId = botId
         this.config = config
@@ -127,6 +211,7 @@ object Conferbot {
         this.user = user
         this.baseUrl = baseUrl
         this.socketUrl = socketUrl
+        this.paginationConfig = paginationConfig
 
         // Initialize API client
         apiClient = ApiClient(
@@ -145,14 +230,48 @@ object Conferbot {
         // Initialize Node Flow Engine
         socketClient?.let { client ->
             _flowEngine = NodeFlowEngine(client)
+            // Initialize ChatAnalytics with socket client
+            ChatAnalytics.setSocketClient(client)
         }
+
+        // Initialize File Upload Service
+        _fileUploadService = FileUploadService(
+            apiKey = apiKey,
+            botId = botId,
+            context = context.applicationContext,
+            baseUrl = baseUrl ?: Constants.DEFAULT_API_BASE_URL
+        )
+
+        // Initialize File Upload Manager
+        _fileUploadService?.let { service ->
+            _fileUploadManager = FileUploadManager(
+                context = context.applicationContext,
+                uploadService = service
+            )
+        }
+
+        // Initialize Offline Manager if offline mode is enabled
+        if (config.enableOfflineMode) {
+            initializeOfflineManager(context.applicationContext)
+        }
+
+        // Initialize Notification components if enabled
+        if (config.enableNotifications) {
+            initializeNotifications(context.applicationContext)
+        }
+
+        // Configure ChatState pagination
+        ChatState.configurePagination(
+            maxMessages = paginationConfig.maxMemoryMessages,
+            pageSizeConfig = paginationConfig.pageSize
+        )
 
         if (config.autoConnect) {
             connectSocket()
         }
 
         _isInitialized.value = true
-        Log.d(TAG, "SDK initialized")
+        Log.d(TAG, "SDK initialized with pagination support")
     }
 
     /**
@@ -269,12 +388,25 @@ object Conferbot {
         val data = args.firstOrNull() as? JSONObject ?: return
         try {
             val recordItem = gson.fromJson(data.toString(), RecordItem::class.java)
-            val currentRecord = _record.value.toMutableList()
-            currentRecord.add(recordItem)
-            _record.value = currentRecord
+
+            // Add to paginated message manager if available
+            scope.launch {
+                messageManager?.addMessage(recordItem)
+
+                // Also update _record for backwards compatibility
+                val currentRecord = _record.value.toMutableList()
+                currentRecord.add(recordItem)
+
+                // Trim to prevent memory issues
+                if (currentRecord.size > paginationConfig.maxMemoryMessages) {
+                    _record.value = currentRecord.takeLast(paginationConfig.maxMemoryMessages)
+                    _paginationState.value = _paginationState.value.copy(hasMoreMessages = true)
+                } else {
+                    _record.value = currentRecord
+                }
+            }
 
             // Increment unread count if chat is not open
-            // Note: You would need to track if chat is open via ChatActivity state
             _unreadCount.value = _unreadCount.value + 1
 
             // Notify listener based on message type
@@ -359,13 +491,37 @@ object Conferbot {
      */
     suspend fun initializeSession(): Boolean {
         val client = apiClient ?: return false
+        val context = appContext ?: return false
 
         return try {
             val response = client.initSession(userId = user?.id)
             if (response.success && response.data != null) {
                 val session = response.data
                 _chatSessionId.value = session.chatSessionId
-                _record.value = session.record
+
+                // Initialize paginated message manager
+                messageManager = PaginatedMessageManager.getInstance(
+                    context = context,
+                    sessionId = session.chatSessionId,
+                    config = paginationConfig
+                )
+
+                // Initialize and load messages
+                val initialMessages = messageManager?.initialize() ?: emptyList()
+
+                // Set initial record (may be from server or local storage)
+                _record.value = if (session.record.isNotEmpty()) {
+                    // Add server messages to manager
+                    scope.launch {
+                        messageManager?.addMessages(session.record)
+                    }
+                    session.record
+                } else {
+                    initialMessages
+                }
+
+                // Update pagination state
+                updatePaginationState()
 
                 // Join chat room via socket with device info
                 // This is the only call needed - no separate mobileInit
@@ -379,12 +535,22 @@ object Conferbot {
                     )
                 )
 
-                // Initialize ChatState for flow engine (steps/edges will be populated via socket)
-                ChatState.initialize(
+                // Initialize ChatState for flow engine with context
+                ChatState.initializeWithContext(
+                    context = context,
                     chatSessionId = session.chatSessionId,
                     visitorId = session.visitorId ?: user?.id ?: "",
                     botId = botId ?: "",
-                    workspaceId = null
+                    workspaceId = null,
+                    maxMessages = paginationConfig.maxMemoryMessages,
+                    pageSizeConfig = paginationConfig.pageSize
+                )
+
+                // Initialize analytics tracking for this session
+                ChatAnalytics.initializeChatAnalytics(
+                    sessionId = session.chatSessionId,
+                    botIdentifier = botId ?: "",
+                    visitorIdentifier = session.visitorId ?: user?.id ?: ""
                 )
 
                 eventListener?.onSessionStarted(session.chatSessionId)
@@ -400,6 +566,53 @@ object Conferbot {
     }
 
     /**
+     * Update pagination state from message manager
+     */
+    private fun updatePaginationState() {
+        messageManager?.let { manager ->
+            _paginationState.value = PaginationState(
+                isLoading = manager.isLoading.value,
+                hasMoreMessages = manager.hasMoreMessages.value,
+                totalMessageCount = manager.totalMessageCount.value
+            )
+        }
+    }
+
+    /**
+     * Load more (older) messages
+     */
+    fun loadMoreMessages() {
+        if (_isLoadingMore.value) return
+
+        scope.launch {
+            _isLoadingMore.value = true
+            try {
+                val olderMessages = messageManager?.loadMoreMessages() ?: emptyList()
+
+                if (olderMessages.isNotEmpty()) {
+                    // Prepend to record
+                    val currentRecord = _record.value.toMutableList()
+                    currentRecord.addAll(0, olderMessages)
+                    _record.value = currentRecord
+                }
+
+                updatePaginationState()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load more messages", e)
+            } finally {
+                _isLoadingMore.value = false
+            }
+        }
+    }
+
+    /**
+     * Check if there are more messages to load
+     */
+    fun hasMoreMessages(): Boolean {
+        return messageManager?.hasMoreMessages?.value ?: false
+    }
+
+    /**
      * Send a message
      */
     fun sendMessage(text: String) {
@@ -409,6 +622,12 @@ object Conferbot {
             return
         }
 
+        // Track user message in analytics
+        ChatAnalytics.trackUserMessage(
+            messageLength = text.length,
+            messageText = text
+        )
+
         // Create user message (use user-input-response type for chatbot flow)
         val userMessage = RecordItem.UserInputResponse(
             id = System.currentTimeMillis().toString(),
@@ -416,15 +635,26 @@ object Conferbot {
             text = text
         )
 
-        // Add to record optimistically
+        // Add to record (synchronous for socket send)
         val currentRecord = _record.value.toMutableList()
         currentRecord.add(userMessage)
-        _record.value = currentRecord
+
+        // Update record with trimming if needed
+        if (currentRecord.size > paginationConfig.maxMemoryMessages) {
+            _record.value = currentRecord.takeLast(paginationConfig.maxMemoryMessages)
+        } else {
+            _record.value = currentRecord
+        }
+
+        // Add to message manager asynchronously for persistence
+        scope.launch {
+            messageManager?.addMessage(userMessage)
+        }
 
         // Send entire record via socket (embed-server expects full record)
         socketClient?.sendResponseRecord(
             chatSessionId = sessionId,
-            record = currentRecord.map { item ->
+            record = _record.value.map { item ->
                 mapOf(
                     "_id" to item.id,
                     "type" to item.type.value,
@@ -452,22 +682,235 @@ object Conferbot {
         this.user = user
     }
 
+    // ==================== Push Notification Methods ====================
+
     /**
-     * Register push notification token
+     * Initialize notification components
+     */
+    private fun initializeNotifications(context: Context) {
+        _notificationManager = ConferbotNotificationManager.getInstance(context)
+        _notificationHandler = NotificationHandler.getInstance(context)
+
+        // Set ChatActivity as default for deep linking
+        _notificationHandler?.setChatActivityClass(ChatActivity::class.java)
+        _notificationManager?.setChatActivityClass(ChatActivity::class.java)
+
+        // Listen for token refresh
+        NotificationTokenListener.addListener { token ->
+            registerPushToken(token)
+        }
+
+        Log.d(TAG, "Notification components initialized")
+    }
+
+    /**
+     * Register push notification token with both API and socket
+     *
+     * @param token FCM token
      */
     fun registerPushToken(token: String) {
-        val sessionId = _chatSessionId.value ?: return
+        currentPushToken = token
+        val sessionId = _chatSessionId.value
+
+        // Register via API
         scope.launch {
-            apiClient?.registerPushToken(token, sessionId)
+            sessionId?.let {
+                apiClient?.registerPushToken(token, it)
+            }
+        }
+
+        // Also register via socket for real-time notifications
+        if (sessionId != null && socketClient?.isConnected == true) {
+            registerPushTokenViaSocket(token, sessionId)
+        }
+
+        Log.d(TAG, "Push token registered")
+    }
+
+    /**
+     * Register push token via socket connection
+     */
+    private fun registerPushTokenViaSocket(token: String, sessionId: String) {
+        val data = JSONObject().apply {
+            put("token", token)
+            put("platform", "android")
+            put("sessionId", sessionId)
+            put("deviceInfo", JSONObject().apply {
+                put("os", "Android")
+                put("osVersion", Build.VERSION.RELEASE)
+                put("sdkVersion", Build.VERSION.SDK_INT)
+                put("deviceModel", Build.MODEL)
+            })
+        }
+        socketClient?.emit("register-push-token", data)
+    }
+
+    /**
+     * Unregister push token (call when user logs out or disables notifications)
+     */
+    fun unregisterPushToken() {
+        val token = currentPushToken ?: return
+        val sessionId = _chatSessionId.value ?: return
+
+        scope.launch {
+            try {
+                val data = JSONObject().apply {
+                    put("token", token)
+                    put("sessionId", sessionId)
+                    put("platform", "android")
+                }
+                socketClient?.emit("unregister-push-token", data)
+                currentPushToken = null
+                Log.d(TAG, "Push token unregistered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to unregister push token", e)
+            }
         }
     }
 
     /**
-     * Handle push notification
+     * Handle push notification data
+     * Returns true if the notification was handled by Conferbot
+     *
+     * @param data Push notification data payload
+     * @return true if handled, false if not a Conferbot notification
      */
     fun handlePushNotification(data: Map<String, String>): Boolean {
         // Check if notification is from Conferbot
-        return data["type"] == "conferbot_message"
+        val isConferbotNotification = data["source"] == "conferbot" ||
+                data["type"] in listOf(
+                    "conferbot_message",
+                    "new_message",
+                    "agent_joined",
+                    "agent_left",
+                    "chat_ended",
+                    "handover_queued",
+                    "queue_position_update"
+                )
+
+        if (!isConferbotNotification) {
+            return false
+        }
+
+        // Parse and handle the notification
+        val notification = ConferbotNotification.fromPushData(data)
+        if (notification != null) {
+            _notificationHandler?.handleNotification(notification)
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Handle notification tap (when user taps on a notification)
+     *
+     * @param data Notification data
+     */
+    fun handleNotificationTap(data: Map<String, String>) {
+        _notificationHandler?.handleNotificationTap(data)
+    }
+
+    /**
+     * Set the current activity for in-app notification banners
+     * Call this in your Activity's onResume
+     *
+     * @param activity Current activity
+     */
+    fun setCurrentActivity(activity: Activity?) {
+        _notificationHandler?.setCurrentActivity(activity)
+    }
+
+    /**
+     * Set custom chat activity class for deep linking from notifications
+     *
+     * @param activityClass Activity class to launch
+     */
+    fun setNotificationChatActivity(activityClass: Class<*>) {
+        _notificationHandler?.setChatActivityClass(activityClass)
+        _notificationManager?.setChatActivityClass(activityClass)
+    }
+
+    /**
+     * Get notification manager for advanced customization
+     */
+    fun getNotificationManager(): ConferbotNotificationManager? = _notificationManager
+
+    /**
+     * Get notification handler for advanced customization
+     */
+    fun getNotificationHandler(): NotificationHandler? = _notificationHandler
+
+    /**
+     * Update notification settings
+     *
+     * @param settings New notification settings
+     */
+    fun updateNotificationSettings(settings: NotificationSettings) {
+        val context = appContext ?: return
+        _notificationManager?.updateSettings(settings)
+        settings.save(context)
+    }
+
+    /**
+     * Get current notification settings
+     */
+    fun getNotificationSettings(): NotificationSettings {
+        return _notificationManager?.getSettings()
+            ?: appContext?.let { NotificationSettings.load(it) }
+            ?: NotificationSettings.default()
+    }
+
+    /**
+     * Add a notification listener
+     *
+     * @param listener Listener to add
+     */
+    fun addNotificationListener(listener: NotificationListener) {
+        _notificationHandler?.addNotificationListener(listener)
+    }
+
+    /**
+     * Remove a notification listener
+     *
+     * @param listener Listener to remove
+     */
+    fun removeNotificationListener(listener: NotificationListener) {
+        _notificationHandler?.removeNotificationListener(listener)
+    }
+
+    /**
+     * Check if notifications are enabled at system level
+     */
+    fun areNotificationsEnabled(): Boolean {
+        return _notificationManager?.areNotificationsEnabled() ?: false
+    }
+
+    /**
+     * Cancel all Conferbot notifications
+     */
+    fun cancelAllNotifications() {
+        _notificationManager?.cancelAllNotifications()
+    }
+
+    /**
+     * Cancel a specific notification
+     *
+     * @param notificationId Notification ID to cancel
+     */
+    fun cancelNotification(notificationId: Int) {
+        _notificationManager?.cancelNotification(notificationId)
+    }
+
+    /**
+     * Show a custom notification (for testing or custom use cases)
+     *
+     * @param title Notification title
+     * @param body Notification body
+     * @param data Additional data
+     */
+    fun showNotification(title: String, body: String, data: Map<String, String> = emptyMap()) {
+        _notificationManager?.showMessageNotification(title, body, data)
     }
 
     /**
@@ -476,6 +919,13 @@ object Conferbot {
     fun sendTypingStatus(isTyping: Boolean) {
         val sessionId = _chatSessionId.value ?: return
         socketClient?.sendTypingStatus(sessionId, isTyping)
+
+        // Track typing behavior for analytics
+        if (isTyping) {
+            ChatAnalytics.trackTypingStart()
+        } else {
+            ChatAnalytics.trackTypingEnd()
+        }
     }
 
     /**
@@ -491,6 +941,8 @@ object Conferbot {
      */
     fun endChat() {
         val sessionId = _chatSessionId.value ?: return
+        // Finalize analytics before ending chat
+        ChatAnalytics.finalizeChatAnalytics()
         socketClient?.endChat(sessionId)
     }
 
@@ -502,7 +954,113 @@ object Conferbot {
         _chatSessionId.value = null
         _currentAgent.value = null
         _unreadCount.value = 0
+        // Clean up Knowledge Base service when history is cleared
+        disposeKnowledgeBaseService()
         ChatState.reset()
+    }
+
+    // ==================== Session Persistence Methods ====================
+
+    /**
+     * Check if there's a valid persisted session for the current bot
+     * Call this before openChat to determine if session restoration is available
+     *
+     * @return true if a valid session exists that can be restored
+     */
+    suspend fun hasPersistedSession(): Boolean {
+        val context = appContext ?: return false
+        val currentBotId = botId ?: return false
+        return SessionPersistenceManager.hasValidSession(context, currentBotId)
+    }
+
+    /**
+     * Restore a persisted session from the Room database
+     * Call this before openChat to restore a previous session
+     *
+     * @return SessionRestoreResult indicating success and session details
+     */
+    suspend fun restorePersistedSession(): SessionRestoreResult {
+        val context = appContext ?: return SessionRestoreResult(
+            success = false,
+            reason = "SDK not initialized"
+        )
+        val currentBotId = botId ?: return SessionRestoreResult(
+            success = false,
+            reason = "Bot ID not set"
+        )
+
+        val result = SessionPersistenceManager.restoreSession(
+            context = context,
+            botId = currentBotId,
+            paginationConfig = paginationConfig
+        )
+
+        if (result.success && result.sessionId != null) {
+            _chatSessionId.value = result.sessionId
+
+            // Rejoin socket room with restored session
+            socketClient?.joinChatRoom(
+                chatSessionId = result.sessionId,
+                deviceInfo = mapOf(
+                    "os" to "Android",
+                    "osVersion" to Build.VERSION.RELEASE,
+                    "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                    "deviceModel" to Build.MODEL
+                )
+            )
+
+            // Initialize analytics for restored session
+            ChatAnalytics.initializeChatAnalytics(
+                sessionId = result.sessionId,
+                botIdentifier = currentBotId,
+                visitorIdentifier = result.visitorId ?: user?.id ?: ""
+            )
+
+            eventListener?.onSessionStarted(result.sessionId)
+            Log.d(TAG, "Restored persisted session: ${result.sessionId}")
+        }
+
+        return result
+    }
+
+    /**
+     * Get information about a persisted session without restoring it
+     *
+     * @return SessionInfo or null if no valid session exists
+     */
+    suspend fun getPersistedSessionInfo(): SessionInfo? {
+        val context = appContext ?: return null
+        val currentBotId = botId ?: return null
+        return SessionPersistenceManager.getSessionInfo(context, currentBotId)
+    }
+
+    /**
+     * Invalidate the current session (mark as ended)
+     * The session data will remain for 30 minutes before expiring
+     */
+    suspend fun invalidateCurrentSession() {
+        val context = appContext ?: return
+        val sessionId = _chatSessionId.value ?: return
+        SessionPersistenceManager.invalidateSession(context, sessionId)
+    }
+
+    /**
+     * Delete the current session and all its data
+     */
+    suspend fun deleteCurrentSession() {
+        val context = appContext ?: return
+        val sessionId = _chatSessionId.value ?: return
+        SessionPersistenceManager.deleteSession(context, sessionId)
+        clearHistory()
+    }
+
+    /**
+     * Clear expired sessions to free up storage
+     * Call this periodically (e.g., on app startup)
+     */
+    suspend fun clearExpiredSessions() {
+        val context = appContext ?: return
+        SessionPersistenceManager.clearExpiredSessions(context)
     }
 
     // ==================== Node Flow Engine Methods ====================
@@ -576,8 +1134,19 @@ object Conferbot {
     fun disconnect() {
         val sessionId = _chatSessionId.value
         if (sessionId != null) {
+            // Track potential drop-off before disconnecting
+            ChatAnalytics.trackPotentialDropOff("disconnected")
             socketClient?.leaveChatRoom(sessionId)
         }
+        // Finalize analytics
+        ChatAnalytics.finalizeChatAnalytics()
+        // Clean up Knowledge Base service
+        disposeKnowledgeBaseService()
+        // Clean up File Upload service
+        _fileUploadManager?.dispose()
+        _fileUploadService?.cancelUpload()
+        // Shutdown offline manager
+        _offlineManager?.shutdown()
         socketClient?.disconnect()
         nodeFlowEngine?.destroy()
         _isConnected.value = false
@@ -587,6 +1156,313 @@ object Conferbot {
      * Get customization
      */
     fun getCustomization(): ConferBotCustomization? = customization
+
+    // ==================== Offline Mode Methods ====================
+
+    /**
+     * Initialize the offline manager
+     */
+    private fun initializeOfflineManager(context: Context) {
+        _offlineManager = OfflineManager(context, config.enableOfflineMode).apply {
+            // Set up listener for offline events
+            setListener(object : OfflineManagerListener {
+                override fun onOnlineStatusChanged(isOnline: Boolean) {
+                    _isOnline.value = isOnline
+                    Log.d(TAG, "Online status changed: $isOnline")
+                }
+
+                override fun onQueueSynced(successCount: Int, failCount: Int) {
+                    Log.d(TAG, "Queue synced: $successCount success, $failCount failed")
+                    _pendingMessageCount.value = getPendingMessageCount()
+                    _isSyncingQueue.value = false
+                }
+
+                override fun onMessageFailed(message: QueuedMessage) {
+                    Log.w(TAG, "Message failed after retries: ${message.id}")
+                    eventListener?.onMessageFailed(message.id)
+                }
+            })
+
+            // Initialize and connect to socket client
+            initialize()
+
+            // Observe offline manager states
+            scope.launch {
+                isOnline.collectLatest { online ->
+                    _isOnline.value = online
+                }
+            }
+
+            scope.launch {
+                pendingMessageCount.collectLatest { count ->
+                    _pendingMessageCount.value = count
+                }
+            }
+
+            scope.launch {
+                isSyncing.collectLatest { syncing ->
+                    _isSyncingQueue.value = syncing
+                }
+            }
+        }
+
+        // Connect offline manager to socket client
+        socketClient?.setOfflineManager(_offlineManager!!)
+    }
+
+    /**
+     * Check if offline mode is enabled
+     */
+    fun isOfflineModeEnabled(): Boolean = config.enableOfflineMode
+
+    /**
+     * Check if currently online
+     */
+    fun isCurrentlyOnline(): Boolean = _isOnline.value
+
+    /**
+     * Get count of pending messages in offline queue
+     */
+    fun getPendingMessageCount(): Int = _offlineManager?.getPendingCount() ?: 0
+
+    /**
+     * Check if there are pending messages in offline queue
+     */
+    fun hasPendingMessages(): Boolean = _offlineManager?.hasPendingMessages() ?: false
+
+    /**
+     * Manually trigger processing of queued messages
+     * Useful when you want to retry sending failed messages
+     */
+    fun processOfflineQueue() {
+        _offlineManager?.processQueue()
+    }
+
+    /**
+     * Clear all pending messages in the offline queue
+     */
+    fun clearOfflineQueue() {
+        _offlineManager?.clearQueue()
+        _pendingMessageCount.value = 0
+    }
+
+    /**
+     * Clear pending messages for current session only
+     */
+    fun clearCurrentSessionQueue() {
+        val sessionId = _chatSessionId.value ?: return
+        _offlineManager?.clearSessionQueue(sessionId)
+        _pendingMessageCount.value = _offlineManager?.getPendingCount() ?: 0
+    }
+
+    /**
+     * Get the offline manager for advanced usage
+     */
+    fun getOfflineManager(): OfflineManager? = _offlineManager
+
+    // ==================== Analytics Methods ====================
+
+    /**
+     * Set UTM parameters for analytics tracking
+     * Call this before starting a chat session if you have UTM data
+     * from deep links or other sources
+     *
+     * @param utmSource UTM source parameter
+     * @param utmMedium UTM medium parameter
+     * @param utmCampaign UTM campaign parameter
+     * @param utmTerm UTM term parameter
+     * @param utmContent UTM content parameter
+     * @param referrer Referrer URL/source
+     * @param landingPage Landing page URL
+     */
+    fun setUtmParameters(
+        utmSource: String? = null,
+        utmMedium: String? = null,
+        utmCampaign: String? = null,
+        utmTerm: String? = null,
+        utmContent: String? = null,
+        referrer: String? = null,
+        landingPage: String? = null
+    ) {
+        ChatAnalytics.setUtmParameters(
+            utmSource = utmSource,
+            utmMedium = utmMedium,
+            utmCampaign = utmCampaign,
+            utmTerm = utmTerm,
+            utmContent = utmContent,
+            referrer = referrer,
+            landingPage = landingPage
+        )
+    }
+
+    /**
+     * Track a custom interaction in analytics
+     *
+     * @param type Interaction type (e.g., "linksClicked", "buttonsClicked", "filesUploaded")
+     * @param data Additional data about the interaction
+     */
+    fun trackInteraction(type: String, data: Map<String, Any> = emptyMap()) {
+        ChatAnalytics.trackInteraction(type, data)
+    }
+
+    /**
+     * Track goal completion in analytics
+     *
+     * @param goalId The ID of the completed goal
+     * @param conversionEvent Optional conversion event name
+     * @param conversionValue Optional conversion value (monetary value, etc.)
+     */
+    fun trackGoalCompletion(
+        goalId: String,
+        conversionEvent: String? = null,
+        conversionValue: Double? = null
+    ) {
+        ChatAnalytics.trackGoalCompletion(goalId, conversionEvent, conversionValue)
+    }
+
+    /**
+     * Submit chat rating/feedback
+     *
+     * @param csatScore Customer satisfaction score (1-5)
+     * @param feedback Optional text feedback
+     * @param thumbsUp Optional thumbs up/down
+     * @param npsScore Optional NPS score (0-10)
+     * @param source Source of the rating
+     */
+    fun submitChatRating(
+        csatScore: Int? = null,
+        feedback: String? = null,
+        thumbsUp: Boolean? = null,
+        npsScore: Int? = null,
+        source: String = "post_chat_survey"
+    ) {
+        ChatAnalytics.submitChatRating(csatScore, feedback, thumbsUp, npsScore, source)
+    }
+
+    /**
+     * Track text deletion for typing behavior analytics
+     * Call this when user deletes text in the input field
+     */
+    fun trackTextDeletion() {
+        ChatAnalytics.trackDeletion()
+    }
+
+    /**
+     * Notify analytics that app is going to background
+     * This helps track potential drop-offs
+     */
+    fun onAppBackgrounded() {
+        ChatAnalytics.trackPotentialDropOff("app_backgrounded")
+    }
+
+    /**
+     * Get the ChatAnalytics singleton for direct access
+     * Use this for advanced analytics scenarios
+     */
+    fun getAnalytics(): ChatAnalytics = ChatAnalytics
+
+    // ==================== Knowledge Base Methods ====================
+
+    /**
+     * Get the Knowledge Base service
+     * Returns null if session is not initialized or KB is not enabled
+     */
+    val knowledgeBaseService: KnowledgeBaseService?
+        get() = _knowledgeBaseService
+
+    /**
+     * Initialize and get the Knowledge Base service
+     * Call this after session is initialized
+     *
+     * @return KnowledgeBaseService instance or null if not available
+     */
+    fun getKnowledgeBaseService(): KnowledgeBaseService? {
+        val sessionId = _chatSessionId.value ?: return null
+        val visitorId = user?.id ?: ""
+        val socket = socketClient ?: return null
+
+        if (_knowledgeBaseService == null) {
+            _knowledgeBaseService = KnowledgeBaseService(
+                socketClient = socket,
+                visitorId = visitorId,
+                chatSessionId = sessionId
+            ).also { it.initialize() }
+        }
+
+        return _knowledgeBaseService
+    }
+
+    /**
+     * Fetch Knowledge Base data
+     * Triggers socket event to fetch categories and articles
+     */
+    fun fetchKnowledgeBase() {
+        getKnowledgeBaseService()?.fetchKnowledgeBase()
+    }
+
+    /**
+     * Search Knowledge Base articles
+     *
+     * @param query Search query string
+     * @return Flow of matching articles
+     */
+    fun searchKnowledgeBase(query: String) = getKnowledgeBaseService()?.searchArticles(query)
+
+    /**
+     * Track article view in Knowledge Base
+     * Only tracks once per session per article
+     *
+     * @param article The article being viewed
+     */
+    fun trackKnowledgeBaseArticleView(article: KnowledgeBaseArticle) {
+        getKnowledgeBaseService()?.trackArticleView(article)
+    }
+
+    /**
+     * Start engagement tracking for a Knowledge Base article
+     *
+     * @param articleId The article ID
+     */
+    fun startKnowledgeBaseArticleEngagement(articleId: String) {
+        getKnowledgeBaseService()?.startArticleEngagement(articleId)
+    }
+
+    /**
+     * Update scroll depth for article engagement tracking
+     *
+     * @param scrollDepth Scroll percentage (0-100)
+     */
+    fun updateKnowledgeBaseScrollDepth(scrollDepth: Int) {
+        getKnowledgeBaseService()?.updateScrollDepth(scrollDepth)
+    }
+
+    /**
+     * Rate a Knowledge Base article
+     *
+     * @param articleId The article ID
+     * @param helpful Whether the article was helpful
+     * @return Flow<Boolean> indicating success
+     */
+    fun rateKnowledgeBaseArticle(articleId: String, helpful: Boolean) =
+        getKnowledgeBaseService()?.rateArticle(articleId, helpful)
+
+    /**
+     * Check if a Knowledge Base article has been rated in this session
+     *
+     * @param articleId The article ID
+     * @return true if already rated
+     */
+    fun hasRatedKnowledgeBaseArticle(articleId: String): Boolean {
+        return getKnowledgeBaseService()?.hasRatedArticle(articleId) ?: false
+    }
+
+    /**
+     * Clean up Knowledge Base service
+     */
+    private fun disposeKnowledgeBaseService() {
+        _knowledgeBaseService?.dispose()
+        _knowledgeBaseService = null
+    }
 
     /**
      * Listen to custom socket event
@@ -615,4 +1491,7 @@ interface ConferBotEventListener {
     fun onSessionEnded(sessionId: String) {}
     fun onTypingIndicator(isTyping: Boolean) {}
     fun onUnreadCountChanged(count: Int) {}
+    fun onOnlineStatusChanged(isOnline: Boolean) {}
+    fun onMessageFailed(messageId: String) {}
+    fun onQueueSynced(successCount: Int, failCount: Int) {}
 }
