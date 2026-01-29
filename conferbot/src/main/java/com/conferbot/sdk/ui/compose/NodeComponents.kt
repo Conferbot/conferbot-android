@@ -53,6 +53,7 @@ fun NodeRenderer(
         is NodeUIState.Quiz -> QuizNode(uiState, onResponse, primaryColor, modifier)
         is NodeUIState.MultipleQuestions -> MultipleQuestionsNode(uiState, onResponse, primaryColor, modifier)
         is NodeUIState.HumanHandover -> HumanHandoverNode(uiState, onResponse, primaryColor, modifier)
+        is NodeUIState.PostChatSurvey -> PostChatSurveyView(uiState, onResponse, primaryColor, modifier)
         is NodeUIState.Html -> HtmlNode(uiState, modifier)
         is NodeUIState.Payment -> PaymentNode(uiState, primaryColor, modifier)
         is NodeUIState.Redirect -> RedirectNode(uiState, modifier)
@@ -262,45 +263,491 @@ fun FileUploadNode(
     primaryColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
+    // Upload state management
+    var uploadState by remember { mutableStateOf<FileUploadState>(FileUploadState.Idle) }
+    var selectedFiles by remember { mutableStateOf<List<SelectedFileData>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Calculate max size in bytes
+    val maxSizeBytes = state.maxSizeMb.toLong() * 1024 * 1024
+
     Column(modifier = modifier) {
         if (state.questionText.isNotEmpty()) {
             BotMessageBubble(text = state.questionText)
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Card(
+        // Show error message if any
+        AnimatedVisibility(visible = errorMessage != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFC62828),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = errorMessage ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFC62828),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { errorMessage = null },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color(0xFFC62828),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Show upload progress or file picker based on state
+        when (val currentState = uploadState) {
+            is FileUploadState.Idle -> {
+                // Show selected files if any
+                if (selectedFiles.isNotEmpty()) {
+                    selectedFiles.forEachIndexed { index, file ->
+                        SelectedFileCard(
+                            fileName = file.name,
+                            fileSize = file.formattedSize,
+                            onRemove = {
+                                selectedFiles = selectedFiles.toMutableList().apply {
+                                    removeAt(index)
+                                }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                // File picker area
+                val canSelectMore = state.allowMultiple &&
+                        selectedFiles.size < state.maxFiles ||
+                        selectedFiles.isEmpty()
+
+                if (canSelectMore) {
+                    FilePickerArea(
+                        allowedTypes = state.allowedTypes,
+                        maxSizeBytes = maxSizeBytes,
+                        maxSizeMb = state.maxSizeMb,
+                        onFileSelected = { uri ->
+                            errorMessage = null
+                            val fileInfo = getFileInfoFromUri(context, uri)
+                            if (fileInfo != null) {
+                                if (state.allowMultiple) {
+                                    if (selectedFiles.size < state.maxFiles) {
+                                        selectedFiles = selectedFiles + fileInfo
+                                    } else {
+                                        errorMessage = "Maximum ${state.maxFiles} files allowed"
+                                    }
+                                } else {
+                                    selectedFiles = listOf(fileInfo)
+                                }
+                            }
+                        },
+                        onError = { error ->
+                            errorMessage = error
+                        },
+                        primaryColor = primaryColor
+                    )
+                }
+
+                // Upload button when files are selected
+                if (selectedFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            // Start upload - the actual upload will be handled by parent
+                            uploadState = FileUploadState.Uploading(0f, selectedFiles.first().name)
+                            onResponse(
+                                mapOf(
+                                    "action" to "upload",
+                                    "files" to selectedFiles.map { file ->
+                                        mapOf(
+                                            "uri" to file.uri.toString(),
+                                            "name" to file.name,
+                                            "size" to file.size,
+                                            "mimeType" to file.mimeType
+                                        )
+                                    },
+                                    "nodeId" to state.nodeId,
+                                    "answerKey" to state.answerKey
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (selectedFiles.size == 1) "Upload File" else "Upload ${selectedFiles.size} Files"
+                        )
+                    }
+                }
+            }
+
+            is FileUploadState.Uploading -> {
+                FileUploadProgressCard(
+                    progress = currentState.progress,
+                    fileName = currentState.fileName,
+                    onCancel = {
+                        uploadState = FileUploadState.Idle
+                        onResponse(mapOf("action" to "cancel"))
+                    },
+                    primaryColor = primaryColor
+                )
+            }
+
+            is FileUploadState.Success -> {
+                UploadSuccessIndicator(
+                    fileName = currentState.fileName,
+                    fileUrl = currentState.url
+                )
+            }
+
+            is FileUploadState.Error -> {
+                UploadErrorIndicator(
+                    message = currentState.message,
+                    onRetry = {
+                        uploadState = FileUploadState.Idle
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * File upload state for the node
+ */
+private sealed class FileUploadState {
+    data object Idle : FileUploadState()
+    data class Uploading(val progress: Float, val fileName: String) : FileUploadState()
+    data class Success(val fileName: String, val url: String) : FileUploadState()
+    data class Error(val message: String) : FileUploadState()
+}
+
+/**
+ * Selected file data holder
+ */
+private data class SelectedFileData(
+    val uri: android.net.Uri,
+    val name: String,
+    val size: Long,
+    val mimeType: String,
+    val formattedSize: String
+)
+
+/**
+ * Get file info from Uri
+ */
+private fun getFileInfoFromUri(context: android.content.Context, uri: android.net.Uri): SelectedFileData? {
+    return try {
+        var name = "unknown"
+        var size: Long = 0
+        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+
+                if (nameIndex >= 0) {
+                    name = cursor.getString(nameIndex) ?: "unknown"
+                }
+                if (sizeIndex >= 0) {
+                    size = cursor.getLong(sizeIndex)
+                }
+            }
+        }
+
+        val formattedSize = when {
+            size < 1024 -> "$size B"
+            size < 1024 * 1024 -> String.format("%.1f KB", size / 1024.0)
+            else -> String.format("%.1f MB", size / (1024.0 * 1024.0))
+        }
+
+        SelectedFileData(uri, name, size, mimeType, formattedSize)
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * Card showing selected file with remove option
+ */
+@Composable
+private fun SelectedFileCard(
+    fileName: String,
+    fileSize: String,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
-                .clickable {
-                    // File picker would be triggered here
-                    // For now, placeholder
-                },
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(2.dp, primaryColor.copy(alpha = 0.5f))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            Icon(
+                imageVector = Icons.Default.Description,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                Text(
+                    text = fileSize,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(32.dp)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Remove file",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Upload progress card
+ */
+@Composable
+private fun FileUploadProgressCard(
+    progress: Float,
+    fileName: String,
+    onCancel: () -> Unit,
+    primaryColor: Color
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.size(48.dp),
+                        color = primaryColor,
+                        trackColor = primaryColor.copy(alpha = 0.2f),
+                        strokeWidth = 3.dp
+                    )
                     Icon(
-                        imageVector = Icons.Default.CloudUpload,
-                        contentDescription = "Upload",
-                        modifier = Modifier.size(40.dp),
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
                         tint = primaryColor
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Tap to upload file",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Max ${state.maxSizeMb}MB",
+                        text = "Uploading... ${(progress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                IconButton(
+                    onClick = onCancel,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel upload",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = primaryColor,
+                trackColor = primaryColor.copy(alpha = 0.2f),
+            )
+        }
+    }
+}
+
+/**
+ * Success indicator after upload
+ */
+@Composable
+private fun UploadSuccessIndicator(
+    fileName: String,
+    fileUrl: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFE8F5E9)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF4CAF50)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Success",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Upload complete",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF2E7D32)
+                )
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF388E3C),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Error indicator when upload fails
+ */
+@Composable
+private fun UploadErrorIndicator(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFFEBEE)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Error",
+                tint = Color(0xFFC62828),
+                modifier = Modifier.size(32.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Upload failed",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFC62828)
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFD32F2F),
+                    maxLines = 2
+                )
+            }
+
+            TextButton(onClick = onRetry) {
+                Text(
+                    text = "Retry",
+                    color = Color(0xFFC62828)
+                )
             }
         }
     }
