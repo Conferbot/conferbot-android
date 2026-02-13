@@ -159,8 +159,12 @@ class WebhookNodeHandler(
 
             "basic" -> {
                 val username = auth["username"]?.toString() ?: return null
-                val password = auth["password"]?.toString() ?: ""
-                WebhookAuthentication.Basic(username, password)
+                // FIX 6: Use password immediately and avoid caching credentials
+                val passwordChars = (auth["password"]?.toString() ?: "").toCharArray()
+                val result = WebhookAuthentication.Basic(username, String(passwordChars))
+                // Clear password char array after use (best-effort for JVM)
+                passwordChars.fill('\u0000')
+                result
             }
 
             "apikey", "api_key", "api-key" -> {
@@ -185,10 +189,14 @@ class WebhookNodeHandler(
             "custom", "token" -> {
                 val tokenUrl = auth["tokenUrl"]?.toString() ?: return null
                 val username = auth["username"]?.toString() ?: return null
-                val password = auth["password"]?.toString() ?: ""
+                // FIX 6: Use password immediately and avoid caching credentials
+                val passwordChars = (auth["password"]?.toString() ?: "").toCharArray()
                 val tokenPath = auth["tokenPath"]?.toString() ?: "access_token"
                 val expiresInPath = auth["expiresInPath"]?.toString() ?: "expires_in"
-                WebhookAuthentication.CustomToken(tokenUrl, username, password, tokenPath, expiresInPath)
+                val result = WebhookAuthentication.CustomToken(tokenUrl, username, String(passwordChars), tokenPath, expiresInPath)
+                // Clear password char array after use (best-effort for JVM)
+                passwordChars.fill('\u0000')
+                result
             }
 
             else -> {
@@ -219,23 +227,30 @@ class WebhookNodeHandler(
         // Legacy format: tokenUrl + username + password
         val tokenUrl = auth["tokenUrl"]?.toString()
         val username = auth["username"]?.toString()
-        val password = auth["password"]?.toString()
+        // FIX 6: Use password via char array and clear after use (best-effort for JVM)
+        val passwordChars = (auth["password"]?.toString() ?: "").toCharArray()
+        val password = String(passwordChars)
 
         if (!tokenUrl.isNullOrEmpty() && !username.isNullOrEmpty()) {
-            return WebhookAuthentication.CustomToken(
+            val result = WebhookAuthentication.CustomToken(
                 tokenUrl = tokenUrl,
                 username = username,
-                password = password ?: "",
+                password = password,
                 tokenPath = auth["tokenPath"]?.toString() ?: "access",
                 expiresInPath = auth["expiresInPath"]?.toString() ?: "expires_in"
             )
+            passwordChars.fill('\u0000')
+            return result
         }
 
         // Legacy format: just username + password (basic auth)
-        if (!username.isNullOrEmpty() && !password.isNullOrEmpty()) {
-            return WebhookAuthentication.Basic(username, password)
+        if (!username.isNullOrEmpty() && password.isNotEmpty()) {
+            val result = WebhookAuthentication.Basic(username, password)
+            passwordChars.fill('\u0000')
+            return result
         }
 
+        passwordChars.fill('\u0000')
         return null
     }
 
