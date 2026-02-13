@@ -54,7 +54,12 @@ class DeepSeekProvider : AIProvider {
         val model = config.model.ifBlank { defaultModel }
 
         try {
-            val connection = createConnection(endpoint, config.apiKey!!)
+            val apiKey = config.apiKey ?: throw AIProviderException(
+                message = "DeepSeek API key is null",
+                provider = name,
+                isRetryable = false
+            )
+            val connection = createConnection(endpoint, apiKey)
             val requestBody = buildRequestBody(prompt, context, config, model, stream = false)
 
             // Write request
@@ -103,7 +108,15 @@ class DeepSeekProvider : AIProvider {
         val model = config.model.ifBlank { defaultModel }
 
         try {
-            val connection = createConnection(endpoint, config.apiKey!!)
+            val apiKey = config.apiKey ?: run {
+                callback.onError(AIProviderException(
+                    message = "DeepSeek API key is null",
+                    provider = name,
+                    isRetryable = false
+                ))
+                return@withContext
+            }
+            val connection = createConnection(endpoint, apiKey)
             val requestBody = buildRequestBody(prompt, context, config, model, stream = true)
 
             // Write request
