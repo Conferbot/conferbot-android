@@ -92,7 +92,11 @@ class NetworkMonitor(private val context: Context) {
         }
 
         try {
-            connectivityManager.registerNetworkCallback(networkRequest, networkCallback!!)
+            val callback = networkCallback ?: run {
+                Log.e(TAG, "Network callback is null, cannot start monitoring")
+                return
+            }
+            connectivityManager.registerNetworkCallback(networkRequest, callback)
             isMonitoring = true
             Log.d(TAG, "Network monitoring started")
         } catch (e: Exception) {
