@@ -5,6 +5,7 @@ import com.conferbot.sdk.core.queue.MessageType
 import com.conferbot.sdk.core.queue.OfflineManager
 import com.conferbot.sdk.core.queue.QueuedMessage
 import com.conferbot.sdk.models.SocketEvents
+import com.conferbot.sdk.utils.ConferBotNetworkConfig
 import com.conferbot.sdk.utils.Constants
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -58,10 +59,10 @@ class SocketClient(
             val options = IO.Options().apply {
                 transports = arrayOf("websocket", "polling")
                 reconnection = true
-                reconnectionAttempts = Constants.SOCKET_RECONNECTION_ATTEMPTS
-                reconnectionDelay = Constants.SOCKET_RECONNECTION_DELAY.toLong()
-                reconnectionDelayMax = Constants.SOCKET_RECONNECTION_DELAY_MAX.toLong()
-                timeout = Constants.SOCKET_TIMEOUT
+                reconnectionAttempts = ConferBotNetworkConfig.reconnectionAttempts
+                reconnectionDelay = ConferBotNetworkConfig.reconnectionDelay.toLong()
+                reconnectionDelayMax = ConferBotNetworkConfig.reconnectionDelayMax.toLong()
+                timeout = ConferBotNetworkConfig.socketTimeout
                 extraHeaders = mapOf(
                     Constants.HEADER_API_KEY to listOf(apiKey),
                     Constants.HEADER_BOT_ID to listOf(botId),
@@ -629,8 +630,8 @@ class SocketClient(
      * Disconnect from socket
      */
     fun disconnect() {
-        socket?.disconnect()
         socket?.off()
+        socket?.disconnect()
         _isConnected = false
         _connectionState.value = ConnectionState.DISCONNECTED
     }
