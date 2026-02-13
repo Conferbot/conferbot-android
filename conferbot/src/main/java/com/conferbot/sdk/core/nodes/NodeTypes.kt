@@ -1,12 +1,12 @@
 package com.conferbot.sdk.core.nodes
 
 /**
- * All 51 node types supported by Conferbot
+ * All 58 node types supported by Conferbot
  * Organized by category matching the web widget
  */
 object NodeTypes {
 
-    // ==================== DISPLAY NODES (28 types) ====================
+    // ==================== DISPLAY NODES (32 types) ====================
 
     // Legacy nodes (v1)
     const val TWO_CHOICES = "two-choices-node"
