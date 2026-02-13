@@ -32,6 +32,7 @@ import com.conferbot.sdk.services.FileUploadService
 import com.conferbot.sdk.services.KnowledgeBaseService
 import com.conferbot.sdk.services.SocketClient
 import com.conferbot.sdk.ui.views.ChatActivity
+import com.conferbot.sdk.utils.ConferBotEndpoints
 import com.conferbot.sdk.utils.Constants
 import com.google.gson.Gson
 import io.socket.emitter.Emitter
@@ -198,80 +199,104 @@ object Conferbot {
         socketUrl: String? = null,
         paginationConfig: PaginationConfig = PaginationConfig()
     ) {
+        // FIX 4: Throw on double-initialization instead of silently returning
         if (_isInitialized.value) {
-            Log.w(TAG, "SDK already initialized")
-            return
+            throw IllegalStateException("Conferbot SDK is already initialized. Call disconnect() before re-initializing.")
         }
 
-        this.appContext = context.applicationContext
-        this.apiKey = apiKey
-        this.botId = botId
-        this.config = config
-        this.customization = customization
-        this.user = user
-        this.baseUrl = baseUrl
-        this.socketUrl = socketUrl
-        this.paginationConfig = paginationConfig
+        // FIX 4: Validate apiKey and botId
+        require(apiKey.isNotBlank()) { "apiKey must not be blank" }
+        require(botId.isNotBlank()) { "botId must not be blank" }
+        require(apiKey.length >= 8) { "apiKey appears invalid (too short)" }
 
-        // Initialize API client
-        apiClient = ApiClient(
-            apiKey = apiKey,
-            botId = botId,
-            baseUrl = baseUrl ?: Constants.DEFAULT_API_BASE_URL
-        )
+        // FIX 5: Wrap initialization in try-catch for cleanup on failure
+        try {
+            this.appContext = context.applicationContext
+            this.apiKey = apiKey
+            this.botId = botId
+            this.config = config
+            this.customization = customization
+            this.user = user
+            this.baseUrl = baseUrl
+            this.socketUrl = socketUrl
+            this.paginationConfig = paginationConfig
 
-        // Initialize Socket client
-        socketClient = SocketClient(
-            apiKey = apiKey,
-            botId = botId,
-            socketUrl = socketUrl ?: Constants.DEFAULT_SOCKET_URL
-        )
-
-        // Initialize Node Flow Engine
-        socketClient?.let { client ->
-            _flowEngine = NodeFlowEngine(client)
-            // Initialize ChatAnalytics with socket client
-            ChatAnalytics.setSocketClient(client)
-        }
-
-        // Initialize File Upload Service
-        _fileUploadService = FileUploadService(
-            apiKey = apiKey,
-            botId = botId,
-            context = context.applicationContext,
-            baseUrl = baseUrl ?: Constants.DEFAULT_API_BASE_URL
-        )
-
-        // Initialize File Upload Manager
-        _fileUploadService?.let { service ->
-            _fileUploadManager = FileUploadManager(
-                context = context.applicationContext,
-                uploadService = service
+            // Initialize API client
+            apiClient = ApiClient(
+                apiKey = apiKey,
+                botId = botId,
+                baseUrl = baseUrl ?: ConferBotEndpoints.apiBaseUrl
             )
+
+            // Initialize Socket client
+            socketClient = SocketClient(
+                apiKey = apiKey,
+                botId = botId,
+                socketUrl = socketUrl ?: ConferBotEndpoints.socketUrl
+            )
+
+            // Initialize Node Flow Engine
+            socketClient?.let { client ->
+                _flowEngine = NodeFlowEngine(client)
+                // Initialize ChatAnalytics with socket client
+                ChatAnalytics.setSocketClient(client)
+            }
+
+            // Initialize File Upload Service
+            _fileUploadService = FileUploadService(
+                apiKey = apiKey,
+                botId = botId,
+                context = context.applicationContext,
+                baseUrl = baseUrl ?: ConferBotEndpoints.apiBaseUrl
+            )
+
+            // Initialize File Upload Manager
+            _fileUploadService?.let { service ->
+                _fileUploadManager = FileUploadManager(
+                    context = context.applicationContext,
+                    uploadService = service
+                )
+            }
+
+            // Initialize Offline Manager if offline mode is enabled
+            if (config.enableOfflineMode) {
+                initializeOfflineManager(context.applicationContext)
+            }
+
+            // Initialize Notification components if enabled
+            if (config.enableNotifications) {
+                initializeNotifications(context.applicationContext)
+            }
+
+            // Configure ChatState pagination
+            ChatState.configurePagination(
+                maxMessages = paginationConfig.maxMemoryMessages,
+                pageSizeConfig = paginationConfig.pageSize
+            )
+
+            if (config.autoConnect) {
+                connectSocket()
+            }
+
+            _isInitialized.value = true
+            Log.d(TAG, "SDK initialized with pagination support")
+        } catch (e: Exception) {
+            // FIX 5: Clean up partial state on initialization failure
+            Log.e(TAG, "SDK initialization failed, cleaning up", e)
+            _isInitialized.value = false
+            socketClient?.disconnect()
+            socketClient = null
+            apiClient = null
+            _flowEngine = null
+            _fileUploadService = null
+            _fileUploadManager = null
+            _offlineManager?.shutdown()
+            _offlineManager = null
+            _notificationManager = null
+            _notificationHandler = null
+            appContext = null
+            throw e
         }
-
-        // Initialize Offline Manager if offline mode is enabled
-        if (config.enableOfflineMode) {
-            initializeOfflineManager(context.applicationContext)
-        }
-
-        // Initialize Notification components if enabled
-        if (config.enableNotifications) {
-            initializeNotifications(context.applicationContext)
-        }
-
-        // Configure ChatState pagination
-        ChatState.configurePagination(
-            maxMessages = paginationConfig.maxMemoryMessages,
-            pageSizeConfig = paginationConfig.pageSize
-        )
-
-        if (config.autoConnect) {
-            connectSocket()
-        }
-
-        _isInitialized.value = true
-        Log.d(TAG, "SDK initialized with pagination support")
     }
 
     /**
@@ -370,9 +395,10 @@ object Conferbot {
             if (hasNodeData && nodeFlowEngine != null) {
                 // Process through flow engine for node-based UI
                 nodeFlowEngine?.handleServerMessage(messageMap)
+                return  // Don't also call handleMessageReceived to avoid duplicate messages
             }
 
-            // Also add to record for display in chat history
+            // Only add to record for non-node messages
             handleMessageReceived(args)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to handle bot response", e)
@@ -394,6 +420,12 @@ object Conferbot {
                 messageManager?.addMessage(recordItem)
 
                 // Also update _record for backwards compatibility
+                // Deduplication: skip if message with this ID already exists
+                val existingIds = _record.value.map { it.id }.toSet()
+                if (recordItem.id in existingIds) {
+                    return@launch // Already exists, skip duplicate
+                }
+
                 val currentRecord = _record.value.toMutableList()
                 currentRecord.add(recordItem)
 
@@ -1149,6 +1181,8 @@ object Conferbot {
         _offlineManager?.shutdown()
         socketClient?.disconnect()
         nodeFlowEngine?.destroy()
+        // FIX 6: Cancel coroutine scope to prevent leaked coroutines
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         _isConnected.value = false
     }
 
@@ -1207,7 +1241,9 @@ object Conferbot {
         }
 
         // Connect offline manager to socket client
-        socketClient?.setOfflineManager(_offlineManager!!)
+        _offlineManager?.let { manager ->
+            socketClient?.setOfflineManager(manager)
+        } ?: Log.e(TAG, "Offline manager is null after initialization")
     }
 
     /**
