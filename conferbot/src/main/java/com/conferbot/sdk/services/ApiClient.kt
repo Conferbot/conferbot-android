@@ -3,6 +3,7 @@ package com.conferbot.sdk.services
 import com.conferbot.sdk.models.ChatSession
 import com.conferbot.sdk.models.RecordItem
 import com.conferbot.sdk.models.RecordItemDeserializer
+import com.conferbot.sdk.utils.ConferBotNetworkConfig
 import com.conferbot.sdk.utils.Constants
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -66,9 +67,9 @@ class ApiClient(
         .create()
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(Constants.API_TIMEOUT, TimeUnit.MILLISECONDS)
-        .readTimeout(Constants.API_TIMEOUT, TimeUnit.MILLISECONDS)
-        .writeTimeout(Constants.API_TIMEOUT, TimeUnit.MILLISECONDS)
+        .connectTimeout(ConferBotNetworkConfig.apiTimeout, TimeUnit.MILLISECONDS)
+        .readTimeout(ConferBotNetworkConfig.apiTimeout, TimeUnit.MILLISECONDS)
+        .writeTimeout(ConferBotNetworkConfig.apiTimeout, TimeUnit.MILLISECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
             val request = original.newBuilder()
