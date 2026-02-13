@@ -610,13 +610,13 @@ fun InlinePostChatSurvey(
                             }
                         ) {
                             Icon(
-                                imageVector = if (selectedRating != null && rating <= selectedRating!!) {
+                                imageVector = if (selectedRating != null && rating <= (selectedRating ?: 0)) {
                                     Icons.Filled.Star
                                 } else {
                                     Icons.Filled.StarOutline
                                 },
                                 contentDescription = "Rating $rating",
-                                tint = if (selectedRating != null && rating <= selectedRating!!) {
+                                tint = if (selectedRating != null && rating <= (selectedRating ?: 0)) {
                                     Color(0xFFFFB300)
                                 } else {
                                     Color.Gray
