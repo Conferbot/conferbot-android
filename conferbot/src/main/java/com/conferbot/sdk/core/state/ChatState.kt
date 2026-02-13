@@ -77,6 +77,9 @@ object ChatState {
 
     private const val TAG = "ChatState"
 
+    /** Maximum number of transcript entries to keep in memory. */
+    private const val MAX_TRANSCRIPT_ENTRIES = 500
+
     // Coroutine scope for async operations
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -750,9 +753,9 @@ object ChatState {
         val list = _transcript.value.toMutableList()
         list.add(TranscriptEntry(by, message, timestamp))
 
-        // Keep transcript limited to prevent memory issues
-        if (list.size > 200) {
-            _transcript.value = list.takeLast(200).toMutableList()
+        // FIX 8: Keep transcript limited to MAX_TRANSCRIPT_ENTRIES to prevent memory issues
+        if (list.size > MAX_TRANSCRIPT_ENTRIES) {
+            _transcript.value = list.takeLast(MAX_TRANSCRIPT_ENTRIES).toMutableList()
         } else {
             _transcript.value = list
         }
