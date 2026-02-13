@@ -1,6 +1,7 @@
 package com.conferbot.sdk.services
 
 import android.content.Context
+import android.util.Log
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
@@ -223,9 +224,18 @@ class FileUploadService(
         try {
             // Get file info
             val fileInfo = getFileInfo(uri)
-            val fileName = fileInfo.name
             val mimeType = fileInfo.mimeType
             val fileSize = fileInfo.size
+
+            // FIX 7: Validate MIME type against allowlist
+            if (!isAllowedMimeType(mimeType)) {
+                Log.w(TAG, "Blocked upload of disallowed MIME type: $mimeType")
+                emit(UploadState.Error("File type not allowed: $mimeType"))
+                return@flow
+            }
+
+            // FIX 7: Sanitize filename
+            val fileName = sanitizeFilename(fileInfo.name)
 
             emit(UploadState.Uploading(0f, fileName))
 
@@ -421,7 +431,8 @@ class FileUploadService(
                 .build()
 
             currentUploadCall = s3HttpClient.newCall(request)
-            val response = currentUploadCall!!.execute()
+            val call = currentUploadCall ?: return@withContext false
+            val response = call.execute()
             currentUploadCall = null
 
             response.isSuccessful
@@ -582,5 +593,45 @@ class FileUploadService(
 
     companion object {
         private const val TAG = "FileUploadService"
+
+        /** Allowed MIME type prefixes for upload. */
+        private val ALLOWED_MIME_PREFIXES = listOf(
+            "image/",
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "text/plain",
+            "text/csv",
+            "audio/",
+            "video/"
+        )
+
+        /**
+         * Validate that the MIME type is in the allowlist.
+         * @return true if the MIME type is allowed
+         */
+        fun isAllowedMimeType(mimeType: String): Boolean {
+            return ALLOWED_MIME_PREFIXES.any { prefix ->
+                mimeType.startsWith(prefix)
+            }
+        }
+
+        /**
+         * Sanitize a filename by replacing non-safe characters.
+         * Keeps only alphanumeric, dot, hyphen, and underscore.
+         */
+        fun sanitizeFilename(name: String): String {
+            // Separate name and extension
+            val lastDot = name.lastIndexOf('.')
+            val baseName = if (lastDot > 0) name.substring(0, lastDot) else name
+            val extension = if (lastDot > 0) name.substring(lastDot) else ""
+            // Replace unsafe characters in baseName
+            val sanitized = baseName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            // Ensure non-empty
+            val safeName = sanitized.ifBlank { "upload" }
+            return safeName + extension
+        }
     }
 }
