@@ -5,6 +5,7 @@ import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.services.SocketClient
 import kotlinx.coroutines.*
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -70,6 +71,9 @@ class NodeFlowEngine(
             return
         }
 
+        // Reset visited nodes tracking for new flow
+        visitedNodes.clear()
+
         scope.launch {
             processNodeAtIndex(0)
         }
@@ -102,6 +106,15 @@ class NodeFlowEngine(
         processNode(nodeId, nodeType, nodeData)
     }
 
+    companion object {
+        private const val TAG = "NodeFlowEngine"
+        private const val NODE_PROCESSING_TIMEOUT_MS = 30_000L
+        private const val MAX_NODE_VISITS = 100
+    }
+
+    // Visited nodes set for infinite loop protection (FIX 4)
+    private val visitedNodes = mutableSetOf<String>()
+
     /**
      * Process a specific node
      */
@@ -110,6 +123,15 @@ class NodeFlowEngine(
         nodeType: String,
         nodeData: Map<String, Any?>
     ) {
+        // FIX 4: Infinite loop protection - detect cycles in jump-to nodes
+        if (nodeId in visitedNodes && visitedNodes.size > MAX_NODE_VISITS) {
+            android.util.Log.e(TAG, "Cycle detected: node $nodeId already visited, ${visitedNodes.size} total visits")
+            _errorMessage.value = "Flow cycle detected"
+            _isProcessing.value = false
+            return
+        }
+        visitedNodes.add(nodeId)
+
         _isProcessing.value = true
         _errorMessage.value = null
 
@@ -129,16 +151,27 @@ class NodeFlowEngine(
             return
         }
 
-        try {
-            val result = handler.process(nodeData, nodeId)
-            handleNodeResult(result, nodeData)
-        } catch (e: Exception) {
-            _errorMessage.value = "Error processing node: ${e.message}"
+        // FIX 3: Wrap node processing with a timeout to prevent hangs
+        val result = withTimeoutOrNull(NODE_PROCESSING_TIMEOUT_MS) {
+            try {
+                handler.process(nodeData, nodeId)
+            } catch (e: Exception) {
+                _errorMessage.value = "Error processing node: ${e.message}"
+                ChatAnalytics.trackNodeExit(nodeId, "error")
+                null
+            }
+        }
+
+        if (result == null) {
+            android.util.Log.w(TAG, "Node processing timed out for node: $nodeId")
+            _errorMessage.value = "Node processing timed out"
             _isProcessing.value = false
-            ChatAnalytics.trackNodeExit(nodeId, "error")
             // Try to proceed anyway
             proceedToNextNode(null)
+            return
         }
+
+        handleNodeResult(result, nodeData)
     }
 
     /**
@@ -361,6 +394,10 @@ class NodeFlowEngine(
             edge["source"] == sourceId &&
                     (edge["sourceHandle"] == sourcePort || edge["sourceHandle"] == sourcePort.removePrefix("source-"))
         }
+        // FIX 7: Validate edge exists for the given port
+        if (edge == null) {
+            android.util.Log.w(TAG, "No edge found for port: $sourcePort on node: $sourceId")
+        }
         return edge?.get("target")?.toString()
     }
 
@@ -508,6 +545,7 @@ class NodeFlowEngine(
     fun destroy() {
         // Finalize analytics before cleanup
         ChatAnalytics.finalizeChatAnalytics()
+        visitedNodes.clear()
         scope.cancel()
         ChatState.reset()
     }
