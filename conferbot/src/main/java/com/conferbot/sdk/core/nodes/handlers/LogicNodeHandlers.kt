@@ -12,13 +12,27 @@ class ConditionNodeHandler : BaseNodeHandler() {
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val isNumber = getBoolean(nodeData, "isNumber", false)
+        // Support both field naming conventions: leftValue/rightValue (Android) and variable/value (web widget)
         val leftValue = getString(nodeData, "leftValue", "")
+            .ifEmpty { getString(nodeData, "variable", "") }
         val rightValue = getString(nodeData, "rightValue", "")
+            .ifEmpty { getString(nodeData, "value", getString(nodeData, "compareValue", "")) }
         val operator = getString(nodeData, "operator", "=")
 
         // Resolve values (they might be variable references)
         val resolvedLeft = state.resolveValue(leftValue)
         val resolvedRight = state.resolveValue(rightValue)
+
+        // Handle isEmpty/isNotEmpty first (they don't need a right value)
+        val operatorLower = operator.lowercase()
+        if (operatorLower == "isempty" || operatorLower == "isnotempty") {
+            val result = evaluateStringCondition(resolvedLeft.toString(), "", operator)
+            return if (result) {
+                NodeResult.Proceed(targetPort = "source-0")  // True branch
+            } else {
+                NodeResult.Proceed(targetPort = "source-1")  // False branch
+            }
+        }
 
         val result = if (isNumber) {
             evaluateNumericCondition(resolvedLeft, resolvedRight, operator)
@@ -47,12 +61,12 @@ class ConditionNodeHandler : BaseNodeHandler() {
         }
 
         return when (operator) {
-            "<" -> leftNum < rightNum
-            ">" -> leftNum > rightNum
-            "=", "==" -> leftNum == rightNum
-            "!=" -> leftNum != rightNum
-            "<=" -> leftNum <= rightNum
-            ">=" -> leftNum >= rightNum
+            "<", "lessThan" -> leftNum < rightNum
+            ">", "greaterThan" -> leftNum > rightNum
+            "=", "==", "equals" -> leftNum == rightNum
+            "!=", "notEquals" -> leftNum != rightNum
+            "<=", "lessThanOrEquals" -> leftNum <= rightNum
+            ">=", "greaterThanOrEquals" -> leftNum >= rightNum
             else -> false
         }
     }
@@ -60,24 +74,39 @@ class ConditionNodeHandler : BaseNodeHandler() {
     private fun evaluateStringCondition(left: String, right: String, operator: String): Boolean {
         return when (operator.lowercase()) {
             "=", "==", "equals" -> left.equals(right, ignoreCase = true)
-            "!=" -> !left.equals(right, ignoreCase = true)
+            "!=", "notequals" -> !left.equals(right, ignoreCase = true)
             "contains" -> left.contains(right, ignoreCase = true)
             "does not contain" -> !left.contains(right, ignoreCase = true)
-            "starts with" -> left.startsWith(right, ignoreCase = true)
-            "ends with" -> left.endsWith(right, ignoreCase = true)
+            "starts with", "startswith" -> left.startsWith(right, ignoreCase = true)
+            "ends with", "endswith" -> left.endsWith(right, ignoreCase = true)
             "matches" -> {
                 try {
-                    Regex(right).matches(left)
+                    Regex(right, RegexOption.IGNORE_CASE).containsMatchIn(left)
                 } catch (e: Exception) {
                     false
                 }
             }
             "does not match" -> {
                 try {
-                    !Regex(right).matches(left)
+                    !Regex(right, RegexOption.IGNORE_CASE).containsMatchIn(left)
                 } catch (e: Exception) {
                     true
                 }
+            }
+            "isempty" -> {
+                left.trim().isEmpty()
+            }
+            "isnotempty" -> {
+                left.trim().isNotEmpty()
+            }
+            "in" -> {
+                // Check if left is in right (comma-separated string or array-like)
+                val collection = right.split(",").map { it.trim().lowercase() }
+                collection.contains(left.lowercase().trim())
+            }
+            "notin" -> {
+                val collection = right.split(",").map { it.trim().lowercase() }
+                !collection.contains(left.lowercase().trim())
             }
             else -> left == right
         }
@@ -136,25 +165,56 @@ class MathOperationNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.MATH_OPERATION
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val leftValue = getString(nodeData, "leftValue", "0")
-        val rightValue = getString(nodeData, "rightValue", "0")
+        // Support both field naming conventions
+        val leftValue = getString(nodeData, "leftValue", "")
+            .ifEmpty { getString(nodeData, "operand1", getString(nodeData, "value1", getString(nodeData, "left", "0"))) }
+        val rightValue = getString(nodeData, "rightValue", "")
+            .ifEmpty { getString(nodeData, "operand2", getString(nodeData, "value2", getString(nodeData, "right", "0"))) }
         val operator = getString(nodeData, "operator", "+")
+            .ifEmpty { getString(nodeData, "operation", "+") }
 
         // Resolve values
         val left = toNumber(state.resolveValue(leftValue))
         val right = toNumber(state.resolveValue(rightValue))
 
-        val result = when (operator) {
-            "+" -> left + right
-            "-" -> left - right
-            "*" -> left * right
-            "/" -> if (right != 0.0) left / right else 0.0
-            "%" -> if (right != 0.0) left % right else 0.0
+        val result = when (operator.lowercase()) {
+            "+", "add" -> left + right
+            "-", "subtract" -> left - right
+            "*", "multiply" -> left * right
+            "/", "divide" -> if (right != 0.0) left / right else 0.0
+            "%", "modulo" -> if (right != 0.0) left % right else 0.0
+            "power", "pow" -> Math.pow(left, right)
+            "round" -> {
+                // right = number of decimal places (default 0)
+                val places = right.toInt().coerceAtLeast(0)
+                val multiplier = Math.pow(10.0, places.toDouble())
+                Math.round(left * multiplier).toDouble() / multiplier
+            }
+            "floor" -> Math.floor(left)
+            "ceil" -> Math.ceil(left)
+            "abs" -> Math.abs(left)
+            "sqrt" -> Math.sqrt(left)
+            "min" -> minOf(left, right)
+            "max" -> maxOf(left, right)
+            "random" -> {
+                // Generate random number between left (min) and right (max)
+                val min = minOf(left, right)
+                val max = maxOf(left, right)
+                min + kotlin.random.Random.nextDouble() * (max - min)
+            }
             else -> left + right
         }
 
         // Store result in answer variable
         state.setAnswerVariable(nodeId, result)
+
+        // Also store in named variable if specified (matching web widget behavior)
+        val resultVariable = nodeData["resultVariable"]?.toString()
+            ?: nodeData["variable"]?.toString()
+        if (!resultVariable.isNullOrEmpty()) {
+            state.setVariable(resultVariable, result)
+            state.setAnswerVariableByKey(resultVariable, result)
+        }
 
         return NodeResult.Proceed()
     }
@@ -176,15 +236,26 @@ class RandomFlowNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.RANDOM_FLOW
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val branches = getList<Map<String, Any?>>(nodeData, "branches")
-
+        // Support multiple field names matching both Android and web widget conventions
+        var branches = getList<Map<String, Any?>>(nodeData, "branches")
         if (branches.isEmpty()) {
-            return NodeResult.Proceed()
+            branches = getList(nodeData, "paths")
+        }
+        if (branches.isEmpty()) {
+            branches = getList(nodeData, "options")
         }
 
-        // Calculate cumulative weights
+        if (branches.isEmpty()) {
+            // No paths defined, try to use default port count
+            val portCount = getInt(nodeData, "portCount", 2)
+            val selectedIndex = kotlin.random.Random.nextInt(0, portCount)
+            return NodeResult.Proceed(targetPort = "source-$selectedIndex")
+        }
+
+        // Calculate cumulative weights (support both "weight" and "percentage" fields)
         val weights = branches.map { branch ->
-            when (val w = branch["weight"]) {
+            val w = branch["weight"] ?: branch["percentage"]
+            when (w) {
                 is Number -> w.toDouble()
                 is String -> w.toDoubleOrNull() ?: 1.0
                 else -> 1.0
@@ -261,6 +332,9 @@ class JumpToNodeHandler : BaseNodeHandler() {
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val targetNodeId = getString(nodeData, "targetNodeId", "")
+            .ifEmpty { getString(nodeData, "targetId", "") }
+            .ifEmpty { getString(nodeData, "jumpTo", "") }
+            .ifEmpty { getString(nodeData, "goto", "") }
             .ifEmpty { getString(nodeData, "nodeId", "") }
 
         if (targetNodeId.isEmpty()) {
