@@ -22,8 +22,8 @@ class ExampleApplication : Application() {
         // Initialize Conferbot SDK
         Conferbot.initialize(
             context = this,
-            apiKey = "conf_sk_your_api_key_here", // Replace with your API key
-            botId = "your_bot_id_here", // Replace with your bot ID
+            apiKey = "YOUR_API_KEY", // Replace with your API key
+            botId = "YOUR_BOT_ID", // Replace with your bot ID
             config = ConferBotConfig(
                 enableNotifications = true,
                 enableOfflineMode = true,
