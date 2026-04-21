@@ -526,7 +526,7 @@ class NodeFlowEngine(
         // Send survey responses to server
         if (surveyData != null && surveyData.isNotEmpty()) {
             socketClient.sendPostChatSurveyResponse(
-                chatSessionId = ChatState.chatSessionId.value ?: "",
+                chatSessionId = ChatState.chatSessionId ?: "",
                 surveyResponses = surveyData
             )
         }
