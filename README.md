@@ -1,43 +1,47 @@
 # Conferbot Android SDK
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.conferbot/android-sdk)](https://central.sonatype.com/artifact/com.conferbot/android-sdk)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-5.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9%2B-blue.svg)](https://kotlinlang.org)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
-Native Android SDK for integrating Conferbot into your Kotlin/Java Android applications. Supports both XML Views and Jetpack Compose.
+The official Android SDK for integrating [Conferbot](https://conferbot.com) into Kotlin and Java applications. Supports XML Views, Jetpack Compose, and headless (custom UI) patterns.
 
 ## Features
 
-- **Native Android UI** - XML Views and Jetpack Compose support with Material Design 3
-- **Real-time Chat** - Socket.IO powered instant messaging
-- **Offline Support** - Messages queued when offline, sent when back online
-- **Live Agent Handover** - Seamless transition from bot to human agent
-- **File Uploads** - Support for images and documents
-- **Push Notifications** - FCM integration for agent responses
-- **Typing Indicators** - See when agent is typing
-- **Dark Theme Support** - Automatic day/night theme adaptation
-- **Customizable** - Full control over colors, fonts, and UI elements
-- **Kotlin Coroutines** - Modern async/await pattern with Flow
-- **StateFlow** - Reactive state management
+- XML Views and Jetpack Compose with Material Design 3
+- Real-time messaging over Socket.IO
+- Offline message queueing with automatic retry
+- Live agent handover with typing indicators
+- File and image uploads
+- Push notifications via FCM
+- Automatic light/dark theme adaptation
+- Full UI customization (colors, fonts, layout)
+- Kotlin Coroutines and StateFlow for reactive state
+
+## Requirements
+
+- Android 5.0 (API 21) or higher
+- Kotlin 1.9+
+- Gradle 7.0+
+- A Conferbot account with a valid API key
 
 ## Installation
 
-### Gradle Setup
+Add the Maven Central repository (if not already present) and the SDK dependency.
 
-**1. Add to project-level `build.gradle`:**
+**Project-level `build.gradle`:**
 
 ```gradle
 allprojects {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
     }
 }
 ```
 
-**2. Add to app-level `build.gradle`:**
+**App-level `build.gradle`:**
 
 ```gradle
 dependencies {
@@ -45,13 +49,13 @@ dependencies {
 }
 ```
 
-**3. Sync Gradle files**
+Sync your Gradle files after adding the dependency.
 
 ## Quick Start
 
-### 1. Initialize SDK
+### Initialize the SDK
 
-In your `Application` class:
+Call `Conferbot.initialize()` in your `Application` class:
 
 ```kotlin
 import android.app.Application
@@ -64,8 +68,8 @@ class MyApplication : Application() {
 
         Conferbot.initialize(
             context = this,
-            apiKey = "conf_sk_your_api_key_here",
-            botId = "your_bot_id_here",
+            apiKey = "YOUR_API_KEY",
+            botId = "YOUR_BOT_ID",
             config = ConferBotConfig(
                 enableNotifications = true,
                 enableOfflineMode = true
@@ -75,7 +79,7 @@ class MyApplication : Application() {
 }
 ```
 
-Update `AndroidManifest.xml`:
+Register it in `AndroidManifest.xml`:
 
 ```xml
 <application
@@ -84,38 +88,29 @@ Update `AndroidManifest.xml`:
 </application>
 ```
 
-### 2. Open Chat (XML Views)
+### Pattern 1: Activity Launch
+
+Open a full-screen chat Activity with a single call:
 
 ```kotlin
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
 import com.conferbot.sdk.core.Conferbot
 
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        findViewById<Button>(R.id.chatButton).setOnClickListener {
-            Conferbot.openChat(this)
-        }
-    }
-}
+Conferbot.openChat(this)
 ```
 
-### 3. Open Chat (Jetpack Compose)
+### Pattern 2: Jetpack Compose
+
+Embed the chat screen in any Composable:
 
 ```kotlin
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
 import com.conferbot.sdk.ui.compose.ConferBotChatScreen
 
 @Composable
-fun HomeScreen() {
+fun SupportScreen() {
     var showChat by remember { mutableStateOf(false) }
 
     Button(onClick = { showChat = true }) {
-        Text("Support Chat")
+        Text("Chat with us")
     }
 
     if (showChat) {
@@ -126,66 +121,15 @@ fun HomeScreen() {
 }
 ```
 
-## Architecture
-
-The SDK follows a clean architecture pattern:
-
-```
-conferbot/
-├── models/          # Data models (Agent, Message, ChatSession)
-├── services/        # API and Socket clients
-├── core/            # Conferbot singleton
-├── ui/
-│   ├── views/       # XML Views (Activity, Adapter)
-│   └── compose/     # Jetpack Compose components
-└── utils/           # Constants and utilities
-```
-
-### Key Components
-
-1. **Conferbot** - Main singleton for SDK operations
-2. **ApiClient** - REST API client using Retrofit
-3. **SocketClient** - Real-time Socket.IO client
-4. **ChatActivity** - Full-screen chat Activity (XML)
-5. **ConferBotChatScreen** - Chat screen Composable
-6. **MessageAdapter** - RecyclerView adapter for messages
-
-## Usage Patterns
-
-### Pattern 1: Drop-in Widget (Activity)
-
-Open a full-screen chat Activity:
-
-```kotlin
-Conferbot.openChat(context)
-```
-
-### Pattern 2: Embedded Chat (Compose)
-
-Embed chat in your Composable:
-
-```kotlin
-@Composable
-fun SupportScreen() {
-    ConferBotChatView(
-        modifier = Modifier.fillMaxSize(),
-        onMessageSent = { message ->
-            Log.d("Chat", "Sent: $message")
-        }
-    )
-}
-```
-
 ### Pattern 3: Headless (Custom UI)
 
-Build your own UI using the SDK's state:
+Build your own interface using the SDK's reactive state:
 
 ```kotlin
 val messages by Conferbot.record.collectAsState()
 val isConnected by Conferbot.isConnected.collectAsState()
 val currentAgent by Conferbot.currentAgent.collectAsState()
 
-// Your custom UI
 LazyColumn {
     items(messages) { message ->
         CustomMessageBubble(message)
@@ -193,28 +137,33 @@ LazyColumn {
 }
 ```
 
-## Configuration
-
-### User Identification
+Send messages programmatically:
 
 ```kotlin
-import com.conferbot.sdk.models.ConferBotUser
-
-val user = ConferBotUser(
-    id = "user-123",
-    name = "John Doe",
-    email = "john@example.com",
-    phone = "+1234567890",
-    metadata = mapOf(
-        "plan" to "premium",
-        "signupDate" to "2024-01-15"
-    )
-)
-
-Conferbot.identify(user)
+Conferbot.sendMessage("Hello from my custom UI")
 ```
 
-### Customization
+## Configuration
+
+### ConferBotConfig
+
+Pass a `ConferBotConfig` during initialization to control SDK behavior:
+
+```kotlin
+ConferBotConfig(
+    enableNotifications = true,
+    enableOfflineMode = true
+)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enableNotifications` | `Boolean` | `false` | Enable FCM push notifications |
+| `enableOfflineMode` | `Boolean` | `false` | Queue messages while offline |
+
+### ConferBotCustomization
+
+Control the look and feel of the built-in chat UI:
 
 ```kotlin
 import com.conferbot.sdk.models.ConferBotCustomization
@@ -222,8 +171,8 @@ import android.graphics.Color
 
 Conferbot.initialize(
     context = this,
-    apiKey = "conf_sk_...",
-    botId = "bot_...",
+    apiKey = "YOUR_API_KEY",
+    botId = "YOUR_BOT_ID",
     customization = ConferBotCustomization(
         primaryColor = Color.parseColor("#FF6B6B"),
         headerTitle = "Customer Support",
@@ -234,73 +183,82 @@ Conferbot.initialize(
 )
 ```
 
-### Event Handling
+### User Identification
+
+Attach user metadata to chat sessions for personalization and analytics:
+
+```kotlin
+import com.conferbot.sdk.models.ConferBotUser
+
+Conferbot.identify(
+    ConferBotUser(
+        id = "user-123",
+        name = "Jane Doe",
+        email = "jane@example.com",
+        phone = "+1234567890",
+        metadata = mapOf(
+            "plan" to "premium",
+            "signupDate" to "2024-01-15"
+        )
+    )
+)
+```
+
+## Theming
+
+The SDK adapts to your app's Material Design 3 theme automatically. Override specific properties with `ConferBotCustomization`, or provide a full theme through the `ConferbotTheme` builder for granular control over colors, typography, and shape.
+
+See [docs/COMPONENTS.md](docs/COMPONENTS.md) for the full list of themeable components.
+
+## Push Notifications
+
+Deliver agent responses when the app is in the background using Firebase Cloud Messaging.
+
+1. Add the Firebase SDK to your project.
+2. Pass the FCM token to Conferbot after initialization:
+
+```kotlin
+Conferbot.registerPushToken(fcmToken)
+```
+
+3. Forward incoming Conferbot payloads from your `FirebaseMessagingService`:
+
+```kotlin
+override fun onMessageReceived(message: RemoteMessage) {
+    if (Conferbot.handlePushNotification(message.data)) return
+    // Handle other notifications
+}
+```
+
+## Offline Support
+
+When `enableOfflineMode` is set to `true`, the SDK persists outgoing messages locally and delivers them once connectivity is restored. No additional code is required.
+
+## Knowledge Base
+
+If your bot is connected to a Conferbot Knowledge Base, responses are powered automatically. No SDK-side configuration is needed beyond providing the correct `botId`.
+
+## Analytics
+
+Chat events (session start, messages sent/received, agent handover) are tracked automatically when the SDK is initialized. Access analytics through the Conferbot dashboard.
+
+## Event Handling
+
+Listen for SDK events to integrate with your app's logic:
 
 ```kotlin
 import com.conferbot.sdk.core.ConferBotEventListener
-import com.conferbot.sdk.models.Agent
-import com.conferbot.sdk.models.RecordItem
 
 Conferbot.setEventListener(object : ConferBotEventListener {
-    override fun onMessageReceived(message: RecordItem) {
-        Log.d("Chat", "New message: $message")
-    }
-
-    override fun onAgentJoined(agent: Agent) {
-        Log.d("Chat", "Agent joined: ${agent.name}")
-    }
-
-    override fun onSessionStarted(sessionId: String) {
-        Log.d("Chat", "Session started: $sessionId")
-    }
+    override fun onMessageReceived(message: RecordItem) { }
+    override fun onAgentJoined(agent: Agent) { }
+    override fun onSessionStarted(sessionId: String) { }
 })
 ```
 
 ## State Management
 
-The SDK uses Kotlin Flow for reactive state:
-
-```kotlin
-// Observe connection status
-lifecycleScope.launch {
-    Conferbot.isConnected.collect { isConnected ->
-        updateConnectionUI(isConnected)
-    }
-}
-
-// Observe messages
-lifecycleScope.launch {
-    Conferbot.record.collect { messages ->
-        updateMessageList(messages)
-    }
-}
-
-// Observe unread count
-lifecycleScope.launch {
-    Conferbot.unreadCount.collect { count ->
-        updateBadge(count)
-    }
-}
-```
-
-## API Reference
-
-### Conferbot Object
-
-#### Methods
-
-| Method | Description |
-|--------|-------------|
-| `initialize()` | Initialize SDK with config |
-| `openChat(context)` | Open chat activity |
-| `sendMessage(text)` | Send message programmatically |
-| `identify(user)` | Identify current user |
-| `registerPushToken(token)` | Register FCM token |
-| `clearHistory()` | Clear chat history |
-| `disconnect()` | Disconnect socket |
-| `setEventListener(listener)` | Set event listener |
-
-#### StateFlow Properties
+All SDK state is exposed as Kotlin `StateFlow` properties:
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -308,100 +266,46 @@ lifecycleScope.launch {
 | `isConnected` | `StateFlow<Boolean>` | Socket connection status |
 | `chatSessionId` | `StateFlow<String?>` | Current session ID |
 | `record` | `StateFlow<List<RecordItem>>` | Chat messages |
-| `currentAgent` | `StateFlow<Agent?>` | Current agent |
+| `currentAgent` | `StateFlow<Agent?>` | Current live agent |
 | `unreadCount` | `StateFlow<Int>` | Unread message count |
-| `isAgentTyping` | `StateFlow<Boolean>` | Agent typing status |
+| `isAgentTyping` | `StateFlow<Boolean>` | Agent typing indicator |
 
-## Advanced Usage
+Collect them from a coroutine scope or use `collectAsState()` in Compose.
 
-### Push Notifications
+## ProGuard
 
-See [docs/PUSH_NOTIFICATIONS.md](docs/PUSH_NOTIFICATIONS.md)
-
-### Deep Linking
-
-See [docs/DEEP_LINKING.md](docs/DEEP_LINKING.md)
-
-### Custom Themes
-
-See [docs/THEMING.md](docs/THEMING.md)
-
-### ProGuard Rules
-
-The SDK includes consumer ProGuard rules. If you encounter issues, add:
+The SDK ships with consumer ProGuard rules. If you encounter issues with minified builds, add:
 
 ```proguard
 -keep class com.conferbot.sdk.** { *; }
 -keep class io.socket.** { *; }
 ```
 
-## Examples
+## API Reference
 
-Check the `/example` directory for:
-- XML Views implementation
-- Jetpack Compose implementation
-- Custom UI examples
-- Push notification setup
-- Deep linking examples
+Full API documentation is available in the [docs/](docs/) directory:
 
-## Requirements
+- [API.md](docs/API.md) -- Method and property reference
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) -- SDK internals
+- [COMPONENTS.md](docs/COMPONENTS.md) -- UI components
+- [EXAMPLES.md](docs/EXAMPLES.md) -- Usage examples
+- [CHANGELOG.md](docs/CHANGELOG.md) -- Version history
 
-- Android 5.0 (API 21) or higher
-- Kotlin 1.9 or higher
-- Gradle 7.0 or higher
+## Example App
 
-## Dependencies
+A working sample app is included in the [`example/`](example/) directory, demonstrating XML Views, Jetpack Compose, push notifications, and custom UI patterns.
 
-- Retrofit 2.9.0
-- OkHttp 4.11.0
-- Socket.IO-Client 2.1.0
-- Jetpack Compose BOM 2023.10.01
-- Kotlin Coroutines 1.7.3
+## Contributing
 
-## Migration Guide
-
-### From Web Widget to Android SDK
-
-| Web Widget | Android SDK |
-|------------|-------------|
-| `<script>` tag | Gradle dependency |
-| `window.Conferbot.open()` | `Conferbot.openChat(context)` |
-| JavaScript callbacks | `ConferBotEventListener` |
-| CSS customization | `ConferBotCustomization` |
-| HTML embed | Native Views/Compose |
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"API Key Invalid" Error**
-   - Verify API key in Conferbot dashboard
-
-2. **Chat Not Appearing**
-   - Ensure `initialize()` is called in `Application.onCreate()`
-   - Check Logcat for errors
-
-3. **Socket Connection Failing**
-   - Add `<uses-permission android:name="android.permission.INTERNET" />` to manifest
-   - Check network connectivity
-
-4. **ProGuard Issues**
-   - See consumer ProGuard rules above
-
-## Support
-
-- **Documentation**: [https://docs.conferbot.com/mobile/android](https://docs.conferbot.com/mobile/android)
-- **GitHub Issues**: [https://github.com/conferbot/android-sdk/issues](https://github.com/conferbot/android-sdk/issues)
-- **Email**: mobile-support@conferbot.com
+We welcome bug reports and feature requests via [GitHub Issues](https://github.com/conferbot/android-sdk/issues). If you would like to contribute code, please open an issue first to discuss the proposed change.
 
 ## License
 
-Proprietary - See LICENSE file for details
+Proprietary -- see [LICENSE](LICENSE) for details.
 
-## Changelog
+## Resources
 
-See [CHANGELOG.md](CHANGELOG.md) for version history.
-
----
-
-**Made with ❤️ by Conferbot Team**
+- [Full Documentation](https://docs.conferbot.com/mobile/android)
+- [Conferbot Dashboard](https://app.conferbot.com)
+- [GitHub Issues](https://github.com/conferbot/android-sdk/issues)
+- Email: mobile-support@conferbot.com
