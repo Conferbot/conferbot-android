@@ -441,7 +441,8 @@ class SocketClient(
         var callbackInvoked = false
 
         // Create one-time listener for the result
-        val resultListener = Emitter.Listener { args ->
+        lateinit var resultListener: Emitter.Listener
+        resultListener = Emitter.Listener { args ->
             try {
                 val result = args.firstOrNull() as? JSONObject ?: return@Listener
                 val resultNodeId = result.optString("nodeId")
@@ -497,8 +498,10 @@ class SocketClient(
      */
     private fun jsonToMap(json: JSONObject): Map<String, Any?> {
         val map = mutableMapOf<String, Any?>()
-        json.keys().forEach { key ->
-            val value = json.get(key)
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key: String = keys.next() as String
+            val value: Any? = json.opt(key)
             map[key] = when (value) {
                 is JSONObject -> jsonToMap(value)
                 is org.json.JSONArray -> jsonArrayToList(value)
