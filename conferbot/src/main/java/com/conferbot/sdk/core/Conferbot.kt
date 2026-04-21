@@ -1184,6 +1184,7 @@ object Conferbot {
         // FIX 6: Cancel coroutine scope to prevent leaked coroutines
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         _isConnected.value = false
+        _isInitialized.value = false
     }
 
     /**
