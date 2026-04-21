@@ -11,6 +11,7 @@ import com.conferbot.example.ui.compose.ComposeActivity
 import com.conferbot.sdk.core.Conferbot
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 
 /**
  * Main Activity demonstrating XML Views integration
@@ -111,7 +112,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendTestMessage() {
-        lifecycleScope.launchWhenCreated {
+        lifecycleScope.launch {
             // Ensure session is initialized
             if (Conferbot.chatSessionId.value == null) {
                 Conferbot.initializeSession()
