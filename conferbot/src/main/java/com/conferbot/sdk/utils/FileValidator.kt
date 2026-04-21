@@ -47,8 +47,8 @@ object FileValidator {
      *
      * @param context Android context for content resolver
      * @param uri The file Uri to validate
-     * @param allowedTypes List of allowed MIME types (e.g., ["image/*", "application/pdf"])
-     *                     Supports wildcards like "image/*" and "*/*"
+     * @param allowedTypes List of allowed MIME types (e.g., ["image/star", "application/pdf"])
+     *                     Supports wildcards like "image/star" and "star/star"
      * @param maxSizeBytes Maximum allowed file size in bytes
      * @return ValidationResult indicating if file is valid or the error
      */
@@ -266,11 +266,11 @@ object FileValidator {
             val normalizedAllowed = allowedType.lowercase().trim()
             when {
                 // Accept all types
-                normalizedAllowed == "*/*" -> true
+                normalizedAllowed == "*" + "/" + "*" -> true
 
-                // Wildcard match (e.g., "image/*")
-                normalizedAllowed.endsWith("/*") -> {
-                    val prefix = normalizedAllowed.removeSuffix("/*")
+                // Wildcard match (e.g., "image/star")
+                normalizedAllowed.endsWith("/" + "*") -> {
+                    val prefix = normalizedAllowed.removeSuffix("/" + "*")
                     normalizedMimeType.startsWith("$prefix/")
                 }
 
@@ -286,9 +286,9 @@ object FileValidator {
     private fun formatAllowedTypes(types: List<String>): String {
         return types.joinToString(", ") { type ->
             when {
-                type == "*/*" -> "All files"
-                type.endsWith("/*") -> {
-                    val category = type.removeSuffix("/*")
+                type == "*" + "/" + "*" -> "All files"
+                type.endsWith("/" + "*") -> {
+                    val category = type.removeSuffix("/" + "*")
                     "${category.replaceFirstChar { it.uppercase() }} files"
                 }
                 else -> type.substringAfterLast('/')
@@ -300,7 +300,7 @@ object FileValidator {
      * Get common MIME type patterns
      */
     object MimeTypes {
-        val IMAGES = listOf("image/*")
+        val IMAGES = listOf("image/" + "*")
         val DOCUMENTS = listOf(
             "application/pdf",
             "application/msword",
@@ -312,9 +312,9 @@ object FileValidator {
             "text/plain",
             "text/csv"
         )
-        val VIDEOS = listOf("video/*")
-        val AUDIO = listOf("audio/*")
-        val ALL = listOf("*/*")
+        val VIDEOS = listOf("video/" + "*")
+        val AUDIO = listOf("audio/" + "*")
+        val ALL = listOf("*" + "/" + "*")
 
         /**
          * Get MIME types for common file extensions

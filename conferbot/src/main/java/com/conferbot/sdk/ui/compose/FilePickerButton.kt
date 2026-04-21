@@ -35,7 +35,7 @@ data class SelectedFile(
 /**
  * A composable button that launches the system file picker
  *
- * @param allowedTypes List of allowed MIME types (e.g., ["image/*", "application/pdf"])
+ * @param allowedTypes List of allowed MIME types (e.g., listOf("image/star", "application/pdf"))
  * @param maxSizeBytes Maximum file size in bytes
  * @param onFileSelected Callback when a valid file is selected
  * @param onError Callback when an error occurs (invalid file)
@@ -116,7 +116,7 @@ fun FilePickerButton(
     }
 
     // Convert allowed types to MIME type array for the picker
-    val mimeTypes = allowedTypes?.toTypedArray() ?: arrayOf("*/*")
+    val mimeTypes = allowedTypes?.toTypedArray() ?: arrayOf("*" + "/" + "*")
 
     OutlinedButton(
         onClick = {
@@ -198,7 +198,7 @@ fun FilePickerArea(
         }
     }
 
-    val mimeTypes = allowedTypes?.toTypedArray() ?: arrayOf("*/*")
+    val mimeTypes = allowedTypes?.toTypedArray() ?: arrayOf("*" + "/" + "*")
 
     Card(
         onClick = { if (enabled) filePicker.launch(mimeTypes) },
@@ -243,7 +243,7 @@ fun FilePickerArea(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (!allowedTypes.isNullOrEmpty() && allowedTypes.first() != "*/*") {
+                if (!allowedTypes.isNullOrEmpty() && allowedTypes.first() != "*" + "/" + "*") {
                     Text(
                         text = formatAllowedTypesForDisplay(allowedTypes),
                         style = MaterialTheme.typography.bodySmall,
@@ -311,8 +311,8 @@ fun SelectedFileChip(
 private fun formatAllowedTypesForDisplay(types: List<String>): String {
     val formatted = types.take(3).mapNotNull { type ->
         when {
-            type == "*/*" -> null
-            type.endsWith("/*") -> type.removeSuffix("/*").replaceFirstChar { it.uppercase() }
+            type == "*" + "/" + "*" -> null
+            type.endsWith("/" + "*") -> type.removeSuffix("/" + "*").replaceFirstChar { it.uppercase() }
             else -> type.substringAfterLast('/').uppercase()
         }
     }
