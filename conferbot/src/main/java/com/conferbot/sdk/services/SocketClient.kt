@@ -462,7 +462,7 @@ class SocketClient(
                     )
 
                     // Remove listener to prevent memory leaks
-                    socket?.off(SocketEvents.INTEGRATION_RESULT)
+                    socket?.off(SocketEvents.INTEGRATION_RESULT, resultListener)
 
                     callback(integrationResult)
                 }
