@@ -398,7 +398,7 @@ fun EmptyArticlesState(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = Icons.Outlined.ArticleOutlined,
+                imageVector = Icons.Outlined.Description,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(80.dp)

@@ -642,7 +642,7 @@ private fun RelatedArticlesSection(
             )
 
             if (article != articles.last()) {
-                HorizontalDivider(
+                Divider(
                     modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )

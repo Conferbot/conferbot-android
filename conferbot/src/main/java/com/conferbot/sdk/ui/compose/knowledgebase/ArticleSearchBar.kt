@@ -182,7 +182,7 @@ fun ArticleSearchBar(
                         )
 
                         if (index < displayResults.lastIndex) {
-                            HorizontalDivider(
+                            Divider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
@@ -191,7 +191,7 @@ fun ArticleSearchBar(
 
                     // View all results
                     if (searchResults.size > maxResults) {
-                        HorizontalDivider(
+                        Divider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
