@@ -69,39 +69,38 @@ class FileUploadManager(
         useSignedUrl: Boolean = true,
         onProgress: (Float) -> Unit = {}
     ): UploadResult = withContext(Dispatchers.IO) {
+        var finalResult: UploadResult? = null
         uploadService.uploadFile(
             uri = uri,
             chatSessionId = chatSessionId,
             nodeId = nodeId,
             useSignedUrl = useSignedUrl
-        ).fold(
-            onFirst = { state ->
-                when (state) {
-                    is UploadState.Uploading -> onProgress(state.progress)
-                    is UploadState.Success -> return@withContext state.result
-                    is UploadState.Error -> return@withContext UploadResult(
-                        success = false,
-                        url = null,
-                        fileName = "",
-                        fileSize = 0,
-                        mimeType = "",
-                        error = state.message
-                    )
-                    is UploadState.Cancelled -> return@withContext UploadResult(
-                        success = false,
-                        url = null,
-                        fileName = "",
-                        fileSize = 0,
-                        mimeType = "",
-                        error = "Upload cancelled"
-                    )
-                    else -> {}
-                }
+        ).collect { state ->
+            when (state) {
+                is UploadState.Uploading -> onProgress(state.progress)
+                is UploadState.Success -> finalResult = state.result
+                is UploadState.Error -> finalResult = UploadResult(
+                    success = false,
+                    url = null,
+                    fileName = "",
+                    fileSize = 0,
+                    mimeType = "",
+                    error = state.message
+                )
+                is UploadState.Cancelled -> finalResult = UploadResult(
+                    success = false,
+                    url = null,
+                    fileName = "",
+                    fileSize = 0,
+                    mimeType = "",
+                    error = "Upload cancelled"
+                )
+                else -> {}
             }
-        )
+        }
 
-        // Should not reach here, but provide fallback
-        UploadResult(
+        // Return final result or fallback
+        finalResult ?: UploadResult(
             success = false,
             url = null,
             fileName = "",
