@@ -63,7 +63,7 @@ fun FileUploadProgress(
                     modifier = Modifier.size(48.dp)
                 ) {
                     CircularProgressIndicator(
-                        progress = { animatedProgress },
+                        progress = animatedProgress,
                         modifier = Modifier.size(48.dp),
                         color = primaryColor,
                         trackColor = primaryColor.copy(alpha = 0.2f),
@@ -112,7 +112,7 @@ fun FileUploadProgress(
 
             // Linear progress bar
             LinearProgressIndicator(
-                progress = { animatedProgress },
+                progress = animatedProgress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
@@ -373,7 +373,7 @@ fun InlineUploadProgress(
         verticalAlignment = Alignment.CenterVertically
     ) {
         CircularProgressIndicator(
-            progress = { progress },
+            progress = progress,
             modifier = Modifier.size(16.dp),
             strokeWidth = 2.dp
         )

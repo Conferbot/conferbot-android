@@ -158,6 +158,7 @@ fun FilePickerButton(
  * @param enabled Whether the picker is enabled
  * @param modifier Modifier for the composable
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilePickerArea(
     allowedTypes: List<String>?,

@@ -4,6 +4,9 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -252,7 +255,7 @@ fun AudioNode(
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 LinearProgressIndicator(
-                    progress = { progress },
+                    progress = progress,
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -707,7 +710,7 @@ private fun FileUploadProgressCard(
                     modifier = Modifier.size(48.dp)
                 ) {
                     CircularProgressIndicator(
-                        progress = { progress },
+                        progress = progress,
                         modifier = Modifier.size(48.dp),
                         color = primaryColor,
                         trackColor = primaryColor.copy(alpha = 0.2f),
@@ -752,7 +755,7 @@ private fun FileUploadProgressCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             LinearProgressIndicator(
-                progress = { progress },
+                progress = progress,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
@@ -1217,6 +1220,7 @@ private fun NumberRating(
 
 // ==================== OTHER NODES ====================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DropdownNode(
     state: NodeUIState.Dropdown,

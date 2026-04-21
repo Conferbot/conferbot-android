@@ -240,7 +240,7 @@ private fun SurveyProgressIndicator(
         }
         Spacer(modifier = Modifier.height(8.dp))
         LinearProgressIndicator(
-            progress = { currentQuestion.toFloat() / totalQuestions },
+            progress = currentQuestion.toFloat() / totalQuestions,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp)
