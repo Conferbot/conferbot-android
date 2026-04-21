@@ -567,53 +567,70 @@ class GptNodeHandler(
 
 /**
  * Handler for email-node
- * Sends email (fire-and-forget via server)
+ * Sends email via server-side socket event (fire-and-forget)
  */
 class EmailNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.EMAIL
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        // Email is handled server-side via socket event
-        // Just record and proceed
-        recordResponse(
+        // Execute email send via server-side integration
+        return NodeResult.ExecuteIntegration(
+            nodeType = "email-node",
             nodeId = nodeId,
-            shape = "email-triggered",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "to" to nodeData["to"],
-                "subject" to nodeData["subject"]
-            )
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "email-triggered",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "to" to nodeData["to"],
+                        "subject" to nodeData["subject"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
         )
-
-        return NodeResult.Proceed()
     }
 }
 
 /**
  * Handler for zapier-node
- * Triggers Zapier webhook (fire-and-forget)
+ * Triggers Zapier webhook via server-side socket event (fire-and-forget)
  */
 class ZapierNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ZAPIER
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        // Zapier trigger is handled server-side
-        recordResponse(
+        // Execute Zapier trigger via server-side integration
+        return NodeResult.ExecuteIntegration(
+            nodeType = "zapier-node",
             nodeId = nodeId,
-            shape = "zapier-triggered",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf("answerVariables" to state.getAnswerVariablesMap())
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "zapier-triggered",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "answerVariables" to state.getAnswerVariablesMap(),
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
         )
-
-        return NodeResult.Proceed()
     }
 }
 
 /**
  * Handler for google-sheets-node
- * Reads/writes to Google Sheets
+ * Reads/writes to Google Sheets via server-side integration
  */
 class GoogleSheetsNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GOOGLE_SHEETS
@@ -621,49 +638,69 @@ class GoogleSheetsNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "write")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-sheets-node",
             nodeId = nodeId,
-            shape = "google-sheets-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "operation" to operation,
-                "spreadsheetId" to nodeData["spreadsheetId"],
-                "sheetName" to nodeData["sheetName"]
-            )
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                // Store answer variable if server returned data (e.g., read operations)
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        // For read operations, column mappings should be handled via socket response
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-sheets-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "spreadsheetId" to nodeData["spreadsheetId"],
+                        "sheetName" to nodeData["sheetName"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for gmail-node
- * Sends email via Gmail
+ * Sends email via Gmail through server-side integration
  */
 class GmailNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GMAIL
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "gmail-node",
             nodeId = nodeId,
-            shape = "gmail-triggered",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "to" to nodeData["to"],
-                "subject" to nodeData["subject"]
-            )
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "gmail-triggered",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "to" to nodeData["to"],
+                        "subject" to nodeData["subject"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
         )
-
-        return NodeResult.Proceed()
     }
 }
 
 /**
  * Handler for google-calendar-node
- * Books calendar appointments
+ * Books calendar appointments via server-side integration
  */
 class GoogleCalendarNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GOOGLE_CALENDAR
@@ -690,7 +727,26 @@ class GoogleCalendarNodeHandler : BaseNodeHandler() {
             )
         }
 
-        return NodeResult.Proceed()
+        // For non-book operations, execute via server
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-calendar-node",
+            nodeId = nodeId,
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-calendar-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 
     override suspend fun handleResponse(
@@ -698,6 +754,7 @@ class GoogleCalendarNodeHandler : BaseNodeHandler() {
         nodeData: Map<String, Any?>,
         nodeId: String
     ): NodeResult {
+        @Suppress("UNCHECKED_CAST")
         val responseMap = when (response) {
             is Map<*, *> -> response as Map<String, Any?>
             else -> mapOf("date" to response.toString())
@@ -710,26 +767,41 @@ class GoogleCalendarNodeHandler : BaseNodeHandler() {
         state.setAnswerVariable(nodeId, "$date $time")
         state.addToTranscript("user", "Booked: $date at $time")
 
-        recordResponse(
-            nodeId = nodeId,
-            shape = "google-calendar-booking",
-            text = "$date $time",
-            type = nodeType,
-            additionalData = mapOf(
-                "date" to date,
-                "time" to time,
-                "attendeeEmail" to email,
-                "timezone" to nodeData["timeZone"]
-            )
-        )
+        // Execute the booking via server-side integration
+        val bookingData = nodeData.toMutableMap().apply {
+            put("selectedDate", date)
+            put("selectedTime", time)
+            email?.let { put("attendeeEmail", it) }
+        }
 
-        return NodeResult.Proceed()
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-calendar-node",
+            nodeId = nodeId,
+            nodeData = bookingData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-calendar-booking",
+                    text = "$date $time",
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "date" to date,
+                        "time" to time,
+                        "attendeeEmail" to email,
+                        "timezone" to nodeData["timeZone"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for google-meet-node
- * Creates Google Meet meetings
+ * Creates Google Meet meetings via server-side integration
  */
 class GoogleMeetNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GOOGLE_MEET
@@ -754,7 +826,26 @@ class GoogleMeetNodeHandler : BaseNodeHandler() {
             )
         }
 
-        return NodeResult.Proceed()
+        // For non-book operations, execute via server
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-meet-node",
+            nodeId = nodeId,
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-meet-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 
     override suspend fun handleResponse(
@@ -762,26 +853,48 @@ class GoogleMeetNodeHandler : BaseNodeHandler() {
         nodeData: Map<String, Any?>,
         nodeId: String
     ): NodeResult {
+        @Suppress("UNCHECKED_CAST")
         val responseMap = when (response) {
             is Map<*, *> -> response as Map<String, Any?>
             else -> mapOf("date" to response.toString())
         }
 
-        recordResponse(
-            nodeId = nodeId,
-            shape = "google-meet-booking",
-            text = null,
-            type = nodeType,
-            additionalData = responseMap.toMutableMap()
-        )
+        val date = responseMap["date"]?.toString() ?: ""
+        val time = responseMap["time"]?.toString() ?: ""
 
-        return NodeResult.Proceed()
+        // Execute the Meet booking via server-side integration
+        val bookingData = nodeData.toMutableMap().apply {
+            put("selectedDate", date)
+            put("selectedTime", time)
+        }
+
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-meet-node",
+            nodeId = nodeId,
+            nodeData = bookingData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-meet-booking",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "date" to date,
+                        "time" to time,
+                        "meetLink" to result.data?.get("meetLink"),
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for google-drive-node
- * Uploads/downloads from Google Drive
+ * Uploads/downloads from Google Drive via server-side integration
  */
 class GoogleDriveNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GOOGLE_DRIVE
@@ -789,21 +902,35 @@ class GoogleDriveNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "upload")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-drive-node",
             nodeId = nodeId,
-            shape = "google-drive-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf("operation" to operation)
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-drive-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for google-docs-node
- * Creates/updates Google Docs
+ * Creates/updates Google Docs via server-side integration
  */
 class GoogleDocsNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.GOOGLE_DOCS
@@ -811,64 +938,96 @@ class GoogleDocsNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "create")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "google-docs-node",
             nodeId = nodeId,
-            shape = "google-docs-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "operation" to operation,
-                "title" to nodeData["title"]
-            )
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "google-docs-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "title" to nodeData["title"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for slack-node
- * Sends messages to Slack
+ * Sends messages to Slack via server-side integration
  */
 class SlackNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.SLACK
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "slack-node",
             nodeId = nodeId,
-            shape = "slack-message",
-            text = nodeData["message"]?.toString(),
-            type = nodeType,
-            additionalData = mapOf("channel" to nodeData["channel"])
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "slack-message",
+                    text = nodeData["message"]?.toString(),
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "channel" to nodeData["channel"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
         )
-
-        return NodeResult.Proceed()
     }
 }
 
 /**
  * Handler for discord-node
- * Sends messages to Discord
+ * Sends messages to Discord via server-side integration
  */
 class DiscordNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.DISCORD
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "discord-node",
             nodeId = nodeId,
-            shape = "discord-message",
-            text = nodeData["message"]?.toString(),
-            type = nodeType,
-            additionalData = mapOf("channel" to nodeData["channel"])
+            nodeData = nodeData,
+            onResult = { result ->
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "discord-message",
+                    text = nodeData["message"]?.toString(),
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "channel" to nodeData["channel"],
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
         )
-
-        return NodeResult.Proceed()
     }
 }
 
 /**
  * Handler for airtable-node
- * CRUD operations on Airtable
+ * CRUD operations on Airtable via server-side integration
  */
 class AirtableNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.AIRTABLE
@@ -876,25 +1035,37 @@ class AirtableNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "create")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "airtable-node",
             nodeId = nodeId,
-            shape = "airtable-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "baseId" to nodeData["baseId"],
-                "tableName" to nodeData["tableName"],
-                "operation" to operation
-            )
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "airtable-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "baseId" to nodeData["baseId"],
+                        "tableName" to nodeData["tableName"],
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for hubspot-node
- * Creates/updates HubSpot contacts
+ * Creates/updates HubSpot contacts via server-side integration
  */
 class HubspotNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.HUBSPOT
@@ -902,21 +1073,35 @@ class HubspotNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "createContact")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "hubspot-node",
             nodeId = nodeId,
-            shape = "hubspot-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf("operation" to operation)
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "hubspot-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for notion-node
- * Creates/updates Notion pages
+ * Creates/updates Notion pages via server-side integration
  */
 class NotionNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.NOTION
@@ -924,24 +1109,36 @@ class NotionNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val operation = getString(nodeData, "operation", "createPage")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "notion-node",
             nodeId = nodeId,
-            shape = "notion-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "databaseId" to nodeData["databaseId"],
-                "operation" to operation
-            )
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "notion-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "databaseId" to nodeData["databaseId"],
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
 /**
  * Handler for zohocrm-node
- * Creates/updates Zoho CRM records
+ * Creates/updates Zoho CRM records via server-side integration
  */
 class ZohoCrmNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ZOHO_CRM
@@ -950,18 +1147,30 @@ class ZohoCrmNodeHandler : BaseNodeHandler() {
         val operation = getString(nodeData, "operation", "create")
         val module = getString(nodeData, "module", "Contacts")
 
-        recordResponse(
+        return NodeResult.ExecuteIntegration(
+            nodeType = "zohocrm-node",
             nodeId = nodeId,
-            shape = "zohocrm-$operation",
-            text = null,
-            type = nodeType,
-            additionalData = mapOf(
-                "module" to module,
-                "operation" to operation
-            )
-        )
+            nodeData = nodeData,
+            onResult = { result ->
+                if (result.success && result.answerVariable != null && result.answerValue != null) {
+                    state.setAnswerVariableByKey(result.answerVariable, result.answerValue)
+                }
 
-        return NodeResult.Proceed()
+                recordResponse(
+                    nodeId = nodeId,
+                    shape = "zohocrm-$operation",
+                    text = null,
+                    type = nodeType,
+                    additionalData = mapOf(
+                        "module" to module,
+                        "operation" to operation,
+                        "success" to result.success,
+                        "error" to result.error
+                    )
+                )
+                NodeResult.Proceed()
+            }
+        )
     }
 }
 
