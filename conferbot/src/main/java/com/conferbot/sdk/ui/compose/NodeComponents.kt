@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.conferbot.sdk.core.nodes.NodeUIState
 
@@ -101,23 +102,56 @@ fun VideoNode(
     state: NodeUIState.Video,
     modifier: Modifier = Modifier
 ) {
-    // Video player placeholder
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
+    val context = LocalContext.current
+
+    Column(modifier = modifier) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Play video",
-                tint = Color.White,
-                modifier = Modifier.size(48.dp)
+            AndroidView(
+                factory = { ctx ->
+                    android.widget.VideoView(ctx).apply {
+                        setVideoURI(android.net.Uri.parse(state.url))
+                        val mediaController = android.widget.MediaController(ctx)
+                        mediaController.setAnchorView(this)
+                        setMediaController(mediaController)
+                        setOnPreparedListener { mp ->
+                            mp.isLooping = false
+                            // Scale video to fit width
+                            val videoWidth = mp.videoWidth
+                            val videoHeight = mp.videoHeight
+                            if (videoWidth > 0 && videoHeight > 0) {
+                                val viewWidth = width
+                                val scaledHeight = (viewWidth.toFloat() / videoWidth * videoHeight).toInt()
+                                layoutParams = layoutParams?.apply {
+                                    height = scaledHeight
+                                } ?: android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    scaledHeight
+                                )
+                            }
+                        }
+                        setOnErrorListener { _, _, _ ->
+                            // Open in external player on error
+                            false
+                        }
+                        start()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 200.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+        }
+
+        if (!state.caption.isNullOrEmpty()) {
+            Text(
+                text = state.caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }
@@ -128,28 +162,114 @@ fun AudioNode(
     state: NodeUIState.Audio,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var duration by remember { mutableStateOf("0:00") }
+    var currentTime by remember { mutableStateOf("0:00") }
+    var isPrepared by remember { mutableStateOf(false) }
+
+    val mediaPlayer = remember {
+        android.media.MediaPlayer().apply {
+            setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            try {
+                setDataSource(state.url)
+                prepareAsync()
+            } catch (e: Exception) {
+                // Handle invalid URL gracefully
+            }
+        }
+    }
+
+    DisposableEffect(state.url) {
+        mediaPlayer.setOnPreparedListener { mp ->
+            isPrepared = true
+            val totalSec = mp.duration / 1000
+            duration = String.format("%d:%02d", totalSec / 60, totalSec % 60)
+        }
+        mediaPlayer.setOnCompletionListener {
+            isPlaying = false
+            progress = 0f
+            currentTime = "0:00"
+        }
+
+        onDispose {
+            mediaPlayer.release()
+        }
+    }
+
+    // Update progress while playing
+    LaunchedEffect(isPlaying) {
+        while (isPlaying && isPrepared) {
+            try {
+                val pos = mediaPlayer.currentPosition
+                val dur = mediaPlayer.duration
+                if (dur > 0) {
+                    progress = pos.toFloat() / dur.toFloat()
+                    val sec = pos / 1000
+                    currentTime = String.format("%d:%02d", sec / 60, sec % 60)
+                }
+            } catch (_: Exception) { }
+            kotlinx.coroutines.delay(250)
+        }
+    }
+
+    Column(modifier = modifier) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Play audio",
-                modifier = Modifier.size(32.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = {
+                        if (isPrepared) {
+                            if (isPlaying) {
+                                mediaPlayer.pause()
+                                isPlaying = false
+                            } else {
+                                mediaPlayer.start()
+                                isPlaying = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause audio" else "Play audio",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = if (isPlaying || progress > 0f) "$currentTime / $duration" else duration,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        if (!state.caption.isNullOrEmpty()) {
+            Text(
+                text = state.caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            LinearProgressIndicator(
-                progress = { 0f },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(text = "0:00", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1211,6 +1331,7 @@ fun RangeNode(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarNode(
     state: NodeUIState.Calendar,
@@ -1218,9 +1339,14 @@ fun CalendarNode(
     primaryColor: Color,
     modifier: Modifier = Modifier
 ) {
-    // Simplified calendar - in production would use a proper date picker
     var selectedDate by remember { mutableStateOf("") }
     var selectedTime by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
+
+    val datePickerState = rememberDatePickerState()
+    val timePickerState = rememberTimePickerState()
 
     Column(modifier = modifier) {
         if (!state.questionText.isNullOrEmpty()) {
@@ -1233,20 +1359,34 @@ fun CalendarNode(
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                // Date selection
                 Text(
                     text = "Select Date",
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                // Date input placeholder
-                OutlinedTextField(
-                    value = selectedDate,
-                    onValueChange = { selectedDate = it },
+                OutlinedButton(
+                    onClick = { if (!submitted) showDatePicker = true },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("YYYY-MM-DD") },
-                    shape = RoundedCornerShape(8.dp)
-                )
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !submitted
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = selectedDate.ifEmpty { "Choose a date" },
+                        color = if (selectedDate.isEmpty())
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                }
 
+                // Time selection
                 if (state.showTimeSelection) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -1254,13 +1394,26 @@ fun CalendarNode(
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = selectedTime,
-                        onValueChange = { selectedTime = it },
+                    OutlinedButton(
+                        onClick = { if (!submitted) showTimePicker = true },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("HH:MM") },
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = !submitted
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = selectedTime.ifEmpty { "Choose a time" },
+                            color = if (selectedTime.isEmpty())
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }
@@ -1269,15 +1422,85 @@ fun CalendarNode(
 
         Button(
             onClick = {
+                submitted = true
                 onResponse(mapOf("date" to selectedDate, "time" to selectedTime))
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
             shape = RoundedCornerShape(12.dp),
-            enabled = selectedDate.isNotEmpty()
+            enabled = selectedDate.isNotEmpty() && !submitted
         ) {
             Text("Confirm")
         }
+    }
+
+    // Date picker dialog
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val calendar = java.util.Calendar.getInstance().apply {
+                                timeInMillis = millis
+                            }
+                            selectedDate = String.format(
+                                "%04d-%02d-%02d",
+                                calendar.get(java.util.Calendar.YEAR),
+                                calendar.get(java.util.Calendar.MONTH) + 1,
+                                calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                            )
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    // Time picker dialog
+    if (showTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            title = { Text("Select Time") },
+            text = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(state = timePickerState)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedTime = String.format(
+                            "%02d:%02d",
+                            timePickerState.hour,
+                            timePickerState.minute
+                        )
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -1494,15 +1717,50 @@ fun HtmlNode(
     state: NodeUIState.Html,
     modifier: Modifier = Modifier
 ) {
-    // HTML rendering placeholder
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text(
-            text = "HTML Content",
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodyMedium
+        AndroidView(
+            factory = { ctx ->
+                android.webkit.WebView(ctx).apply {
+                    settings.javaScriptEnabled = false
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.setSupportZoom(false)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    isVerticalScrollBarEnabled = false
+
+                    // Wrap HTML content with basic styling
+                    val styledHtml = """
+                        <html>
+                        <head>
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <style>
+                                body {
+                                    margin: 0;
+                                    padding: 12px;
+                                    font-family: sans-serif;
+                                    font-size: 14px;
+                                    line-height: 1.5;
+                                    color: #1a1a1a;
+                                    word-wrap: break-word;
+                                }
+                                img { max-width: 100%; height: auto; }
+                                a { color: #1976D2; }
+                            </style>
+                        </head>
+                        <body>${state.htmlContent}</body>
+                        </html>
+                    """.trimIndent()
+
+                    loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp, max = 400.dp)
+                .clip(RoundedCornerShape(12.dp))
         )
     }
 }
