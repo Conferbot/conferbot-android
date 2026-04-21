@@ -462,8 +462,10 @@ object Conferbot {
     @Suppress("UNCHECKED_CAST")
     private fun jsonObjectToMap(json: JSONObject): Map<String, Any?> {
         val map = mutableMapOf<String, Any?>()
-        json.keys().forEach { key ->
-            val value = json.get(key)
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key: String = keys.next() as String
+            val value: Any? = json.opt(key)
             map[key] = when (value) {
                 is JSONObject -> jsonObjectToMap(value)
                 is org.json.JSONArray -> jsonArrayToList(value)
@@ -1413,7 +1415,7 @@ object Conferbot {
      *
      * @return KnowledgeBaseService instance or null if not available
      */
-    fun getKnowledgeBaseService(): KnowledgeBaseService? {
+    fun initKnowledgeBaseService(): KnowledgeBaseService? {
         val sessionId = _chatSessionId.value ?: return null
         val visitorId = user?.id ?: ""
         val socket = socketClient ?: return null
@@ -1434,7 +1436,7 @@ object Conferbot {
      * Triggers socket event to fetch categories and articles
      */
     fun fetchKnowledgeBase() {
-        getKnowledgeBaseService()?.fetchKnowledgeBase()
+        initKnowledgeBaseService()?.fetchKnowledgeBase()
     }
 
     /**
@@ -1443,7 +1445,7 @@ object Conferbot {
      * @param query Search query string
      * @return Flow of matching articles
      */
-    fun searchKnowledgeBase(query: String) = getKnowledgeBaseService()?.searchArticles(query)
+    fun searchKnowledgeBase(query: String) = initKnowledgeBaseService()?.searchArticles(query)
 
     /**
      * Track article view in Knowledge Base
@@ -1452,7 +1454,7 @@ object Conferbot {
      * @param article The article being viewed
      */
     fun trackKnowledgeBaseArticleView(article: KnowledgeBaseArticle) {
-        getKnowledgeBaseService()?.trackArticleView(article)
+        initKnowledgeBaseService()?.trackArticleView(article)
     }
 
     /**
@@ -1461,7 +1463,7 @@ object Conferbot {
      * @param articleId The article ID
      */
     fun startKnowledgeBaseArticleEngagement(articleId: String) {
-        getKnowledgeBaseService()?.startArticleEngagement(articleId)
+        initKnowledgeBaseService()?.startArticleEngagement(articleId)
     }
 
     /**
@@ -1470,7 +1472,7 @@ object Conferbot {
      * @param scrollDepth Scroll percentage (0-100)
      */
     fun updateKnowledgeBaseScrollDepth(scrollDepth: Int) {
-        getKnowledgeBaseService()?.updateScrollDepth(scrollDepth)
+        initKnowledgeBaseService()?.updateScrollDepth(scrollDepth)
     }
 
     /**
@@ -1481,7 +1483,7 @@ object Conferbot {
      * @return Flow<Boolean> indicating success
      */
     fun rateKnowledgeBaseArticle(articleId: String, helpful: Boolean) =
-        getKnowledgeBaseService()?.rateArticle(articleId, helpful)
+        initKnowledgeBaseService()?.rateArticle(articleId, helpful)
 
     /**
      * Check if a Knowledge Base article has been rated in this session
@@ -1490,7 +1492,7 @@ object Conferbot {
      * @return true if already rated
      */
     fun hasRatedKnowledgeBaseArticle(articleId: String): Boolean {
-        return getKnowledgeBaseService()?.hasRatedArticle(articleId) ?: false
+        return initKnowledgeBaseService()?.hasRatedArticle(articleId) ?: false
     }
 
     /**
