@@ -30,8 +30,10 @@ object ConferBotEndpoints {
         require(url.startsWith("https://")) {
             "API base URL must use HTTPS: $url"
         }
-        Log.d(TAG, "API base URL overridden to: $url")
-        _apiBaseUrl = url
+        // Ensure trailing slash for Retrofit relative path resolution
+        val normalizedUrl = if (url.endsWith("/")) url else "$url/"
+        Log.d(TAG, "API base URL overridden to: $normalizedUrl")
+        _apiBaseUrl = normalizedUrl
     }
 
     /**
@@ -58,7 +60,7 @@ object ConferBotEndpoints {
  */
 object Constants {
     // API Configuration
-    const val DEFAULT_API_BASE_URL = "https://embed.conferbot.com/api/v1/mobile"
+    const val DEFAULT_API_BASE_URL = "https://embed.conferbot.com/api/v1/mobile/"
     const val DEFAULT_SOCKET_URL = "https://embed.conferbot.com"
     const val API_TIMEOUT = 30000L // 30 seconds
     const val SOCKET_TIMEOUT = 20000L // 20 seconds
