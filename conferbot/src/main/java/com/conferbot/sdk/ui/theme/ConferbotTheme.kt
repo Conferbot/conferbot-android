@@ -55,7 +55,9 @@ data class ConferbotTheme(
      * Optional name for the theme
      */
     val name: String = "Custom"
-)
+) {
+    companion object
+}
 
 /**
  * Color configuration for the Conferbot theme

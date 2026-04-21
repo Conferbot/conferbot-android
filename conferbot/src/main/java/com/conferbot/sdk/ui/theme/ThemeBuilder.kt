@@ -635,10 +635,8 @@ object ConferbotThemeFactory {
 fun ConferbotTheme.Companion.Builder() = ConferbotThemeBuilder.create()
 
 /**
- * Companion object for ConferbotTheme to enable Builder pattern
+ * Companion object helper for ConferbotTheme to enable Builder pattern
  */
-val ConferbotTheme.Companion: ConferbotThemeCompanion get() = ConferbotThemeCompanion
-
 object ConferbotThemeCompanion {
     fun Builder() = ConferbotThemeBuilder.create()
 }

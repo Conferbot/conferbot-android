@@ -167,14 +167,14 @@ class ConferbotThemeState(
     /**
      * Update the light theme
      */
-    fun setLightTheme(theme: ConferbotTheme) {
+    fun updateLightTheme(theme: ConferbotTheme) {
         lightTheme = theme.copy(isDarkTheme = false)
     }
 
     /**
      * Update the dark theme
      */
-    fun setDarkTheme(theme: ConferbotTheme) {
+    fun updateDarkTheme(theme: ConferbotTheme) {
         darkTheme = theme.copy(isDarkTheme = true)
     }
 
