@@ -17,6 +17,9 @@ object NodeTypes {
     const val USER_INPUT = "user-input-node"
     const val USER_RANGE = "user-range-node"
 
+    // Starter node
+    const val WELCOME = "welcome-node"
+
     // Send response nodes (v2)
     const val MESSAGE = "message-node"
     const val IMAGE = "image-node"

@@ -3,6 +3,50 @@ package com.conferbot.sdk.core.nodes.handlers
 import com.conferbot.sdk.core.nodes.*
 
 /**
+ * Handler for welcome-node
+ * Displays the bot's welcome message with optional image/gif
+ */
+class WelcomeNodeHandler : BaseNodeHandler() {
+    override val nodeType = NodeTypes.WELCOME
+
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val text = getString(nodeData, "text")
+        val image = nodeData["image"]?.toString()
+        val disableImage = nodeData["disableImage"] as? Boolean ?: false
+
+        // Add welcome text to transcript
+        state.addToTranscript("bot", text)
+
+        // Record the response
+        recordResponse(
+            nodeId = nodeId,
+            shape = "bot-message",
+            text = text,
+            type = nodeType
+        )
+
+        // If there's an image and it's not disabled, show as image node
+        if (!disableImage && !image.isNullOrEmpty()) {
+            return NodeResult.DisplayUI(
+                NodeUIState.Image(
+                    url = image,
+                    caption = text,
+                    nodeId = nodeId
+                )
+            )
+        }
+
+        // Otherwise show as text message
+        return NodeResult.DisplayUI(
+            NodeUIState.Message(
+                text = text,
+                nodeId = nodeId
+            )
+        )
+    }
+}
+
+/**
  * Handler for message-node
  * Displays a text message from the bot
  */

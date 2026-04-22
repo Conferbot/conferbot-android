@@ -26,6 +26,9 @@ object NodeHandlerRegistry {
         register(UserInputNodeHandler())
         register(UserRangeNodeHandler())
 
+        // Starter node
+        register(WelcomeNodeHandler())
+
         // Send response nodes (v2)
         register(MessageNodeHandler())
         register(ImageNodeHandler())
