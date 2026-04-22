@@ -1,22 +1,32 @@
 package com.conferbot.sdk.ui.compose
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.models.RecordItem
 import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 import java.text.SimpleDateFormat
@@ -100,12 +110,15 @@ fun UserMessageBubble(
         )
     }
 
+    // Use 300ms for a natural, premium feel
+    val effectiveDuration = if (animationDuration > 0) 300 else 0
+
     AnimatedVisibility(
         visible = true,
-        enter = if (animationDuration > 0) {
-            fadeIn(animationSpec = tween(animationDuration)) +
+        enter = if (effectiveDuration > 0) {
+            fadeIn(animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing)) +
                     slideInHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing),
                         initialOffsetX = { it / 4 }
                     )
         } else fadeIn(tween(0))
@@ -117,6 +130,11 @@ fun UserMessageBubble(
             Column(
                 modifier = Modifier
                     .widthIn(max = spacing.maxBubbleWidth)
+                    .shadow(
+                        elevation = 2.dp,
+                        shape = bubbleShape,
+                        clip = false
+                    )
                     .background(
                         color = colors.userBubble,
                         shape = bubbleShape
@@ -150,6 +168,56 @@ fun UserMessageBubble(
 }
 
 /**
+ * Bot avatar composable
+ *
+ * Displays a circular avatar using the server customization avatar URL,
+ * with a fallback circle containing the bot's initial letter.
+ */
+@Composable
+fun BotAvatar(
+    modifier: Modifier = Modifier
+) {
+    val theme = ConferbotThemeAmbient.current
+    val spacing = theme.spacing
+    val colors = theme.colors
+    val typography = theme.typography
+    val serverCustomization by Conferbot.serverCustomization.collectAsState()
+    val avatarUrl = serverCustomization?.avatarUrl
+    val botName = serverCustomization?.botName ?: "B"
+    val avatarSize = spacing.avatarSize
+
+    if (avatarUrl != null) {
+        AsyncImage(
+            model = avatarUrl,
+            contentDescription = "Bot avatar",
+            modifier = modifier
+                .size(avatarSize)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .size(avatarSize)
+                .clip(CircleShape)
+                .background(colors.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = botName.first().uppercase(),
+                color = colors.onPrimary,
+                style = TextStyle(
+                    fontFamily = typography.fontFamily,
+                    fontSize = typography.captionSize,
+                    fontWeight = FontWeight.Bold
+                ),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
  * Bot message bubble
  *
  * Displays messages from the bot with themed styling.
@@ -175,23 +243,34 @@ fun BotMessageBubble(
         )
     }
 
+    // Use 300ms for a natural, premium feel
+    val effectiveDuration = if (animationDuration > 0) 300 else 0
+
     AnimatedVisibility(
         visible = true,
-        enter = if (animationDuration > 0) {
-            fadeIn(animationSpec = tween(animationDuration)) +
+        enter = if (effectiveDuration > 0) {
+            fadeIn(animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing)) +
                     slideInHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing),
                         initialOffsetX = { -it / 4 }
                     )
         } else fadeIn(tween(0))
     ) {
         Row(
             modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
         ) {
+            BotAvatar()
+            Spacer(modifier = Modifier.width(spacing.sm))
             Column(
                 modifier = Modifier
                     .widthIn(max = spacing.maxBubbleWidth)
+                    .shadow(
+                        elevation = 2.dp,
+                        shape = bubbleShape,
+                        clip = false
+                    )
                     .background(
                         color = colors.botBubble,
                         shape = bubbleShape
@@ -212,7 +291,7 @@ fun BotMessageBubble(
                 Spacer(modifier = Modifier.height(spacing.xs))
                 Text(
                     text = formatTime(message.time),
-                    color = colors.timestamp,
+                    color = colors.botBubbleText.copy(alpha = 0.7f),
                     style = TextStyle(
                         fontFamily = typography.fontFamily,
                         fontSize = typography.timestampSize
@@ -249,23 +328,34 @@ fun AgentMessageBubble(
         )
     }
 
+    // Use 300ms for a natural, premium feel
+    val effectiveDuration = if (animationDuration > 0) 300 else 0
+
     AnimatedVisibility(
         visible = true,
-        enter = if (animationDuration > 0) {
-            fadeIn(animationSpec = tween(animationDuration)) +
+        enter = if (effectiveDuration > 0) {
+            fadeIn(animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing)) +
                     slideInHorizontally(
-                        animationSpec = tween(animationDuration),
+                        animationSpec = tween(effectiveDuration, easing = FastOutSlowInEasing),
                         initialOffsetX = { -it / 4 }
                     )
         } else fadeIn(tween(0))
     ) {
         Row(
             modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
         ) {
+            BotAvatar()
+            Spacer(modifier = Modifier.width(spacing.sm))
             Column(
                 modifier = Modifier
                     .widthIn(max = spacing.maxBubbleWidth)
+                    .shadow(
+                        elevation = 2.dp,
+                        shape = bubbleShape,
+                        clip = false
+                    )
                     .background(
                         color = colors.agentBubble,
                         shape = bubbleShape
@@ -296,7 +386,7 @@ fun AgentMessageBubble(
                 Spacer(modifier = Modifier.height(spacing.xs))
                 Text(
                     text = formatTime(message.time),
-                    color = colors.timestamp,
+                    color = colors.botBubbleText.copy(alpha = 0.7f),
                     style = TextStyle(
                         fontFamily = typography.fontFamily,
                         fontSize = typography.timestampSize
