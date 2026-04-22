@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="80dp"
+    android:height="16dp"
+    android:viewportWidth="200"
+    android:viewportHeight="40">
+
+    <!-- Chat bubble body -->
+    <path
+        android:fillColor="#666666"
+        android:pathData="M8,4h24c4.4,0 8,3.6 8,8v12c0,4.4 -3.6,8 -8,8h-6l-6,6v-6h-12c-4.4,0 -8,-3.6 -8,-8v-12c0,-4.4 3.6,-8 8,-8z"/>
+
+    <!-- Left eye -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14,16m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
+
+    <!-- Right eye -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,16m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0"/>
+
+    <!-- Smile -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M15,22 Q20,27 25,22"/>
+
+    <!-- Text: "conferbot" -->
+    <group>
+        <path
+            android:fillColor="#999999"
+            android:pathData="M50,14h0z"/>
+    </group>
+</vector>
