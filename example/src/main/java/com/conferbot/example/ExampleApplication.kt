@@ -56,7 +56,11 @@ class ExampleApplication : Application() {
             override fun onSessionStarted(sessionId: String) {
                 Log.d(TAG, "Session started: $sessionId")
                 // Good time to register push token after session is established
-                registerPushToken()
+                try {
+                    registerPushToken()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Push token registration skipped: ${e.message}")
+                }
             }
 
             override fun onSessionEnded(sessionId: String) {
