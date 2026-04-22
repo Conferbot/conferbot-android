@@ -1,7 +1,13 @@
 package com.conferbot.sdk.ui.compose
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -12,27 +18,40 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.conferbot.sdk.core.Conferbot
+import com.conferbot.sdk.core.ServerChatbotCustomization
 import com.conferbot.sdk.core.nodes.NodeUIState
 import com.conferbot.sdk.core.state.PaginationState
 import com.conferbot.sdk.models.RecordItem
 import com.conferbot.sdk.ui.theme.ConferbotBackgroundContainer
 import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
+import com.conferbot.sdk.ui.theme.ConferbotThemeProvider
 import kotlinx.coroutines.launch
 
 /**
@@ -48,6 +67,40 @@ import kotlinx.coroutines.launch
 @Composable
 fun ConferBotChatScreen(
     onDismiss: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    // Collect server theme -- when non-null it overrides whatever the parent provided
+    val serverTheme by Conferbot.serverTheme.collectAsState()
+    val serverCustom by Conferbot.serverCustomization.collectAsState()
+
+    val content: @Composable () -> Unit = {
+        ConferBotChatScreenContent(
+            onDismiss = onDismiss,
+            serverCustomization = serverCustom,
+            modifier = modifier
+        )
+    }
+
+    // If the server sent customizations, wrap the whole screen in the server theme
+    val currentServerTheme = serverTheme
+    if (currentServerTheme != null) {
+        ConferbotThemeProvider(theme = currentServerTheme) {
+            content()
+        }
+    } else {
+        content()
+    }
+}
+
+/**
+ * Inner content of the chat screen, separated so the server-theme provider
+ * can be applied around it without duplicating the composable body.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConferBotChatScreenContent(
+    onDismiss: () -> Unit,
+    serverCustomization: ServerChatbotCustomization?,
     modifier: Modifier = Modifier
 ) {
     val theme = ConferbotThemeAmbient.current
@@ -75,6 +128,12 @@ fun ConferBotChatScreen(
     val errorMessage by flowEngine?.errorMessage?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
     val isFlowComplete by flowEngine?.isFlowComplete?.collectAsState() ?: remember { mutableStateOf(false) }
 
+    // Derive header title: agent name > server bot name > fallback
+    val headerTitle = currentAgent?.name
+        ?: serverCustomization?.botName?.takeIf { it.isNotBlank() }
+        ?: serverCustomization?.logoText?.takeIf { it.isNotBlank() }
+        ?: "Support Chat"
+
     // Ensure session is initialized
     LaunchedEffect(Unit) {
         if (Conferbot.chatSessionId.value == null) {
@@ -85,12 +144,14 @@ fun ConferBotChatScreen(
     Scaffold(
         topBar = {
             ChatHeader(
-                title = currentAgent?.name ?: "Support Chat",
+                title = headerTitle,
                 onBackClick = onDismiss,
+                onDismiss = onDismiss,
                 isConnected = isConnected,
                 isOnline = isOnline,
                 pendingMessageCount = pendingMessageCount,
-                isSyncing = isSyncingQueue
+                isSyncing = isSyncingQueue,
+                serverCustomization = serverCustomization
             )
         },
         modifier = modifier
@@ -132,35 +193,22 @@ fun ConferBotChatScreen(
                     )
                 }
 
-                // Messages list with pagination
+                // Messages list with pagination + inline node interaction
                 PaginatedMessageList(
                     messages = messages,
                     isAgentTyping = isAgentTyping || isProcessing,
                     paginationState = paginationState,
                     isLoadingMore = isLoadingMore,
                     onLoadMore = { Conferbot.loadMoreMessages() },
+                    currentUIState = if (!isFlowComplete) currentUIState else null,
+                    onNodeResponse = { response ->
+                        flowEngine?.submitResponse(response)
+                    },
                     modifier = Modifier.weight(1f)
                 )
 
-                // Current node UI - rendered at the bottom for interactive nodes
-                AnimatedVisibility(
-                    visible = currentUIState != null && !isFlowComplete,
-                    enter = fadeIn(tween(animations.transitionDuration)) + slideInVertically(tween(animations.transitionDuration)) { it },
-                    exit = fadeOut(tween(animations.transitionDuration)) + slideOutVertically(tween(animations.transitionDuration)) { it }
-                ) {
-                    currentUIState?.let { uiState ->
-                        NodeInteractionArea(
-                            uiState = uiState,
-                            primaryColor = colors.primary,
-                            onResponse = { response ->
-                                flowEngine?.submitResponse(response)
-                            }
-                        )
-                    }
-                }
-
-                // Chat input - show when no interactive node is displayed or flow is complete
-                if (currentUIState == null || isFlowComplete || !isInteractiveNode(currentUIState)) {
+                // Chat input - show when no node is actively displayed or flow is complete
+                if (currentUIState == null || isFlowComplete || !shouldHideChatInput(currentUIState)) {
                     ChatInput(
                         onSendMessage = { text ->
                             Conferbot.sendMessage(text)
@@ -170,6 +218,9 @@ fun ConferBotChatScreen(
                         }
                     )
                 }
+
+                // Powered by Conferbot footer
+                PoweredByFooter(serverCustomization = serverCustomization)
             }
         }
     }
@@ -193,6 +244,38 @@ private fun isInteractiveNode(uiState: NodeUIState?): Boolean {
         is NodeUIState.MultipleQuestions,
         is NodeUIState.HumanHandover,
         is NodeUIState.PostChatSurvey -> true
+        else -> false
+    }
+}
+
+/**
+ * Check if chat input should be hidden for the current node.
+ * This includes interactive nodes AND display-only nodes that auto-advance,
+ * so the input field doesn't flash while display nodes are showing.
+ */
+private fun shouldHideChatInput(uiState: NodeUIState?): Boolean {
+    return when (uiState) {
+        // Interactive nodes
+        is NodeUIState.TextInput,
+        is NodeUIState.FileUpload,
+        is NodeUIState.SingleChoice,
+        is NodeUIState.MultipleChoice,
+        is NodeUIState.Rating,
+        is NodeUIState.Dropdown,
+        is NodeUIState.Range,
+        is NodeUIState.Calendar,
+        is NodeUIState.ImageChoice,
+        is NodeUIState.Quiz,
+        is NodeUIState.MultipleQuestions,
+        is NodeUIState.HumanHandover,
+        is NodeUIState.PostChatSurvey,
+        // Display-only nodes that auto-advance
+        is NodeUIState.Message,
+        is NodeUIState.Image,
+        is NodeUIState.Video,
+        is NodeUIState.Audio,
+        is NodeUIState.File,
+        is NodeUIState.Html -> true
         else -> false
     }
 }
@@ -261,8 +344,10 @@ fun NodeInteractionArea(
     val colors = theme.colors
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        shadowElevation = 8.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(4.dp, RoundedCornerShape(topStart = shapes.dialogRadius, topEnd = shapes.dialogRadius)),
+        shadowElevation = 4.dp,
         shape = RoundedCornerShape(topStart = shapes.dialogRadius, topEnd = shapes.dialogRadius),
         color = colors.surface
     ) {
@@ -282,17 +367,20 @@ fun NodeInteractionArea(
 }
 
 /**
- * Chat header with offline mode indicator and themed styling
+ * Chat header with offline mode indicator, bot avatar, tagline,
+ * close button, and overflow menu with themed styling
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatHeader(
     title: String,
     onBackClick: () -> Unit,
+    onDismiss: () -> Unit,
     isConnected: Boolean,
     isOnline: Boolean = true,
     pendingMessageCount: Int = 0,
     isSyncing: Boolean = false,
+    serverCustomization: ServerChatbotCustomization? = null,
     modifier: Modifier = Modifier
 ) {
     val theme = ConferbotThemeAmbient.current
@@ -300,72 +388,129 @@ fun ChatHeader(
     val typography = theme.typography
     val spacing = theme.spacing
 
+    // Overflow menu state
+    var showMenu by remember { mutableStateOf(false) }
+    var soundEnabled by remember { mutableStateOf(true) }
+    val coroutineScope = rememberCoroutineScope()
+
     TopAppBar(
         title = {
-            Column {
-                Text(
-                    text = title,
-                    style = TextStyle(
-                        fontFamily = typography.fontFamily,
-                        fontSize = typography.headerSize,
-                        fontWeight = typography.headerWeight
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm)
+            ) {
+                // Bot avatar
+                val avatarUrl = serverCustomization?.avatarUrl
+                    ?: serverCustomization?.logoUrl
+                if (avatarUrl != null) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = "Bot avatar",
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
                     )
-                )
-                when {
-                    !isOnline -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.CloudOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = colors.headerText.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = if (pendingMessageCount > 0)
-                                    "Offline - $pendingMessageCount pending"
-                                else
-                                    "Offline",
-                                style = TextStyle(
-                                    fontFamily = typography.fontFamily,
-                                    fontSize = typography.captionSize
-                                ),
-                                color = colors.headerText.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                    isSyncing -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Sync,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = colors.headerText.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = "Syncing messages...",
-                                style = TextStyle(
-                                    fontFamily = typography.fontFamily,
-                                    fontSize = typography.captionSize
-                                ),
-                                color = colors.headerText.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                    !isConnected -> {
+                } else {
+                    // Fallback: colored circle with initial letter
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(colors.primary, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "Reconnecting...",
+                            text = title.firstOrNull()?.uppercase() ?: "B",
                             style = TextStyle(
                                 fontFamily = typography.fontFamily,
-                                fontSize = typography.captionSize
+                                fontSize = 14.sp,
+                                fontWeight = typography.headerWeight
                             ),
-                            color = colors.headerText.copy(alpha = 0.7f)
+                            color = colors.onPrimary
                         )
+                    }
+                }
+
+                // Title and subtitle column
+                Column {
+                    Text(
+                        text = title,
+                        style = TextStyle(
+                            fontFamily = typography.fontFamily,
+                            fontSize = typography.headerSize,
+                            fontWeight = typography.headerWeight
+                        )
+                    )
+                    when {
+                        !isOnline -> {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.CloudOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = colors.headerText.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = if (pendingMessageCount > 0)
+                                        "Offline - $pendingMessageCount pending"
+                                    else
+                                        "Offline",
+                                    style = TextStyle(
+                                        fontFamily = typography.fontFamily,
+                                        fontSize = typography.captionSize
+                                    ),
+                                    color = colors.headerText.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        isSyncing -> {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Sync,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = colors.headerText.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = "Syncing messages...",
+                                    style = TextStyle(
+                                        fontFamily = typography.fontFamily,
+                                        fontSize = typography.captionSize
+                                    ),
+                                    color = colors.headerText.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        !isConnected -> {
+                            Text(
+                                text = "Reconnecting...",
+                                style = TextStyle(
+                                    fontFamily = typography.fontFamily,
+                                    fontSize = typography.captionSize
+                                ),
+                                color = colors.headerText.copy(alpha = 0.7f)
+                            )
+                        }
+                        // Tagline: show only when no status subtitle is displayed
+                        serverCustomization?.enableTagline == true &&
+                                !serverCustomization.tagline.isNullOrBlank() -> {
+                            Text(
+                                text = serverCustomization.tagline,
+                                style = TextStyle(
+                                    fontFamily = typography.fontFamily,
+                                    fontSize = typography.captionSize
+                                ),
+                                color = colors.headerText.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -378,10 +523,79 @@ fun ChatHeader(
                 )
             }
         },
+        actions = {
+            // Close / minimize button
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close chat",
+                    tint = colors.headerIcon
+                )
+            }
+            // Three-dot overflow menu
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More options",
+                        tint = colors.headerIcon
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Restart Chat") },
+                        onClick = {
+                            showMenu = false
+                            Conferbot.clearHistory()
+                            // Re-initialize session after clearing
+                            coroutineScope.launch {
+                                Conferbot.initializeSession()
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("End Chat") },
+                        onClick = {
+                            showMenu = false
+                            onDismiss()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (soundEnabled) "Sound Off" else "Sound On") },
+                        onClick = {
+                            soundEnabled = !soundEnabled
+                            showMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                }
+            }
+        },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = colors.headerBackground,
             titleContentColor = colors.headerText,
-            navigationIconContentColor = colors.headerIcon
+            navigationIconContentColor = colors.headerIcon,
+            actionIconContentColor = colors.headerIcon
         ),
         modifier = modifier
     )
@@ -513,14 +727,23 @@ fun PaginatedMessageList(
     paginationState: PaginationState,
     isLoadingMore: Boolean,
     onLoadMore: () -> Unit,
+    currentUIState: NodeUIState? = null,
+    onNodeResponse: ((Any) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val theme = ConferbotThemeAmbient.current
+    val colors = theme.colors
     val spacing = theme.spacing
     val animations = theme.animations
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    // Count total items for scroll calculations
+    val hasInlineNode = currentUIState != null && onNodeResponse != null
+    val totalItemCount = messages.size +
+        (if (isAgentTyping) 1 else 0) +
+        (if (hasInlineNode) 1 else 0)
 
     // Track if user is near top for pagination trigger
     val shouldLoadMore by remember {
@@ -584,10 +807,30 @@ fun PaginatedMessageList(
                 MessageBubble(message = message)
             }
 
-            // Typing indicator at bottom
+            // Typing indicator
             if (isAgentTyping) {
                 item(key = "typing_indicator") {
                     TypingIndicator()
+                }
+            }
+
+            // Inline node interaction — rendered as the last item in the message stream
+            if (hasInlineNode) {
+                item(key = "inline_node_interaction") {
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                                expandVertically(tween(300, easing = FastOutSlowInEasing))
+                    ) {
+                        NodeRenderer(
+                            uiState = currentUIState!!,
+                            onResponse = onNodeResponse!!,
+                            primaryColor = colors.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = spacing.sm)
+                        )
+                    }
                 }
             }
         }
@@ -604,18 +847,19 @@ fun PaginatedMessageList(
             ScrollToBottomButton(
                 onClick = {
                     coroutineScope.launch {
-                        listState.animateScrollToItem(messages.size - 1)
+                        listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
                     }
                 }
             )
         }
     }
 
-    // Auto-scroll to bottom when new messages arrive (only if already at bottom)
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && !showScrollToBottom) {
+    // Auto-scroll to bottom when new messages arrive or node UI appears
+    LaunchedEffect(messages.size, currentUIState) {
+        val itemCount = listState.layoutInfo.totalItemsCount
+        if (itemCount > 0 && !showScrollToBottom) {
             coroutineScope.launch {
-                listState.animateScrollToItem(messages.size - 1)
+                listState.animateScrollToItem(itemCount - 1)
             }
         }
     }
@@ -724,7 +968,9 @@ fun ScrollToBottomButton(
 fun MessageList(
     messages: List<RecordItem>,
     isAgentTyping: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentUIState: NodeUIState? = null,
+    onNodeResponse: ((Any) -> Unit)? = null
 ) {
     PaginatedMessageList(
         messages = messages,
@@ -732,12 +978,14 @@ fun MessageList(
         paginationState = PaginationState(),
         isLoadingMore = false,
         onLoadMore = {},
+        currentUIState = currentUIState,
+        onNodeResponse = onNodeResponse,
         modifier = modifier
     )
 }
 
 /**
- * Typing indicator with themed styling
+ * Typing indicator with animated bouncing dots
  */
 @Composable
 fun TypingIndicator(modifier: Modifier = Modifier) {
@@ -746,25 +994,61 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
     val shapes = theme.shapes
     val spacing = theme.spacing
 
+    val infiniteTransition = rememberInfiniteTransition(label = "typing")
+
+    val dotOffsets = (0..2).map { index ->
+        infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = -5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 500,
+                    delayMillis = index * 160,
+                    easing = FastOutSlowInEasing
+                ),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dot_$index"
+        )
+    }
+
+    val dotAlphas = (0..2).map { index ->
+        infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 500,
+                    delayMillis = index * 160,
+                    easing = FastOutSlowInEasing
+                ),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dot_alpha_$index"
+        )
+    }
+
     Box(
         modifier = modifier
+            .shadow(1.dp, RoundedCornerShape(shapes.bubbleRadius))
             .background(
                 color = colors.botBubble,
                 shape = RoundedCornerShape(shapes.bubbleRadius)
             )
-            .padding(spacing.md)
+            .padding(horizontal = spacing.md, vertical = spacing.sm)
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            repeat(3) {
+            dotOffsets.forEachIndexed { index, animatedOffset ->
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(7.dp)
+                        .offset(y = animatedOffset.value.dp)
                         .background(
-                            color = colors.typing,
-                            shape = RoundedCornerShape(50)
+                            color = colors.typing.copy(alpha = dotAlphas[index].value),
+                            shape = CircleShape
                         )
                 )
             }
@@ -789,68 +1073,131 @@ fun ChatInput(
 
     var text by remember { mutableStateOf("") }
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shadowElevation = 4.dp,
-        color = colors.surface
-    ) {
-        Row(
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Subtle top border
+        Box(
             modifier = Modifier
-                .padding(spacing.sm)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(spacing.sm)
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { newText ->
-                    text = newText
-                    onTypingChanged(newText.isNotEmpty())
-                },
-                modifier = Modifier.weight(1f),
-                placeholder = {
-                    Text(
-                        "Type a message...",
-                        style = TextStyle(
-                            fontFamily = typography.fontFamily,
-                            fontSize = typography.inputSize
-                        ),
-                        color = colors.inputPlaceholder
-                    )
-                },
-                textStyle = TextStyle(
-                    fontFamily = typography.fontFamily,
-                    fontSize = typography.inputSize,
-                    color = colors.inputText
-                ),
-                maxLines = 4,
-                shape = RoundedCornerShape(shapes.inputRadius),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = colors.inputBackground,
-                    unfocusedContainerColor = colors.inputBackground,
-                    focusedBorderColor = colors.inputBorderFocused,
-                    unfocusedBorderColor = colors.inputBorder,
-                    cursorColor = colors.primary
-                )
-            )
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(colors.divider.copy(alpha = 0.3f))
+        )
 
-            IconButton(
-                onClick = {
-                    if (text.isNotBlank()) {
-                        onSendMessage(text.trim())
-                        text = ""
-                        onTypingChanged(false)
-                    }
-                },
-                enabled = text.isNotBlank()
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = colors.surface,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = spacing.sm, vertical = spacing.sm)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Send,
-                    contentDescription = "Send",
-                    tint = if (text.isNotBlank()) colors.primary else colors.inputPlaceholder
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { newText ->
+                        text = newText
+                        onTypingChanged(newText.isNotEmpty())
+                    },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            "Type a message...",
+                            style = TextStyle(
+                                fontFamily = typography.fontFamily,
+                                fontSize = typography.inputSize
+                            ),
+                            color = colors.inputPlaceholder
+                        )
+                    },
+                    textStyle = TextStyle(
+                        fontFamily = typography.fontFamily,
+                        fontSize = typography.inputSize,
+                        color = colors.inputText
+                    ),
+                    maxLines = 4,
+                    shape = RoundedCornerShape(shapes.inputRadius),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = colors.inputBackground,
+                        unfocusedContainerColor = colors.inputBackground,
+                        focusedBorderColor = colors.inputBorderFocused,
+                        unfocusedBorderColor = colors.inputBorder,
+                        cursorColor = colors.primary
+                    )
                 )
+
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .shadow(
+                            elevation = if (text.isNotBlank()) 2.dp else 0.dp,
+                            shape = CircleShape
+                        )
+                        .clip(CircleShape)
+                        .background(
+                            if (text.isNotBlank()) colors.headerBackground
+                            else colors.headerBackground.copy(alpha = 0.4f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (text.isNotBlank()) {
+                                onSendMessage(text.trim())
+                                text = ""
+                                onTypingChanged(false)
+                            }
+                        },
+                        enabled = text.isNotBlank(),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Send,
+                            contentDescription = "Send",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+/**
+ * "Powered by Conferbot" footer bar.
+ *
+ * Hidden when `hideBrand` is true. When `enableCustomBrand` is true and
+ * `customBrand` is set, that text is shown instead.
+ */
+@Composable
+fun PoweredByFooter(
+    serverCustomization: ServerChatbotCustomization?,
+    modifier: Modifier = Modifier
+) {
+    // Hide completely when brand is suppressed
+    if (serverCustomization?.hideBrand == true) return
+
+    val brandText = if (serverCustomization?.enableCustomBrand == true &&
+        !serverCustomization.customBrand.isNullOrBlank()
+    ) {
+        serverCustomization.customBrand
+    } else {
+        "Powered by Conferbot"
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = brandText,
+            style = TextStyle(fontSize = 10.sp),
+            color = Color.Gray
+        )
     }
 }
 
