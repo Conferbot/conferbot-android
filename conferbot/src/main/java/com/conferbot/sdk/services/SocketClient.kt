@@ -203,6 +203,22 @@ class SocketClient(
     }
 
     /**
+     * Request chatbot data (nodes/edges) from server
+     * Emits 'get-chatbot-data' event; server responds with 'fetched-chatbot-data'
+     */
+    fun getChatbotData() {
+        if (socket?.connected() != true) {
+            Log.w(TAG, "Cannot get chatbot data - not connected")
+            return
+        }
+        val data = JSONObject().apply {
+            put("botId", botId)
+        }
+        socket?.emit(SocketEvents.GET_CHATBOT_DATA, data)
+        Log.d(TAG, "Emitted get-chatbot-data")
+    }
+
+    /**
      * Leave chat room
      */
     fun leaveChatRoom(chatSessionId: String) {
