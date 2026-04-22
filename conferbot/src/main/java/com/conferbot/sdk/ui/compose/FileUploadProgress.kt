@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.conferbot.sdk.services.UploadState
+import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 
 /**
  * Displays file upload progress with cancel option
@@ -32,9 +33,10 @@ fun FileUploadProgress(
     progress: Float,
     fileName: String,
     onCancel: () -> Unit,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
 ) {
+    val theme = ConferbotThemeAmbient.current
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(durationMillis = 300),
@@ -45,7 +47,7 @@ fun FileUploadProgress(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = theme.colors.surface
         )
     ) {
         Column(
@@ -91,7 +93,7 @@ fun FileUploadProgress(
                     Text(
                         text = "Uploading... ${(animatedProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = theme.colors.onSurfaceVariant
                     )
                 }
 
@@ -103,7 +105,7 @@ fun FileUploadProgress(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Cancel upload",
-                        tint = MaterialTheme.colorScheme.error
+                        tint = theme.colors.error
                     )
                 }
             }
@@ -132,7 +134,7 @@ fun FileUploadStateIndicator(
     state: UploadState,
     onCancel: () -> Unit,
     onRetry: (() -> Unit)? = null,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
 ) {
     AnimatedContent(
@@ -393,7 +395,7 @@ fun MultipleFileUploadProgress(
     files: List<Pair<String, UploadState>>,
     onCancelFile: (Int) -> Unit,
     onRetryFile: ((Int) -> Unit)? = null,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
 ) {
     Column(
