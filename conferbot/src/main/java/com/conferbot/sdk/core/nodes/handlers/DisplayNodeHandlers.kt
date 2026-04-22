@@ -10,7 +10,7 @@ class WelcomeNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.WELCOME
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val text = getString(nodeData, "text")
+        val text = stripHtml(getString(nodeData, "text"))
         val image = nodeData["image"]?.toString()
         val disableImage = nodeData["disableImage"] as? Boolean ?: false
 
@@ -54,8 +54,8 @@ class MessageNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.MESSAGE
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val text = getString(nodeData, "text")
-        val message = getString(nodeData, "message", text)
+        val text = stripHtml(getString(nodeData, "text"))
+        val message = stripHtml(getString(nodeData, "message", text))
 
         // Add to transcript
         state.addToTranscript("bot", message)
@@ -265,13 +265,21 @@ class UserRedirectNodeHandler : BaseNodeHandler() {
 
 /**
  * Handler for navigate-node
- * Similar to redirect but for in-app navigation
+ *
+ * In the web widget, navigate-node auto-proceeds to the next node after a
+ * short delay (it does NOT open a browser). Mirror that behaviour here by
+ * returning a DelayedProceed instead of a Redirect.
  */
 class NavigateNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.NAVIGATE
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val url = getString(nodeData, "url")
+        val navigatePrompt = getString(nodeData, "navigatePrompt")
+
+        if (navigatePrompt.isNotEmpty()) {
+            state.addToTranscript("bot", navigatePrompt)
+        }
 
         recordResponse(
             nodeId = nodeId,
@@ -280,12 +288,6 @@ class NavigateNodeHandler : BaseNodeHandler() {
             type = nodeType
         )
 
-        return NodeResult.DisplayUI(
-            NodeUIState.Redirect(
-                url = url,
-                openInNewTab = false,
-                nodeId = nodeId
-            )
-        )
+        return NodeResult.DelayedProceed(delayMs = 600)
     }
 }
