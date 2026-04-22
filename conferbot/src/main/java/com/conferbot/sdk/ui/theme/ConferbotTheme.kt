@@ -316,7 +316,7 @@ data class ConferbotSpacing(
     /**
      * Spacing between messages
      */
-    val messageSpacing: Dp = 8.dp,
+    val messageSpacing: Dp = 10.dp,
 
     /**
      * Spacing between grouped messages from same sender
@@ -326,17 +326,17 @@ data class ConferbotSpacing(
     /**
      * Content padding for the chat list
      */
-    val chatContentPadding: Dp = 16.dp,
+    val chatContentPadding: Dp = 14.dp,
 
     /**
      * Maximum width for message bubbles
      */
-    val maxBubbleWidth: Dp = 280.dp,
+    val maxBubbleWidth: Dp = 260.dp,
 
     /**
      * Avatar size
      */
-    val avatarSize: Dp = 36.dp,
+    val avatarSize: Dp = 32.dp,
 
     /**
      * Small avatar size
