@@ -111,6 +111,11 @@ object Conferbot {
     // Node flow engine for processing chatbot nodes
     private var _flowEngine: NodeFlowEngine? = null
 
+    // Cached chatbot data (nodes/edges) from fetched-chatbot-data event
+    private var cachedChatbotNodes: List<Map<String, Any>>? = null
+    private var cachedChatbotEdges: List<Map<String, Any>>? = null
+    private var flowStarted = false
+
     /**
      * Access to the flow engine for UI components
      * Allows direct observation of node states and submission of responses
@@ -315,11 +320,18 @@ object Conferbot {
         socketClient?.on(SocketEvents.CONNECT, Emitter.Listener {
             _isConnected.value = true
             Log.d(TAG, "Socket connected")
+            // Request chatbot data (nodes/edges) on connect, like the web widget does
+            socketClient?.getChatbotData()
         })
 
         socketClient?.on(SocketEvents.DISCONNECT, Emitter.Listener {
             _isConnected.value = false
             Log.d(TAG, "Socket disconnected")
+        })
+
+        // Fetched chatbot data - contains nodes/edges for the flow graph
+        socketClient?.on(SocketEvents.FETCHED_CHATBOT_DATA, Emitter.Listener { args ->
+            handleFetchedChatbotData(args)
         })
 
         // Bot response - process through NodeFlowEngine for node-based messages
@@ -457,6 +469,174 @@ object Conferbot {
     }
 
     /**
+     * Handle fetched-chatbot-data from socket
+     * Parses the elements array to extract nodes and edges, then starts the flow
+     * if the session is already initialized.
+     *
+     * Server sends: { chatbotData: { elements: [{ nodes: [...], edges: [...] }], ... }, knowledgeBaseData: {...} }
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun handleFetchedChatbotData(args: Array<Any>) {
+        val data = args.firstOrNull() as? JSONObject ?: return
+        try {
+            Log.d(TAG, "Received fetched-chatbot-data")
+
+            // Server wraps chatbot data inside a 'chatbotData' key
+            val chatbotData = data.optJSONObject("chatbotData") ?: data
+
+            // Parse elements array: elements is an array with one object containing nodes and edges
+            val elementsArray = chatbotData.optJSONArray("elements")
+            if (elementsArray == null || elementsArray.length() == 0) {
+                Log.w(TAG, "fetched-chatbot-data has no elements array")
+                return
+            }
+
+            val firstElement = elementsArray.optJSONObject(0) ?: return
+
+            // Extract nodes array
+            val nodesArray = firstElement.optJSONArray("nodes")
+            val nodes = mutableListOf<Map<String, Any>>()
+            if (nodesArray != null) {
+                for (i in 0 until nodesArray.length()) {
+                    val nodeJson = nodesArray.optJSONObject(i) ?: continue
+                    nodes.add(jsonObjectToMap(nodeJson) as Map<String, Any>)
+                }
+            }
+
+            // Extract edges array
+            val edgesArray = firstElement.optJSONArray("edges")
+            val edges = mutableListOf<Map<String, Any>>()
+            if (edgesArray != null) {
+                for (i in 0 until edgesArray.length()) {
+                    val edgeJson = edgesArray.optJSONObject(i) ?: continue
+                    edges.add(jsonObjectToMap(edgeJson) as Map<String, Any>)
+                }
+            }
+
+            Log.d(TAG, "Parsed chatbot data: ${nodes.size} nodes, ${edges.size} edges")
+
+            if (nodes.isEmpty()) {
+                Log.w(TAG, "No nodes found in chatbot data")
+                return
+            }
+
+            // Cache the data
+            cachedChatbotNodes = nodes
+            cachedChatbotEdges = edges
+
+            // Try to start the flow immediately if session is ready
+            tryStartFlow()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse fetched-chatbot-data", e)
+        }
+    }
+
+    /**
+     * Attempt to start the chatbot flow.
+     * Requires both: chatbot data (nodes/edges) cached AND a valid chat session.
+     * Called from handleFetchedChatbotData (when data arrives) and
+     * initializeSession (when session becomes ready).
+     */
+    private fun tryStartFlow() {
+        if (flowStarted) return
+
+        val nodes = cachedChatbotNodes ?: return
+        val edges = cachedChatbotEdges ?: return
+        val sessionId = _chatSessionId.value ?: return
+        val currentBotId = botId ?: return
+
+        Log.d(TAG, "Starting chatbot flow with ${nodes.size} nodes and ${edges.size} edges")
+        flowStarted = true
+
+        initializeFlowEngine(nodes, edges)
+
+        // Observe flow engine UI state changes and add display-only messages to record
+        // so they persist in the chat message list (both Compose and XML UIs)
+        observeFlowEngineMessages()
+
+        startFlow()
+    }
+
+    /**
+     * Observe flow engine currentUIState and add message-type nodes to the record
+     * so they appear persistently in the message list.
+     */
+    private fun observeFlowEngineMessages() {
+        scope.launch {
+            nodeFlowEngine?.currentUIState?.collectLatest { uiState ->
+                if (uiState == null) return@collectLatest
+
+                val botMessage: RecordItem.BotMessage? = when (uiState) {
+                    is NodeUIState.Message -> RecordItem.BotMessage(
+                        id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                        time = java.util.Date(),
+                        text = uiState.text
+                    )
+                    is NodeUIState.Image -> RecordItem.BotMessage(
+                        id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                        time = java.util.Date(),
+                        text = uiState.caption ?: "[Image]"
+                    )
+                    is NodeUIState.Video -> RecordItem.BotMessage(
+                        id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                        time = java.util.Date(),
+                        text = uiState.caption ?: "[Video]"
+                    )
+                    // For interactive nodes that have a question text, add as bot message
+                    is NodeUIState.TextInput -> RecordItem.BotMessage(
+                        id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                        time = java.util.Date(),
+                        text = uiState.questionText
+                    )
+                    is NodeUIState.SingleChoice -> if (uiState.questionText != null) {
+                        RecordItem.BotMessage(
+                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                            time = java.util.Date(),
+                            text = uiState.questionText
+                        )
+                    } else null
+                    is NodeUIState.MultipleChoice -> if (uiState.questionText != null) {
+                        RecordItem.BotMessage(
+                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                            time = java.util.Date(),
+                            text = uiState.questionText
+                        )
+                    } else null
+                    is NodeUIState.Rating -> if (uiState.questionText != null) {
+                        RecordItem.BotMessage(
+                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                            time = java.util.Date(),
+                            text = uiState.questionText
+                        )
+                    } else null
+                    is NodeUIState.Dropdown -> if (uiState.questionText != null) {
+                        RecordItem.BotMessage(
+                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
+                            time = java.util.Date(),
+                            text = uiState.questionText
+                        )
+                    } else null
+                    else -> null
+                }
+
+                if (botMessage != null) {
+                    val currentRecord = _record.value.toMutableList()
+                    currentRecord.add(botMessage)
+
+                    if (currentRecord.size > paginationConfig.maxMemoryMessages) {
+                        _record.value = currentRecord.takeLast(paginationConfig.maxMemoryMessages)
+                    } else {
+                        _record.value = currentRecord
+                    }
+
+                    // Also persist to message manager
+                    messageManager?.addMessage(botMessage)
+                }
+            }
+        }
+    }
+
+    /**
      * Convert JSONObject to Map for flow engine processing
      */
     @Suppress("UNCHECKED_CAST")
@@ -587,7 +767,15 @@ object Conferbot {
                     visitorIdentifier = session.visitorId ?: user?.id ?: ""
                 )
 
-                eventListener?.onSessionStarted(session.chatSessionId)
+                try {
+                    eventListener?.onSessionStarted(session.chatSessionId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Event listener onSessionStarted failed", e)
+                }
+
+                // Try to start the chatbot flow if chatbot data is already cached
+                tryStartFlow()
+
                 true
             } else {
                 Log.e(TAG, "Failed to initialize session: ${response.error}")
@@ -988,6 +1176,10 @@ object Conferbot {
         _chatSessionId.value = null
         _currentAgent.value = null
         _unreadCount.value = 0
+        // Reset flow state so it can be re-triggered
+        flowStarted = false
+        cachedChatbotNodes = null
+        cachedChatbotEdges = null
         // Clean up Knowledge Base service when history is cleared
         disposeKnowledgeBaseService()
         ChatState.reset()
@@ -1183,6 +1375,10 @@ object Conferbot {
         _offlineManager?.shutdown()
         socketClient?.disconnect()
         nodeFlowEngine?.destroy()
+        // Reset flow state
+        flowStarted = false
+        cachedChatbotNodes = null
+        cachedChatbotEdges = null
         // FIX 6: Cancel coroutine scope to prevent leaked coroutines
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         _isConnected.value = false
