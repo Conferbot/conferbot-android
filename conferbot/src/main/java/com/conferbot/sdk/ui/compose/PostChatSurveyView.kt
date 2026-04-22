@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.conferbot.sdk.core.nodes.NodeUIState
+import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 
 /**
  * Post-chat survey view for human handover flow
@@ -30,9 +31,10 @@ import com.conferbot.sdk.core.nodes.NodeUIState
 fun PostChatSurveyView(
     state: NodeUIState.PostChatSurvey,
     onResponse: (Any) -> Unit,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
 ) {
+    val theme = ConferbotThemeAmbient.current
     // Track all answers
     var answers by remember { mutableStateOf(mutableMapOf<String, Any>()) }
     var currentQuestionIndex by remember { mutableStateOf(state.currentQuestionIndex) }
@@ -170,7 +172,7 @@ fun PostChatSurveyView(
                 ) {
                     Text(
                         text = "Skip survey",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = theme.colors.onSurfaceVariant
                     )
                 }
             }
@@ -187,6 +189,7 @@ private fun SurveyHeader(
     description: String?,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Row(
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -206,7 +209,7 @@ private fun SurveyHeader(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = theme.colors.onSurfaceVariant
                 )
             }
         }
@@ -222,6 +225,7 @@ private fun SurveyProgressIndicator(
     totalQuestions: Int,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -230,7 +234,7 @@ private fun SurveyProgressIndicator(
             Text(
                 text = "Question $currentQuestion of $totalQuestions",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = theme.colors.onSurfaceVariant
             )
             Text(
                 text = "${(currentQuestion.toFloat() / totalQuestions * 100).toInt()}%",
@@ -261,6 +265,7 @@ private fun SurveyQuestionContent(
     onAnswerChanged: (Any) -> Unit,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Column {
         // Question text
         Text(
@@ -274,7 +279,7 @@ private fun SurveyQuestionContent(
             Text(
                 text = "* Required",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                color = theme.colors.error,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
@@ -332,6 +337,7 @@ private fun SurveyRatingQuestion(
     onRatingChanged: (Int) -> Unit,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth()
@@ -374,12 +380,12 @@ private fun SurveyRatingQuestion(
             Text(
                 text = "Poor",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = theme.colors.onSurfaceVariant
             )
             Text(
                 text = "Excellent",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = theme.colors.onSurfaceVariant
             )
         }
 
@@ -417,6 +423,7 @@ private fun SurveyTextQuestion(
     onTextChanged: (String) -> Unit,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     OutlinedTextField(
         value = currentText,
         onValueChange = { onTextChanged(it) },
@@ -439,7 +446,7 @@ private fun SurveyTextQuestion(
     Text(
         text = "${currentText.length}/500",
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = theme.colors.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 4.dp),
@@ -457,6 +464,7 @@ private fun SurveyChoiceQuestion(
     onOptionSelected: (String) -> Unit,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -468,10 +476,10 @@ private fun SurveyChoiceQuestion(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .clickable { onOptionSelected(option) },
-                color = if (isSelected) primaryColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
+                color = if (isSelected) primaryColor.copy(alpha = 0.1f) else theme.colors.surface,
                 border = BorderStroke(
                     width = if (isSelected) 2.dp else 1.dp,
-                    color = if (isSelected) primaryColor else MaterialTheme.colorScheme.outline
+                    color = if (isSelected) primaryColor else theme.colors.outline
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -507,6 +515,7 @@ private fun SurveyMultiChoiceQuestion(
     onOptionsChanged: (List<String>) -> Unit,
     primaryColor: Color
 ) {
+    val theme = ConferbotThemeAmbient.current
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -525,10 +534,10 @@ private fun SurveyMultiChoiceQuestion(
                         }
                         onOptionsChanged(newSelection)
                     },
-                color = if (isSelected) primaryColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
+                color = if (isSelected) primaryColor.copy(alpha = 0.1f) else theme.colors.surface,
                 border = BorderStroke(
                     width = if (isSelected) 2.dp else 1.dp,
-                    color = if (isSelected) primaryColor else MaterialTheme.colorScheme.outline
+                    color = if (isSelected) primaryColor else theme.colors.outline
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -569,9 +578,10 @@ private fun SurveyMultiChoiceQuestion(
 fun InlinePostChatSurvey(
     question: String = "How was your experience?",
     onRatingSubmitted: (Int) -> Unit,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
 ) {
+    val theme = ConferbotThemeAmbient.current
     var selectedRating by remember { mutableStateOf<Int?>(null) }
     var submitted by remember { mutableStateOf(false) }
 
@@ -579,7 +589,7 @@ fun InlinePostChatSurvey(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = theme.colors.botBubble.copy(alpha = 0.5f)
         )
     ) {
         Column(
