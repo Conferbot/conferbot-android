@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.conferbot.sdk.R
@@ -156,10 +157,21 @@ class ChatActivity : AppCompatActivity() {
             }
             .launchIn(lifecycleScope)
 
-        // Observe typing indicator
+        // Observe typing indicator (show for both agent typing and flow engine processing)
         Conferbot.isAgentTyping
             .onEach { isTyping ->
-                binding.typingIndicator.root.visibility = if (isTyping) View.VISIBLE else View.GONE
+                val isProcessing = Conferbot.isProcessingNode.value
+                binding.typingIndicator.root.visibility =
+                    if (isTyping || isProcessing) View.VISIBLE else View.GONE
+            }
+            .launchIn(lifecycleScope)
+
+        // Also observe flow engine processing state for typing indicator
+        Conferbot.isProcessingNode
+            .onEach { isProcessing ->
+                val isAgentTyping = Conferbot.isAgentTyping.value
+                binding.typingIndicator.root.visibility =
+                    if (isProcessing || isAgentTyping) View.VISIBLE else View.GONE
             }
             .launchIn(lifecycleScope)
 
@@ -176,9 +188,14 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun ensureSessionInitialized() {
-        lifecycleScope.launchWhenCreated {
+        lifecycleScope.launch {
+            Log.d(TAG, "Ensuring session initialized, current sessionId: ${Conferbot.chatSessionId.value}")
             if (Conferbot.chatSessionId.value == null) {
-                Conferbot.initializeSession()
+                Log.d(TAG, "No session, initializing...")
+                val result = Conferbot.initializeSession()
+                Log.d(TAG, "Session init result: $result")
+            } else {
+                Log.d(TAG, "Session already exists: ${Conferbot.chatSessionId.value}")
             }
         }
     }
@@ -187,7 +204,15 @@ class ChatActivity : AppCompatActivity() {
         val text = binding.messageInput.text?.toString()?.trim() ?: return
         if (text.isEmpty()) return
 
-        Conferbot.sendMessage(text)
+        // If the flow engine is waiting for text input, submit to it
+        val currentUIState = Conferbot.currentUIState.value
+        if (currentUIState is com.conferbot.sdk.core.nodes.NodeUIState.TextInput) {
+            Conferbot.submitNodeResponse(text)
+        } else {
+            // Regular message send (agent chat or free-form)
+            Conferbot.sendMessage(text)
+        }
+
         binding.messageInput.text?.clear()
         Conferbot.sendTypingStatus(false)
     }
