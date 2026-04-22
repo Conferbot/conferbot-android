@@ -40,6 +40,9 @@ fun ComposeExampleScreen() {
     val currentAgent by Conferbot.currentAgent.collectAsState()
     val messages by Conferbot.record.collectAsState()
 
+    // Full-screen overlay: chat screen sits on top of the main content
+    Box(modifier = Modifier.fillMaxSize()) {
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -167,10 +170,13 @@ fun ComposeExampleScreen() {
         }
     }
 
-    // Show chat in fullscreen
+    // Show chat as a fullscreen overlay on top of the Scaffold
     if (showChat) {
         ConferBotChatScreen(
-            onDismiss = { showChat = false }
+            onDismiss = { showChat = false },
+            modifier = Modifier.fillMaxSize()
         )
     }
+
+    } // end Box
 }
