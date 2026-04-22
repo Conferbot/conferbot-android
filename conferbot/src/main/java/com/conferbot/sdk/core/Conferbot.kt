@@ -26,11 +26,16 @@ import com.conferbot.sdk.notifications.NotificationHandler
 import com.conferbot.sdk.notifications.NotificationListener
 import com.conferbot.sdk.notifications.NotificationSettings
 import com.conferbot.sdk.notifications.NotificationTokenListener
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.services.ApiClient
 import com.conferbot.sdk.services.FileUploadManager
 import com.conferbot.sdk.services.FileUploadService
 import com.conferbot.sdk.services.KnowledgeBaseService
 import com.conferbot.sdk.services.SocketClient
+import com.conferbot.sdk.ui.theme.ConferbotBackground
+import com.conferbot.sdk.ui.theme.ConferbotTheme
+import com.conferbot.sdk.ui.theme.ConferbotThemeBuilder
 import com.conferbot.sdk.ui.views.ChatActivity
 import com.conferbot.sdk.utils.ConferBotEndpoints
 import com.conferbot.sdk.utils.Constants
@@ -45,6 +50,33 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+
+/**
+ * Parsed server-side chatbot customization data.
+ *
+ * Populated from the `chatbotData.customizations` object received in the
+ * `fetched-chatbot-data` socket event.
+ */
+data class ServerChatbotCustomization(
+    val avatarUrl: String? = null,
+    val avatarSize: Int? = null,
+    val hideAvatar: Boolean = false,
+    val logoUrl: String? = null,
+    val logoText: String? = null,
+    val botName: String? = null,
+    val font: String? = null,
+    val fontSize: Int? = null,
+    val bubbleBorderRadius: Int? = null,
+    val chatBgType: String? = null,
+    val hideBrand: Boolean = false,
+    val enableCustomBrand: Boolean = false,
+    val customBrand: String? = null,
+    val enableTagline: Boolean = false,
+    val tagline: String? = null,
+    val gradientBgOne: String? = null,
+    val gradientBgTwo: String? = null,
+    val chatBgImg: String? = null
+)
 
 /**
  * Main Conferbot SDK singleton
@@ -146,8 +178,33 @@ object Conferbot {
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
+    private val _isChatVisible = MutableStateFlow(false)
+    /**
+     * Whether the chat overlay (widget) is currently visible on screen.
+     * Updated by [ConferBotWidget] when the overlay opens or closes.
+     */
+    val isChatVisible: StateFlow<Boolean> = _isChatVisible.asStateFlow()
+
     private val _isAgentTyping = MutableStateFlow(false)
     val isAgentTyping: StateFlow<Boolean> = _isAgentTyping.asStateFlow()
+
+    // ========== Server Theme & Customization State ==========
+
+    private val _serverTheme = MutableStateFlow<ConferbotTheme?>(null)
+    /**
+     * Theme built from server-side customization data.
+     * Null until the `fetched-chatbot-data` event is received and parsed.
+     * Collect this in Compose UI and wrap content with [ConferbotThemeProvider]
+     * to apply server colors automatically.
+     */
+    val serverTheme: StateFlow<ConferbotTheme?> = _serverTheme.asStateFlow()
+
+    private val _serverCustomization = MutableStateFlow<ServerChatbotCustomization?>(null)
+    /**
+     * Parsed server customization metadata (avatar URL, logo, bot name, etc.)
+     * that doesn't map directly to theme colors but is useful for the chat header.
+     */
+    val serverCustomization: StateFlow<ServerChatbotCustomization?> = _serverCustomization.asStateFlow()
 
     // ========== Offline Mode State ==========
 
@@ -524,10 +581,164 @@ object Conferbot {
             cachedChatbotNodes = nodes
             cachedChatbotEdges = edges
 
+            // Parse server customizations and build theme
+            parseServerCustomizations(chatbotData.optJSONObject("customizations"))
+
             // Try to start the flow immediately if session is ready
             tryStartFlow()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse fetched-chatbot-data", e)
+        }
+    }
+
+    /**
+     * Parse the server customizations JSON object and build a [ConferbotTheme].
+     *
+     * The customizations object comes from `chatbotData.customizations` in the
+     * `fetched-chatbot-data` socket event. Color values are hex strings (e.g. "#0100EC").
+     * Malformed values are silently skipped so the default theme color is kept.
+     */
+    private fun parseServerCustomizations(customizations: JSONObject?) {
+        if (customizations == null) {
+            Log.d(TAG, "No customizations object in chatbot data")
+            return
+        }
+
+        try {
+            // Helper: optString returns "" for missing keys, normalize to null
+            fun JSONObject.optStringOrNull(key: String): String? {
+                val value = optString(key, "")
+                return value.ifBlank { null }
+            }
+
+            // --- 1. Store non-color metadata ---
+            val serverCustom = ServerChatbotCustomization(
+                avatarUrl = customizations.optStringOrNull("avatar"),
+                avatarSize = if (customizations.has("avatarSize")) customizations.optInt("avatarSize") else null,
+                hideAvatar = customizations.optBoolean("hideAvatar", false),
+                logoUrl = customizations.optStringOrNull("logo"),
+                logoText = customizations.optStringOrNull("logoText"),
+                botName = customizations.optStringOrNull("botName"),
+                font = customizations.optStringOrNull("font"),
+                fontSize = if (customizations.has("fontSize")) customizations.optInt("fontSize") else null,
+                bubbleBorderRadius = if (customizations.has("bubbleBorderRadius")) customizations.optInt("bubbleBorderRadius") else null,
+                chatBgType = customizations.optStringOrNull("chatBgType"),
+                hideBrand = customizations.optBoolean("hideBrand", false),
+                enableCustomBrand = customizations.optBoolean("enableCustomBrand", false),
+                customBrand = customizations.optStringOrNull("customBrand"),
+                enableTagline = customizations.optBoolean("enableTagline", false),
+                tagline = customizations.optStringOrNull("tagline"),
+                gradientBgOne = customizations.optStringOrNull("gradientBgOne"),
+                gradientBgTwo = customizations.optStringOrNull("gradientBgTwo"),
+                chatBgImg = customizations.optStringOrNull("chatBgImg")
+            )
+            _serverCustomization.value = serverCustom
+
+            // --- 2. Build a theme from color values ---
+            val builder = ConferbotThemeBuilder.create()
+                .name("ServerCustomized")
+
+            // Helper to safely parse a hex color string to Compose Color
+            fun parseHexColor(hex: String?): androidx.compose.ui.graphics.Color? {
+                if (hex.isNullOrBlank()) return null
+                return try {
+                    androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(hex))
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to parse color: $hex", e)
+                    null
+                }
+            }
+
+            // Header
+            val headerBg = parseHexColor(customizations.optStringOrNull("headerBgColor"))
+            val headerText = parseHexColor(customizations.optStringOrNull("headerTextColor"))
+            if (headerBg != null || headerText != null) {
+                builder.headerColors(
+                    background = headerBg ?: com.conferbot.sdk.ui.theme.LightTheme.colors.headerBackground,
+                    text = headerText ?: com.conferbot.sdk.ui.theme.LightTheme.colors.headerText
+                )
+            }
+            // If headerBgColor is provided, also use it as the primary brand color
+            if (headerBg != null) {
+                builder.primaryColor(headerBg)
+            }
+
+            // Bot message bubble
+            val botBubbleBg = parseHexColor(customizations.optStringOrNull("botMsgColor"))
+            val botBubbleText = parseHexColor(customizations.optStringOrNull("botTextColor"))
+            if (botBubbleBg != null || botBubbleText != null) {
+                builder.botBubbleColors(
+                    background = botBubbleBg ?: com.conferbot.sdk.ui.theme.LightTheme.colors.botBubble,
+                    text = botBubbleText ?: com.conferbot.sdk.ui.theme.LightTheme.colors.botBubbleText
+                )
+            }
+
+            // User message bubble
+            val userBubbleBg = parseHexColor(customizations.optStringOrNull("userMsgColor"))
+            val userBubbleText = parseHexColor(customizations.optStringOrNull("userTextColor"))
+            if (userBubbleBg != null || userBubbleText != null) {
+                builder.userBubbleColors(
+                    background = userBubbleBg ?: com.conferbot.sdk.ui.theme.LightTheme.colors.userBubble,
+                    text = userBubbleText ?: com.conferbot.sdk.ui.theme.LightTheme.colors.userBubbleText
+                )
+            }
+
+            // Option bubble colors -> mapped to button colors
+            val optionBubbleBg = parseHexColor(customizations.optStringOrNull("optionBubbleMsgColor"))
+            val optionBubbleText = parseHexColor(customizations.optStringOrNull("optionBubbleTextColor"))
+            // The builder doesn't have a direct setter for button colors individually,
+            // but we can use primaryColor for button background (already done via headerBg).
+            // For more granular control we note these are available in serverCustomization.
+
+            // Chat background
+            val chatBgColor = parseHexColor(customizations.optStringOrNull("chatBgColor"))
+            val chatBgType = customizations.optStringOrNull("chatBgType") ?: "solid"
+            val gradientColor1 = parseHexColor(serverCustom.gradientBgOne)
+            val gradientColor2 = parseHexColor(serverCustom.gradientBgTwo)
+            val chatBgImgUrl = serverCustom.chatBgImg
+
+            when (chatBgType) {
+                "gradient" -> {
+                    if (gradientColor1 != null && gradientColor2 != null) {
+                        builder.gradientBackground(gradientColor1, gradientColor2)
+                    } else if (gradientColor1 != null && chatBgColor != null) {
+                        builder.gradientBackground(gradientColor1, chatBgColor)
+                    } else if (chatBgColor != null) {
+                        val lighterVariant = chatBgColor.copy(alpha = 0.6f)
+                        builder.gradientBackground(chatBgColor, lighterVariant)
+                    }
+                }
+                "image" -> {
+                    if (!chatBgImgUrl.isNullOrBlank()) {
+                        builder.imageBackground(chatBgImgUrl)
+                    } else if (chatBgColor != null) {
+                        builder.background(chatBgColor)
+                    }
+                }
+                else -> {
+                    if (chatBgColor != null) {
+                        builder.background(chatBgColor)
+                    }
+                }
+            }
+
+            // Bubble border radius
+            if (serverCustom.bubbleBorderRadius != null && serverCustom.bubbleBorderRadius > 0) {
+                builder.bubbleRadius(serverCustom.bubbleBorderRadius.dp)
+            }
+
+            // Font size -> message size
+            if (serverCustom.fontSize != null && serverCustom.fontSize > 0) {
+                builder.messageSize(serverCustom.fontSize.sp)
+                builder.bodySize(serverCustom.fontSize.sp)
+            }
+
+            val theme = builder.build()
+            _serverTheme.value = theme
+            Log.d(TAG, "Built server theme from customizations")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse server customizations", e)
         }
     }
 
@@ -561,6 +772,11 @@ object Conferbot {
      * Observe flow engine currentUIState and add message-type nodes to the record
      * so they appear persistently in the message list.
      */
+    /** Strip HTML tags from text (e.g. "<p>Hello</p>" → "Hello") */
+    private fun stripHtml(html: String): String {
+        return android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
+    }
+
     private fun observeFlowEngineMessages() {
         scope.launch {
             nodeFlowEngine?.currentUIState?.collectLatest { uiState ->
@@ -570,7 +786,7 @@ object Conferbot {
                     is NodeUIState.Message -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
                         time = java.util.Date(),
-                        text = uiState.text
+                        text = stripHtml(uiState.text)
                     )
                     is NodeUIState.Image -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
@@ -586,36 +802,14 @@ object Conferbot {
                     is NodeUIState.TextInput -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
                         time = java.util.Date(),
-                        text = uiState.questionText
+                        text = stripHtml(uiState.questionText)
                     )
-                    is NodeUIState.SingleChoice -> if (uiState.questionText != null) {
-                        RecordItem.BotMessage(
-                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
-                            time = java.util.Date(),
-                            text = uiState.questionText
-                        )
-                    } else null
-                    is NodeUIState.MultipleChoice -> if (uiState.questionText != null) {
-                        RecordItem.BotMessage(
-                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
-                            time = java.util.Date(),
-                            text = uiState.questionText
-                        )
-                    } else null
-                    is NodeUIState.Rating -> if (uiState.questionText != null) {
-                        RecordItem.BotMessage(
-                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
-                            time = java.util.Date(),
-                            text = uiState.questionText
-                        )
-                    } else null
-                    is NodeUIState.Dropdown -> if (uiState.questionText != null) {
-                        RecordItem.BotMessage(
-                            id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
-                            time = java.util.Date(),
-                            text = uiState.questionText
-                        )
-                    } else null
+                    // Interactive nodes render their own question text inline via NodeRenderer
+                    // Don't duplicate as a separate BotMessage
+                    is NodeUIState.SingleChoice -> null
+                    is NodeUIState.MultipleChoice -> null
+                    is NodeUIState.Rating -> null
+                    is NodeUIState.Dropdown -> null
                     else -> null
                 }
 
@@ -902,6 +1096,28 @@ object Conferbot {
      */
     fun identify(user: ConferBotUser) {
         this.user = user
+    }
+
+    /**
+     * Reset the unread message count to zero.
+     *
+     * Called automatically by [ConferBotWidget] when the chat overlay opens.
+     * Can also be called manually when the host app considers messages "read".
+     */
+    fun resetUnreadCount() {
+        _unreadCount.value = 0
+    }
+
+    /**
+     * Update the chat-visible flag.
+     *
+     * This is called internally by [ConferBotWidget] and should not normally
+     * be called by host application code.
+     *
+     * @param visible true when the chat overlay is showing
+     */
+    fun setChatVisible(visible: Boolean) {
+        _isChatVisible.value = visible
     }
 
     // ==================== Push Notification Methods ====================
@@ -1379,6 +1595,11 @@ object Conferbot {
         flowStarted = false
         cachedChatbotNodes = null
         cachedChatbotEdges = null
+        // Reset server theme/customization
+        _serverTheme.value = null
+        _serverCustomization.value = null
+        // Reset widget state
+        _isChatVisible.value = false
         // FIX 6: Cancel coroutine scope to prevent leaked coroutines
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         _isConnected.value = false
