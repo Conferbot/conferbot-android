@@ -422,7 +422,7 @@ fun TextInputNode(
     ) {
         if (state.questionText.isNotEmpty()) {
             BotMessageBubble(text = state.questionText)
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Inline text field with embedded send button
@@ -1066,46 +1066,42 @@ fun SingleChoiceNode(
     Column(modifier = modifier) {
         if (!state.questionText.isNullOrEmpty()) {
             BotMessageBubble(text = state.questionText)
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
+        // Web widget: border-radius 0.75rem, shadow 0 1px 3px rgba(0,0,0,0.1)
+        // No start padding needed — parent (MessageList) already wraps in Row with BotAvatar
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             state.choices.forEachIndexed { index, choice ->
                 val isSelected = selectedId == choice.id
-                val isDisabled = selectedId != null && !isSelected
 
-                // Staggered entrance animation
                 var visible by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
                     kotlinx.coroutines.delay(index.toLong() * STAGGER_DELAY_MS)
                     visible = true
                 }
 
-                // Fade out non-selected after selection
                 val alpha by animateFloatAsState(
                     targetValue = when {
                         selectedId == null -> 1f
                         isSelected -> 1f
-                        else -> 0.4f
+                        else -> 0.35f
                     },
                     animationSpec = tween(FADE_DURATION_MS, easing = PremiumEasing),
                     label = "choice_alpha_$index"
                 )
 
-                val elevation by animateDpAsState(
-                    targetValue = if (isSelected) 2.dp else 1.dp,
-                    animationSpec = tween(SCALE_DURATION_MS, easing = PremiumEasing),
-                    label = "choice_elevation_$index"
-                )
-
                 AnimatedVisibility(
                     visible = visible,
                     enter = fadeIn(tween(APPEAR_DURATION_MS, easing = PremiumEasing)) +
-                            expandVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing))
+                            scaleIn(
+                                initialScale = 0.92f,
+                                animationSpec = tween(APPEAR_DURATION_MS, easing = PremiumEasing)
+                            )
                 ) {
                     Surface(
                         onClick = {
@@ -1114,41 +1110,39 @@ fun SingleChoiceNode(
                                 onResponse(mapOf("id" to choice.id, "text" to choice.text))
                             }
                         },
-                        modifier = Modifier
-                            .graphicsLayer { this.alpha = alpha },
-                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.graphicsLayer { this.alpha = alpha },
+                        shape = RoundedCornerShape(12.dp), // 0.75rem
                         color = if (isSelected) theme.colors.botBubble
                                else theme.colors.botBubble.copy(alpha = 0.85f),
                         contentColor = theme.colors.botBubbleText,
-                        border = null,
-                        shadowElevation = elevation,
+                        shadowElevation = 1.dp, // subtle shadow matching web widget
                         enabled = selectedId == null
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Checkmark on selected
                             AnimatedVisibility(
                                 visible = isSelected,
-                                enter = fadeIn(tween(FADE_DURATION_MS)) + expandHorizontally(tween(SCALE_DURATION_MS, easing = PremiumEasing)),
-                                exit = fadeOut(tween(FADE_DURATION_MS)) + shrinkHorizontally(tween(SCALE_DURATION_MS))
+                                enter = fadeIn(tween(FADE_DURATION_MS)) +
+                                        expandHorizontally(tween(SCALE_DURATION_MS, easing = PremiumEasing)),
+                                exit = fadeOut(tween(FADE_DURATION_MS)) +
+                                        shrinkHorizontally(tween(SCALE_DURATION_MS))
                             ) {
                                 Row {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
+                                        modifier = Modifier.size(14.dp),
                                         tint = Color.White
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                 }
                             }
-
                             Text(
                                 text = choice.text,
-                                style = MaterialTheme.typography.labelLarge,
+                                fontSize = 14.sp,
+                                lineHeight = 18.sp,
                                 maxLines = 1
                             )
                         }
@@ -1170,20 +1164,21 @@ fun MultipleChoiceNode(
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var submitted by remember { mutableStateOf(false) }
 
+    // Web widget: flex-direction column, gap 8px, max-width 85%
     Column(
         modifier = modifier.animateContentSize(
             animationSpec = tween(APPEAR_DURATION_MS, easing = PremiumEasing)
-        )
+        ),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (!state.questionText.isNullOrEmpty()) {
             BotMessageBubble(text = state.questionText)
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         state.options.forEachIndexed { index, option ->
             val isSelected = option.id in selectedIds
 
-            // Staggered entrance
             var visible by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
                 kotlinx.coroutines.delay(index.toLong() * STAGGER_DELAY_MS)
@@ -1191,13 +1186,15 @@ fun MultipleChoiceNode(
             }
 
             val borderColor by animateColorAsState(
-                targetValue = if (isSelected) primaryColor else theme.colors.outline.copy(alpha = 0.4f),
+                targetValue = if (isSelected) primaryColor
+                    else theme.colors.outline.copy(alpha = 0.25f),
                 animationSpec = tween(FADE_DURATION_MS, easing = PremiumEasing),
                 label = "multi_border_$index"
             )
 
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) primaryColor.copy(alpha = 0.06f) else Color.Transparent,
+                targetValue = if (isSelected) primaryColor.copy(alpha = 0.08f)
+                    else Color(0xFFFAFAFA),
                 animationSpec = tween(FADE_DURATION_MS, easing = PremiumEasing),
                 label = "multi_bg_$index"
             )
@@ -1207,11 +1204,10 @@ fun MultipleChoiceNode(
                 enter = fadeIn(tween(APPEAR_DURATION_MS, easing = PremiumEasing)) +
                         expandVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing))
             ) {
+                // Web widget: padding 8px 12px, border-radius 10px, border 1.5px, font 14px
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(0.85f),
+                    shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = bgColor),
                     border = BorderStroke(1.dp, borderColor),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -1220,74 +1216,61 @@ fun MultipleChoiceNode(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = !submitted) {
-                                selectedIds = if (isSelected) {
+                                selectedIds = if (isSelected)
                                     selectedIds - option.id
-                                } else {
+                                else
                                     selectedIds + option.id
-                                }
                             }
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
                             checked = isSelected,
                             onCheckedChange = {
                                 if (!submitted) {
-                                    selectedIds = if (isSelected) {
+                                    selectedIds = if (isSelected)
                                         selectedIds - option.id
-                                    } else {
+                                    else
                                         selectedIds + option.id
-                                    }
                                 }
                             },
                             colors = CheckboxDefaults.colors(checkedColor = primaryColor),
-                            enabled = !submitted
+                            enabled = !submitted,
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = option.text,
-                            style = MaterialTheme.typography.bodyMedium
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Compact submit button, not full width
+        // Compact submit pill
         AnimatedVisibility(
             visible = selectedIds.isNotEmpty() && !submitted,
-            enter = fadeIn(tween(FADE_DURATION_MS)) + expandVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing)),
-            exit = fadeOut(tween(FADE_DURATION_MS)) + shrinkVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing))
+            enter = fadeIn(tween(FADE_DURATION_MS)) +
+                    expandVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing)),
+            exit = fadeOut(tween(FADE_DURATION_MS)) +
+                    shrinkVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing))
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Button(
                     onClick = {
                         submitted = true
-                        val selectedTexts = state.options
-                            .filter { it.id in selectedIds }
-                            .map { it.text }
-                        onResponse(selectedTexts)
+                        onResponse(state.options.filter { it.id in selectedIds }.map { it.text })
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                    shape = RoundedCornerShape(20.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        "Submit (${selectedIds.size})",
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Icon(Icons.Default.Check, null, Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Submit (${selectedIds.size})", fontSize = 13.sp)
                 }
             }
         }
@@ -2635,27 +2618,34 @@ fun RedirectNode(
 
 // ==================== HELPER COMPONENTS ====================
 
+/**
+ * Inline bot message bubble used by node renderers for question prompts.
+ * Matches web widget: border-radius 1.15rem 0.8rem 0.8rem 0
+ * (all corners rounded except bottom-left — the bot's corner).
+ */
 @Composable
 fun BotMessageBubble(
     text: String,
     modifier: Modifier = Modifier
 ) {
     val theme = ConferbotThemeAmbient.current
+    // Web widget style: rounded except bottom-left
+    val bubbleShape = RoundedCornerShape(
+        topStart = 16.dp,
+        topEnd = 16.dp,
+        bottomStart = 0.dp,
+        bottomEnd = 16.dp
+    )
     Surface(
         modifier = modifier
-            .shadow(
-                elevation = 1.dp,
-                shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-                clip = false
-            ),
-        shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+            .shadow(elevation = 1.dp, shape = bubbleShape, clip = false),
+        shape = bubbleShape,
         color = theme.colors.botBubble,
-        tonalElevation = 0.5.dp
+        tonalElevation = 0.dp
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodyLarge,
             color = theme.colors.botBubbleText,
             fontSize = 14.sp,
             lineHeight = 20.sp
