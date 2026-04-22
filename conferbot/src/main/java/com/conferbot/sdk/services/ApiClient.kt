@@ -32,7 +32,7 @@ data class ApiResponse<T>(
 interface ConferBotApiService {
     @POST("session/init")
     suspend fun initSession(
-        @Body body: Map<String, Any?>
+        @Body body: Map<String, @JvmSuppressWildcards Any?>
     ): Response<ApiResponse<ChatSession>>
 
     @GET("session/{chatSessionId}")
@@ -43,7 +43,7 @@ interface ConferBotApiService {
     @POST("session/{chatSessionId}/message")
     suspend fun sendMessage(
         @Path("chatSessionId") chatSessionId: String,
-        @Body body: Map<String, Any?>
+        @Body body: Map<String, @JvmSuppressWildcards Any?>
     ): Response<ApiResponse<Any>>
 
     @POST("push/register")
