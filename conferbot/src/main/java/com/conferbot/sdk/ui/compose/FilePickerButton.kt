@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 import com.conferbot.sdk.utils.FileValidator
 import com.conferbot.sdk.utils.ValidationResult
 
@@ -50,7 +51,7 @@ fun FilePickerButton(
     maxSizeBytes: Long,
     onFileSelected: (Uri) -> Unit,
     onError: (String) -> Unit,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     enabled: Boolean = true,
     allowMultiple: Boolean = false,
     modifier: Modifier = Modifier
@@ -166,10 +167,11 @@ fun FilePickerArea(
     maxSizeMb: Int,
     onFileSelected: (Uri) -> Unit,
     onError: (String) -> Unit,
-    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val theme = ConferbotThemeAmbient.current
     val context = LocalContext.current
 
     val filePicker = rememberLauncherForActivityResult(
@@ -237,18 +239,18 @@ fun FilePickerArea(
                 Text(
                     text = "Tap to upload file",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else Color.Gray
+                    color = if (enabled) theme.colors.onSurface else Color.Gray
                 )
                 Text(
                     text = "Max ${maxSizeMb}MB",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = theme.colors.onSurfaceVariant
                 )
                 if (!allowedTypes.isNullOrEmpty() && allowedTypes.first() != "*" + "/" + "*") {
                     Text(
                         text = formatAllowedTypesForDisplay(allowedTypes),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = theme.colors.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -266,6 +268,7 @@ fun SelectedFileChip(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = ConferbotThemeAmbient.current
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp)
@@ -279,7 +282,7 @@ fun SelectedFileChip(
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = theme.colors.primary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -292,14 +295,14 @@ fun SelectedFileChip(
                 Text(
                     text = file.formattedSize,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = theme.colors.onSurfaceVariant
                 )
             }
             IconButton(onClick = onRemove) {
                 Icon(
                     imageVector = Icons.Default.Folder, // Using folder as close icon placeholder
                     contentDescription = "Remove file",
-                    tint = MaterialTheme.colorScheme.error
+                    tint = theme.colors.error
                 )
             }
         }
