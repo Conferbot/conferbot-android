@@ -60,8 +60,8 @@ object ConferBotEndpoints {
  */
 object Constants {
     // API Configuration
-    const val DEFAULT_API_BASE_URL = "https://embed.conferbot.com/api/v1/mobile/"
-    const val DEFAULT_SOCKET_URL = "https://embed.conferbot.com"
+    const val DEFAULT_API_BASE_URL = "http://10.0.2.2:8001/api/v1/mobile/"
+    const val DEFAULT_SOCKET_URL = "http://10.0.2.2:8001"
     const val API_TIMEOUT = 30000L // 30 seconds
     const val SOCKET_TIMEOUT = 20000L // 20 seconds
 
