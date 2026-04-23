@@ -811,13 +811,21 @@ object ChatState {
     fun getRecordForServer(): List<Map<String, Any?>> {
         return _record.value.map { entry ->
             mutableMapOf<String, Any?>(
+                "_id" to entry.id,
                 "id" to entry.id,
-                "shape" to entry.shape,
                 "type" to entry.type,
-                "text" to entry.text,
                 "time" to entry.time
             ).apply {
-                putAll(entry.data)
+                // For user responses, keep flat shape/text format
+                if (entry.shape.startsWith("user-")) {
+                    put("shape", entry.shape)
+                    put("text", entry.text)
+                } else {
+                    // For bot messages, nest data as sub-object (web widget format)
+                    val dataMap = entry.data.toMutableMap()
+                    if (entry.text != null) dataMap["text"] = entry.text
+                    put("data", dataMap)
+                }
             }
         }
     }
@@ -840,7 +848,8 @@ object ChatState {
             "answerVariables" to _answerVariables.value.map {
                 mapOf("nodeId" to it.nodeId, "key" to it.key, "value" to it.value)
             },
-            "workspaceId" to _workspaceId
+            "workspaceId" to _workspaceId,
+            "channel" to "mobile"
         )
     }
 
