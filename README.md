@@ -3,9 +3,15 @@
 [![Maven Central](https://img.shields.io/maven-central/v/com.conferbot/android-sdk)](https://central.sonatype.com/artifact/com.conferbot/android-sdk)
 [![Android](https://img.shields.io/badge/Android-5.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9%2B-blue.svg)](https://kotlinlang.org)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 The official Android SDK for integrating [Conferbot](https://conferbot.com) into Kotlin and Java applications. Supports XML Views, Jetpack Compose, and headless (custom UI) patterns.
+
+<p align="center">
+  <img src="docs/screenshots/chat-compose.png" width="280" alt="Jetpack Compose Chat" />
+  <img src="docs/screenshots/choice-node.png" width="280" alt="Choice Node" />
+  <img src="docs/screenshots/themed-chat.png" width="280" alt="Themed Chat" />
+</p>
 
 ## Features
 
@@ -50,6 +56,15 @@ dependencies {
 ```
 
 Sync your Gradle files after adding the dependency.
+
+## Getting Your API Key and Bot ID
+
+You need two credentials to use the SDK:
+
+1. **Log in** to [Conferbot Dashboard](https://app.conferbot.com)
+2. **Create or select a bot** from the dashboard
+3. **Find your Bot ID**: Go to **Bot Settings** > **General** -- the Bot ID is displayed at the top
+4. **Find your API Key**: Go to **Workspace Settings** > **API Keys** -- copy the key starting with `conf_`
 
 ## Quick Start
 
@@ -293,7 +308,36 @@ Full API documentation is available in the [docs/](docs/) directory:
 
 ## Example App
 
-A working sample app is included in the [`example/`](example/) directory, demonstrating XML Views, Jetpack Compose, push notifications, and custom UI patterns.
+A fully working sample app is included in the [`example/`](example/) directory.
+
+### Running the Example
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/conferbot/android-sdk.git
+cd android-sdk
+
+# 2. Open in Android Studio
+#    File > Open > select the root directory
+
+# 3. Configure your bot credentials
+#    Open example/src/main/java/com/conferbotexample/MainActivity.kt
+#    Replace:
+#      apiKey = "test_key"
+#      botId = "YOUR_BOT_ID"
+#    with your own credentials from the Conferbot dashboard.
+
+# 4. Run the example app
+#    Select the 'example' run configuration and click Run (or Shift+F10)
+```
+
+### What the Example Shows
+
+| Activity | Pattern | Description |
+|----------|---------|-------------|
+| **MainActivity** | XML Views | Traditional Android UI with Conferbot XML components |
+| **ComposeActivity** | Jetpack Compose | Modern declarative UI with Compose components |
+| **Headless** | Custom UI | Full control using `Conferbot.state` StateFlow |
 
 ## Contributing
 
@@ -301,7 +345,7 @@ We welcome bug reports and feature requests via [GitHub Issues](https://github.c
 
 ## License
 
-Proprietary -- see [LICENSE](LICENSE) for details.
+Apache 2.0 -- see [LICENSE](LICENSE) for details.
 
 ## Resources
 
