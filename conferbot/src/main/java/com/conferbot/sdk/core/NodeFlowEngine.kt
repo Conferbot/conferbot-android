@@ -3,6 +3,7 @@ package com.conferbot.sdk.core
 import com.conferbot.sdk.core.analytics.ChatAnalytics
 import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
+import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.services.SocketClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.withTimeoutOrNull
@@ -183,6 +184,36 @@ class NodeFlowEngine(
                 _isProcessing.value = false
                 _currentUIState.value = result.uiState
 
+                // Push bot message to record (matching web widget format)
+                val nodeId = currentNodeId
+                val nodeType = nodeData["type"]?.toString()
+                if (nodeId != null && nodeType != null) {
+                    val uiText = when (val ui = result.uiState) {
+                        is NodeUIState.Message -> ui.text
+                        is NodeUIState.Question -> ui.question
+                        is NodeUIState.Choice -> ui.question
+                        else -> null
+                    }
+                    @Suppress("UNCHECKED_CAST")
+                    val nodeDataMap = (nodeData["data"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
+                    if (uiText != null) nodeDataMap["text"] = uiText
+                    ChatState.pushToRecord(RecordEntry(
+                        id = nodeId,
+                        shape = nodeType,
+                        type = nodeType,
+                        text = uiText,
+                        data = nodeDataMap
+                    ))
+                }
+
+                // For human handover waiting state, emit initiate-handover socket event
+                // matching the web widget's payload format
+                if (result.uiState is NodeUIState.HumanHandover &&
+                    (result.uiState as NodeUIState.HumanHandover).state == NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+                ) {
+                    emitInitiateHandover(nodeData)
+                }
+
                 // For message-only nodes, auto-proceed after delay
                 if (result.uiState is NodeUIState.Message ||
                     result.uiState is NodeUIState.Image ||
@@ -322,6 +353,21 @@ class NodeFlowEngine(
             }
 
             try {
+                // Push user response to record (matching web widget format)
+                val responseText = when (response) {
+                    is String -> response
+                    is Map<*, *> -> response["text"]?.toString()
+                        ?: response["selectedChoice"]?.toString()
+                        ?: response.toString()
+                    else -> response.toString()
+                }
+                ChatState.pushToRecord(RecordEntry(
+                    id = nodeId,
+                    shape = "user-input-response",
+                    type = nodeData["type"]?.toString(),
+                    text = responseText,
+                ))
+
                 val result = handler.handleResponse(response, nodeData, nodeId)
                 // Track node exit with user input
                 val userInput = if (response is String) response else response.toString()
@@ -440,6 +486,67 @@ class NodeFlowEngine(
                 )
             }
         }
+    }
+
+    /**
+     * Emit initiate-handover socket event matching web widget payload format.
+     * Called when handover handler returns WAITING_FOR_AGENT UI state.
+     */
+    private fun emitInitiateHandover(nodeData: Map<String, Any?>) {
+        val chatSessionId = ChatState.chatSessionId ?: return
+        val botId = ChatState.botId ?: return
+        val workspaceId = ChatState.workspaceId ?: ""
+        val botName = ChatState.getVariable("_botName")?.toString() ?: ""
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(java.util.Date())
+
+        // Build chatMetaData matching web widget format exactly
+        val chatMetaData = mapOf(
+            "version" to "v2",
+            "workspaceId" to workspaceId,
+            "chatSessionId" to chatSessionId,
+            "botId" to botId,
+            "botName" to botName,
+            "chatDate" to now,
+            "deviceInfo" to "Android/${android.os.Build.MODEL}",
+            "location" to java.util.TimeZone.getDefault().id,
+            "record" to ChatState.getRecordForServer(),
+            "answerVariables" to ChatState.getAnswerVariablesMap(),
+            "transcript" to ChatState.getTranscriptForGPT()
+        )
+
+        // Build visitor metaData
+        val metaData = mapOf(
+            "visitorId" to (ChatState.visitorId ?: chatSessionId),
+            "chatDate" to now,
+            "deviceInfo" to "Android/${android.os.Build.MODEL}",
+            "location" to java.util.TimeZone.getDefault().id
+        )
+
+        // Extract handover config from nodeData
+        val maxWaitTime = when (val v = nodeData["maxWaitTime"]) {
+            is Number -> v.toInt()
+            is String -> v.toIntOrNull() ?: 2
+            else -> 2
+        }
+
+        val payload = mapOf(
+            "workspaceId" to workspaceId,
+            "chatbotId" to botId,
+            "chatbotName" to botName,
+            "chatSessionId" to chatSessionId,
+            "chatMetaData" to chatMetaData,
+            "metaData" to metaData,
+            "priority" to (nodeData["priority"]?.toString() ?: "normal"),
+            "maxWaitTime" to maxWaitTime,
+            "assignmentType" to (nodeData["assignmentType"]?.toString() ?: "auto"),
+            "assignmentStrategy" to (nodeData["agentAssignmentStrategy"]?.toString() ?: ""),
+            "assignedAgents" to (nodeData["assignedAgents"] ?: emptyList<String>()),
+            "assignedAIAgents" to (nodeData["assignedAIAgents"] ?: emptyList<String>())
+        )
+
+        socketClient.emit("initiate-handover", org.json.JSONObject(payload))
     }
 
     /**
