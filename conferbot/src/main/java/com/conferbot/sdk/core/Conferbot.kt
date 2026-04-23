@@ -1399,10 +1399,9 @@ object Conferbot {
         _chatSessionId.value = null
         _currentAgent.value = null
         _unreadCount.value = 0
-        // Reset flow state so it can be re-triggered
+        // Reset flow state so it can be re-triggered with same bot data
         flowStarted = false
-        cachedChatbotNodes = null
-        cachedChatbotEdges = null
+        // Keep cachedChatbotNodes/Edges — same bot, new session
         // Clean up Knowledge Base service when history is cleared
         disposeKnowledgeBaseService()
         ChatState.reset()
