@@ -146,6 +146,7 @@ object Conferbot {
     // Cached chatbot data (nodes/edges) from fetched-chatbot-data event
     private var cachedChatbotNodes: List<Map<String, Any>>? = null
     private var cachedChatbotEdges: List<Map<String, Any>>? = null
+    private var cachedWorkspaceId: String? = null
     private var flowStarted = false
 
     /**
@@ -580,6 +581,12 @@ object Conferbot {
             // Cache the data
             cachedChatbotNodes = nodes
             cachedChatbotEdges = edges
+
+            // Extract workspaceId from server chatbot data
+            val serverWorkspaceId = chatbotData.optString("workspaceId", "")
+            if (serverWorkspaceId.isNotBlank()) {
+                cachedWorkspaceId = serverWorkspaceId
+            }
 
             // Parse server customizations and build theme
             parseServerCustomizations(chatbotData.optJSONObject("customizations"))
@@ -1526,10 +1533,17 @@ object Conferbot {
             chatSessionId = sessionId,
             visitorId = visitorId,
             botId = currentBotId,
-            workspaceId = null,
+            workspaceId = cachedWorkspaceId,
             stepsData = steps,
             edgesData = edges
         )
+
+        // Set _botName variable for handover handler
+        val resolvedBotName = _serverCustomization.value?.botName
+            ?: _serverCustomization.value?.logoText ?: ""
+        if (resolvedBotName.isNotBlank()) {
+            ChatState.setVariable("_botName", resolvedBotName)
+        }
     }
 
     /**
