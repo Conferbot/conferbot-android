@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import android.util.Log
 import com.conferbot.sdk.core.nodes.*
 
 /**
@@ -10,7 +11,9 @@ class WelcomeNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.WELCOME
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val text = stripHtml(getString(nodeData, "text"))
+        val rawText = stripHtml(getString(nodeData, "text"))
+        // Resolve variable placeholders ({{var}}, ${var}, {var})
+        val text = state.resolveVariables(rawText)
         val image = nodeData["image"]?.toString()
         val disableImage = nodeData["disableImage"] as? Boolean ?: false
 
@@ -54,8 +57,18 @@ class MessageNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.MESSAGE
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val text = stripHtml(getString(nodeData, "text"))
-        val message = stripHtml(getString(nodeData, "message", text))
+        val rawText = stripHtml(getString(nodeData, "text"))
+        val rawMessage = stripHtml(getString(nodeData, "message", rawText))
+        // Resolve variable placeholders ({{var}}, ${var}, {var})
+        val message = state.resolveVariables(rawMessage)
+
+        // Skip message-nodes that just echo the user's last choice selection
+        val lastChoice = state.getVariable("_lastUserChoice")
+        Log.d("ConferBot", "MessageHandler: text=$message, lastChoice=$lastChoice")
+        if (lastChoice != null && message.trim() == lastChoice.toString().trim()) {
+            state.setVariable("_lastUserChoice", null)
+            return NodeResult.Proceed()
+        }
 
         // Add to transcript
         state.addToTranscript("bot", message)
