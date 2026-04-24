@@ -19,6 +19,8 @@ enum class MessageType(val value: String) {
     AGENT_MESSAGE_FILE("agent-message-file"),
     AGENT_MESSAGE_AUDIO("agent-message-audio"),
     AGENT_JOINED_MESSAGE("agent-joined-message"),
+    AGENT_LEFT_CHAT("agent-left-chat"),
+    USER_LIVE_MESSAGE("user-live-message"),
     VISITOR_DISCONNECTED_MESSAGE("visitor-disconnected-message"),
     VISITOR_RECONNECTED_MESSAGE("visitor-reconnected-message"),
     SYSTEM_MESSAGE("system-message");
@@ -168,6 +170,41 @@ sealed class RecordItem {
     }
 
     /**
+     * Agent left chat message record
+     */
+    data class AgentLeftMessage(
+        @SerializedName("_id")
+        override val id: String,
+
+        @SerializedName("time")
+        override val time: Date,
+
+        @SerializedName("text")
+        val text: String,
+
+        @SerializedName("agentDetails")
+        val agentDetails: AgentDetails? = null
+    ) : RecordItem() {
+        override val type: MessageType = MessageType.AGENT_LEFT_CHAT
+    }
+
+    /**
+     * User live chat message record (sent during agent handover)
+     */
+    data class UserLiveMessage(
+        @SerializedName("_id")
+        override val id: String,
+
+        @SerializedName("time")
+        override val time: Date,
+
+        @SerializedName("text")
+        val text: String
+    ) : RecordItem() {
+        override val type: MessageType = MessageType.USER_LIVE_MESSAGE
+    }
+
+    /**
      * System message record
      */
     data class SystemMessage(
@@ -205,6 +242,8 @@ class RecordItemDeserializer : JsonDeserializer<RecordItem> {
             MessageType.AGENT_MESSAGE_FILE -> context.deserialize(jsonObject, RecordItem.AgentMessageFile::class.java)
             MessageType.AGENT_MESSAGE_AUDIO -> context.deserialize(jsonObject, RecordItem.AgentMessageAudio::class.java)
             MessageType.AGENT_JOINED_MESSAGE -> context.deserialize(jsonObject, RecordItem.AgentJoinedMessage::class.java)
+            MessageType.AGENT_LEFT_CHAT -> context.deserialize(jsonObject, RecordItem.AgentLeftMessage::class.java)
+            MessageType.USER_LIVE_MESSAGE -> context.deserialize(jsonObject, RecordItem.UserLiveMessage::class.java)
             else -> context.deserialize(jsonObject, RecordItem.SystemMessage::class.java)
         }
     }

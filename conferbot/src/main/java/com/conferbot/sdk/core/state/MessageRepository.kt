@@ -539,6 +539,22 @@ private data class SerializableMessage(
                     agentDetailsEmail = item.agentDetails.email,
                     agentDetailsAvatar = item.agentDetails.avatar
                 )
+                is RecordItem.AgentLeftMessage -> SerializableMessage(
+                    id = item.id,
+                    type = "agent-left-chat",
+                    time = item.time.time,
+                    text = item.text,
+                    agentDetailsId = item.agentDetails?.id,
+                    agentDetailsName = item.agentDetails?.name,
+                    agentDetailsEmail = item.agentDetails?.email,
+                    agentDetailsAvatar = item.agentDetails?.avatar
+                )
+                is RecordItem.UserLiveMessage -> SerializableMessage(
+                    id = item.id,
+                    type = "user-live-message",
+                    time = item.time.time,
+                    text = item.text
+                )
                 is RecordItem.SystemMessage -> SerializableMessage(
                     id = item.id,
                     type = "system-message",
