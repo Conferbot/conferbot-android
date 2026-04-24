@@ -190,8 +190,9 @@ class NodeFlowEngine(
                 if (nodeId != null && nodeType != null) {
                     val uiText = when (val ui = result.uiState) {
                         is NodeUIState.Message -> ui.text
-                        is NodeUIState.Question -> ui.question
-                        is NodeUIState.Choice -> ui.question
+                        is NodeUIState.TextInput -> ui.questionText
+                        is NodeUIState.SingleChoice -> ui.questionText
+                        is NodeUIState.MultipleChoice -> ui.questionText
                         else -> null
                     }
                     @Suppress("UNCHECKED_CAST")
@@ -357,6 +358,7 @@ class NodeFlowEngine(
                 val responseText = when (response) {
                     is String -> response
                     is Map<*, *> -> response["text"]?.toString()
+                        ?: response["label"]?.toString()
                         ?: response["selectedChoice"]?.toString()
                         ?: response.toString()
                     else -> response.toString()
