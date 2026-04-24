@@ -150,6 +150,28 @@ object ChatState {
     private var _workspaceId: String? = null
     val workspaceId: String? get() = _workspaceId
 
+    // Live chat mode flag - true when an agent is actively handling the chat
+    private val _isLiveChatMode = MutableStateFlow(false)
+    val isLiveChatMode: StateFlow<Boolean> = _isLiveChatMode.asStateFlow()
+
+    // Agent typing indicator
+    private val _isAgentTyping = MutableStateFlow(false)
+    val isAgentTyping: StateFlow<Boolean> = _isAgentTyping.asStateFlow()
+
+    /**
+     * Set live chat mode
+     */
+    fun setLiveChatMode(enabled: Boolean) {
+        _isLiveChatMode.value = enabled
+    }
+
+    /**
+     * Set agent typing status
+     */
+    fun setAgentTyping(typing: Boolean) {
+        _isAgentTyping.value = typing
+    }
+
     /**
      * Initialize chat state with session info
      */
@@ -671,11 +693,15 @@ object ChatState {
     // ========== Variables (Temporary Calculations) ==========
 
     /**
-     * Set a temporary variable
+     * Set a temporary variable (pass null to remove)
      */
-    fun setVariable(name: String, value: Any) {
+    fun setVariable(name: String, value: Any?) {
         val map = _variables.value.toMutableMap()
-        map[name] = value
+        if (value != null) {
+            map[name] = value
+        } else {
+            map.remove(name)
+        }
         _variables.value = map
     }
 
@@ -688,23 +714,57 @@ object ChatState {
 
     /**
      * Resolve a value that might be a variable reference
-     * Format: {{variableName}} or ${variableName}
+     * Supports: {{variable}}, ${variable}, {variable}
+     * Matches the web widget regex: /\$?\{(\w+)\}/g
      */
     fun resolveValue(value: String): Any {
         // Check if it's a variable reference
-        val variablePattern = Regex("\\{\\{(.+?)\\}\\}|\\$\\{(.+?)\\}")
+        val variablePattern = Regex("\\{\\{(.+?)\\}\\}|\\$\\{(.+?)\\}|\\{(\\w+)\\}")
         val match = variablePattern.find(value)
 
         if (match != null) {
-            val varName = match.groupValues[1].ifEmpty { match.groupValues[2] }
+            val varName = match.groupValues[1].ifEmpty {
+                match.groupValues[2].ifEmpty { match.groupValues[3] }
+            }
             // First check answer variables
             val answerValue = getAnswerVariableValue(varName)
             if (answerValue != null) return answerValue
             // Then check temp variables
-            return getVariable(varName) ?: value
+            val tempVar = getVariable(varName)
+            if (tempVar != null) return tempVar
+            // Then check user metadata
+            val metaValue = getUserMetadata(varName)
+            if (metaValue != null) return metaValue
+            return value
         }
 
         return value
+    }
+
+    /**
+     * Resolve all variable placeholders within a text string (inline replacement).
+     * Supports: {{variable}}, ${variable}, {variable}
+     * Matches the web widget regex: /\$?\{(\w+)\}/g
+     */
+    fun resolveVariables(text: String): String {
+        // Pattern matches {{var}}, ${var}, or {var}
+        val pattern = Regex("\\{\\{(\\w+)\\}\\}|\\$\\{(\\w+)\\}|\\{(\\w+)\\}")
+        return pattern.replace(text) { matchResult ->
+            val varName = matchResult.groupValues[1].ifEmpty {
+                matchResult.groupValues[2].ifEmpty { matchResult.groupValues[3] }
+            }
+            // Check answer variables first
+            val answerValue = getAnswerVariableValue(varName)
+            if (answerValue != null) return@replace answerValue.toString()
+            // Then check temp variables
+            val tempVar = getVariable(varName)
+            if (tempVar != null) return@replace tempVar.toString()
+            // Then check user metadata
+            val metaValue = getUserMetadata(varName)
+            if (metaValue != null) return@replace metaValue
+            // If no match, keep original text
+            matchResult.value
+        }
     }
 
     // ========== User Metadata ==========
@@ -930,6 +990,8 @@ object ChatState {
         _paginationState.value = PaginationState()
         _currentIndex.value = 0
         _steps.value = emptyList()
+        _isLiveChatMode.value = false
+        _isAgentTyping.value = false
         _chatSessionId = null
         _visitorId = null
         _botId = null
@@ -951,6 +1013,8 @@ object ChatState {
         _transcript.value = mutableListOf()
         _record.value = mutableListOf()
         _currentIndex.value = 0
+        _isLiveChatMode.value = false
+        _isAgentTyping.value = false
         // Keep messages and session info
     }
 }
