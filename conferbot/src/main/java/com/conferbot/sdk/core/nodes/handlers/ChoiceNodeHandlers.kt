@@ -68,6 +68,7 @@ class TwoChoicesNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, cleanText)
         state.addToTranscript("user", cleanText)
+        state.setVariable("_lastUserChoice", cleanText)
 
         recordResponse(
             nodeId = nodeId,
@@ -143,6 +144,7 @@ class ThreeChoicesNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, cleanText)
         state.addToTranscript("user", cleanText)
+        state.setVariable("_lastUserChoice", cleanText)
 
         recordResponse(
             nodeId = nodeId,
@@ -207,6 +209,7 @@ class NChoicesNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, cleanText)
         state.addToTranscript("user", cleanText)
+        state.setVariable("_lastUserChoice", cleanText)
 
         recordResponse(
             nodeId = nodeId,
@@ -275,6 +278,7 @@ class SelectOptionNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, cleanText)
         state.addToTranscript("user", cleanText)
+        state.setVariable("_lastUserChoice", cleanText)
 
         recordResponse(
             nodeId = nodeId,
@@ -333,6 +337,7 @@ class NSelectOptionNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, cleanText)
         state.addToTranscript("user", cleanText)
+        state.setVariable("_lastUserChoice", cleanText)
 
         recordResponse(
             nodeId = nodeId,
@@ -392,6 +397,7 @@ class NCheckOptionsNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, combinedText)
         state.addToTranscript("user", combinedText)
+        state.setVariable("_lastUserChoice", combinedText)
 
         recordResponse(
             nodeId = nodeId,
@@ -453,6 +459,7 @@ class ImageChoiceNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, label)
         state.addToTranscript("user", label)
+        state.setVariable("_lastUserChoice", label)
 
         recordResponse(
             nodeId = nodeId,
@@ -524,6 +531,7 @@ class YesOrNoChoiceNodeHandler : BaseNodeHandler() {
 
         state.setAnswerVariable(nodeId, label)
         state.addToTranscript("user", label)
+        state.setVariable("_lastUserChoice", label)
 
         recordResponse(
             nodeId = nodeId,
