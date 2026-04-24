@@ -189,6 +189,9 @@ object Conferbot {
     private val _isAgentTyping = MutableStateFlow(false)
     val isAgentTyping: StateFlow<Boolean> = _isAgentTyping.asStateFlow()
 
+    private val _isLiveChatMode = MutableStateFlow(false)
+    val isLiveChatMode: StateFlow<Boolean> = _isLiveChatMode.asStateFlow()
+
     // ========== Server Theme & Customization State ==========
 
     private val _serverTheme = MutableStateFlow<ConferbotTheme?>(null)
@@ -397,9 +400,9 @@ object Conferbot {
             handleBotResponse(args)
         })
 
-        // Agent message
+        // Agent message - server sends {message, agentDetails, isFileInput, isAudioInput, agentMessageId}
         socketClient?.on(SocketEvents.AGENT_MESSAGE, Emitter.Listener { args ->
-            handleMessageReceived(args)
+            handleAgentMessage(args)
         })
 
         // Agent accepted (embed-server sends agentDetails, not agent)
@@ -415,6 +418,34 @@ object Conferbot {
                     title = agentJson.optString("title", null)
                 )
                 _currentAgent.value = agent
+                _isLiveChatMode.value = true
+                ChatState.setLiveChatMode(true)
+
+                // Add system message: "{agent name} has joined the chat"
+                val agentDetails = AgentDetails(
+                    id = agent.id,
+                    name = agent.name,
+                    email = agent.email,
+                    avatar = agent.avatar
+                )
+                val joinedMessage = RecordItem.AgentJoinedMessage(
+                    id = "agent-joined-${System.currentTimeMillis()}",
+                    time = java.util.Date(),
+                    agentDetails = agentDetails
+                )
+                addMessageToRecord(joinedMessage)
+
+                // Add to ChatState record for server sync
+                ChatState.pushToRecord(
+                    com.conferbot.sdk.core.state.RecordEntry(
+                        id = joinedMessage.id,
+                        shape = "agent-joined-message",
+                        type = "agent-joined-message",
+                        text = "${agent.name} has joined the chat",
+                        data = mutableMapOf("name" to agent.name)
+                    )
+                )
+
                 // Notify flow engine about agent connection
                 nodeFlowEngine?.handleAgentAccepted(agent.name)
                 eventListener?.onAgentJoined(agent)
@@ -422,29 +453,89 @@ object Conferbot {
         })
 
         // Agent left
-        socketClient?.on(SocketEvents.AGENT_LEFT, Emitter.Listener {
+        socketClient?.on(SocketEvents.AGENT_LEFT, Emitter.Listener { args ->
             val agent = _currentAgent.value
             _currentAgent.value = null
+
+            // Add system message: "{agent name} has left the chat"
+            val agentName = agent?.name ?: "Agent"
+            val leftMessage = RecordItem.AgentLeftMessage(
+                id = "agent-left-${System.currentTimeMillis()}",
+                time = java.util.Date(),
+                text = "$agentName has left the chat",
+                agentDetails = agent?.let {
+                    AgentDetails(id = it.id, name = it.name, email = it.email, avatar = it.avatar)
+                }
+            )
+            addMessageToRecord(leftMessage)
+
+            // Add to ChatState record for server sync
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(
+                    id = leftMessage.id,
+                    shape = "agent-left-chat",
+                    type = "agent-left-chat",
+                    text = "$agentName has left the chat"
+                )
+            )
+
             agent?.let { eventListener?.onAgentLeft(it) }
         })
 
-        // Agent typing
+        // Agent typing - server sends {chatSessionId, isTyping, agentDetails}
         socketClient?.on(SocketEvents.AGENT_TYPING_STATUS, Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
             val isTyping = data?.optBoolean("isTyping", false) ?: false
+            // Only apply if chatSessionId matches (or not present)
+            val eventSessionId = data?.optString("chatSessionId", null)
+            if (eventSessionId != null && eventSessionId != _chatSessionId.value) {
+                return@Listener
+            }
             _isAgentTyping.value = isTyping
+            ChatState.setAgentTyping(isTyping)
             eventListener?.onTypingIndicator(isTyping)
         })
 
         // Chat ended
         socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener {
             _currentAgent.value = null
+            _isLiveChatMode.value = false
+            _isAgentTyping.value = false
+            ChatState.setLiveChatMode(false)
+            ChatState.setAgentTyping(false)
+
+            // Add "Chat has ended" system message
+            val endedMessage = RecordItem.SystemMessage(
+                id = "chat-ended-${System.currentTimeMillis()}",
+                time = java.util.Date(),
+                text = "Chat has ended"
+            )
+            addMessageToRecord(endedMessage)
+
+            // Add to ChatState record for server sync
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(
+                    id = endedMessage.id,
+                    shape = "system-message",
+                    type = "system-message",
+                    text = "Chat has ended"
+                )
+            )
+
             nodeFlowEngine?.handleChatEnded()
             eventListener?.onSessionEnded(_chatSessionId.value ?: "")
         })
 
         // No agents available (for human handover)
         socketClient?.on(SocketEvents.NO_AGENTS_AVAILABLE, Emitter.Listener {
+            // Add "No agents available" system message
+            val noAgentsMessage = RecordItem.SystemMessage(
+                id = "no-agents-${System.currentTimeMillis()}",
+                time = java.util.Date(),
+                text = "No agents available"
+            )
+            addMessageToRecord(noAgentsMessage)
+
             nodeFlowEngine?.handleNoAgentsAvailable()
         })
     }
@@ -523,6 +614,119 @@ object Conferbot {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse message", e)
+        }
+    }
+
+    /**
+     * Handle agent message from socket
+     * Server sends: {message, agentDetails, isFileInput, isAudioInput, agentMessageId}
+     */
+    private fun handleAgentMessage(args: Array<Any>) {
+        val data = args.firstOrNull() as? JSONObject ?: return
+        try {
+            val rawMessage = data.optString("message", "")
+            // Strip HTML tags from agent messages (admin sends via rich text editor with <p> tags)
+            val message = rawMessage.replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
+            val isFileInput = data.optBoolean("isFileInput", false)
+            val isAudioInput = data.optBoolean("isAudioInput", false)
+            val agentMessageId = data.optString("agentMessageId", "agent-msg-${System.currentTimeMillis()}")
+
+            val agentDetailsJson = data.optJSONObject("agentDetails")
+            val agentDetails = if (agentDetailsJson != null) {
+                AgentDetails(
+                    id = agentDetailsJson.optString("_id", ""),
+                    name = agentDetailsJson.optString("name", "Agent"),
+                    email = agentDetailsJson.optString("email", null),
+                    avatar = agentDetailsJson.optString("avatar", null)
+                )
+            } else {
+                val currentAgentVal = _currentAgent.value
+                AgentDetails(
+                    id = currentAgentVal?.id ?: "",
+                    name = currentAgentVal?.name ?: "Agent"
+                )
+            }
+
+            val recordItem: RecordItem = when {
+                isFileInput -> RecordItem.AgentMessageFile(
+                    id = agentMessageId,
+                    time = java.util.Date(),
+                    file = message,
+                    agentDetails = agentDetails
+                )
+                isAudioInput -> RecordItem.AgentMessageAudio(
+                    id = agentMessageId,
+                    time = java.util.Date(),
+                    url = message,
+                    agentDetails = agentDetails
+                )
+                else -> RecordItem.AgentMessage(
+                    id = agentMessageId,
+                    time = java.util.Date(),
+                    text = message,
+                    agentDetails = agentDetails
+                )
+            }
+
+            addMessageToRecord(recordItem)
+
+            // Add to ChatState record for server sync
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(
+                    id = agentMessageId,
+                    shape = "agent-message",
+                    type = recordItem.type.value,
+                    text = message,
+                    data = mutableMapOf(
+                        "agentDetails" to mapOf(
+                            "_id" to agentDetails.id,
+                            "name" to agentDetails.name,
+                            "email" to agentDetails.email,
+                            "avatar" to agentDetails.avatar
+                        )
+                    )
+                )
+            )
+
+            // Add to transcript
+            ChatState.addToTranscript("agent", message)
+
+            // Hide typing indicator when message arrives
+            _isAgentTyping.value = false
+            ChatState.setAgentTyping(false)
+
+            // Increment unread count if chat is not visible
+            if (!_isChatVisible.value) {
+                _unreadCount.value = _unreadCount.value + 1
+            }
+
+            eventListener?.onMessageReceived(recordItem)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to handle agent message", e)
+        }
+    }
+
+    /**
+     * Add a message to the record list and persist it
+     */
+    private fun addMessageToRecord(message: RecordItem) {
+        scope.launch {
+            messageManager?.addMessage(message)
+
+            // Deduplication: skip if message with this ID already exists
+            val existingIds = _record.value.map { it.id }.toSet()
+            if (message.id in existingIds) {
+                return@launch
+            }
+
+            val currentRecord = _record.value.toMutableList()
+            currentRecord.add(message)
+
+            if (currentRecord.size > paginationConfig.maxMemoryMessages) {
+                _record.value = currentRecord.takeLast(paginationConfig.maxMemoryMessages)
+            } else {
+                _record.value = currentRecord
+            }
         }
     }
 
@@ -956,7 +1160,7 @@ object Conferbot {
                     chatSessionId = session.chatSessionId,
                     visitorId = session.visitorId ?: user?.id ?: "",
                     botId = botId ?: "",
-                    workspaceId = null,
+                    workspaceId = cachedWorkspaceId,
                     maxMessages = paginationConfig.maxMemoryMessages,
                     pageSizeConfig = paginationConfig.pageSize
                 )
@@ -1051,6 +1255,65 @@ object Conferbot {
             messageText = text
         )
 
+        if (_isLiveChatMode.value) {
+            sendLiveChatMessage(text, sessionId)
+        } else {
+            sendBotFlowMessage(text, sessionId)
+        }
+    }
+
+    /**
+     * Send a message during live chat (agent handover) mode
+     */
+    private fun sendLiveChatMessage(text: String, sessionId: String) {
+        // Create user live message
+        val userMessage = RecordItem.UserLiveMessage(
+            id = System.currentTimeMillis().toString(),
+            time = java.util.Date(),
+            text = text
+        )
+
+        // Add to record (synchronous for socket send)
+        val currentRecord = _record.value.toMutableList()
+        currentRecord.add(userMessage)
+
+        if (currentRecord.size > paginationConfig.maxMemoryMessages) {
+            _record.value = currentRecord.takeLast(paginationConfig.maxMemoryMessages)
+        } else {
+            _record.value = currentRecord
+        }
+
+        // Add to message manager asynchronously for persistence
+        scope.launch {
+            messageManager?.addMessage(userMessage)
+        }
+
+        // Add to ChatState record for server sync
+        ChatState.pushToRecord(
+            com.conferbot.sdk.core.state.RecordEntry(
+                id = userMessage.id,
+                shape = "user-live-message",
+                type = "user-live-message",
+                text = text
+            )
+        )
+
+        // Add to transcript
+        ChatState.addToTranscript("user", text)
+
+        // Send via response-record with full ChatState record (same as bot flow)
+        socketClient?.sendResponseRecord(ChatState.buildResponseData())
+
+        // Stop visitor typing indicator
+        socketClient?.sendTypingStatus(sessionId, false)
+
+        eventListener?.onMessageSent(userMessage)
+    }
+
+    /**
+     * Send a message during bot flow mode
+     */
+    private fun sendBotFlowMessage(text: String, sessionId: String) {
         // Create user message (use user-input-response type for chatbot flow)
         val userMessage = RecordItem.UserInputResponse(
             id = System.currentTimeMillis().toString(),
@@ -1085,8 +1348,10 @@ object Conferbot {
                     "text" to when (item) {
                         is RecordItem.UserMessage -> item.text
                         is RecordItem.UserInputResponse -> item.text
+                        is RecordItem.UserLiveMessage -> item.text
                         is RecordItem.BotMessage -> item.text ?: ""
                         is RecordItem.AgentMessage -> item.text
+                        is RecordItem.AgentLeftMessage -> item.text
                         is RecordItem.SystemMessage -> item.text
                         else -> ""
                     }
@@ -1359,7 +1624,7 @@ object Conferbot {
     }
 
     /**
-     * Send typing status
+     * Send typing status (emits visitor-typing event for live chat)
      */
     fun sendTypingStatus(isTyping: Boolean) {
         val sessionId = _chatSessionId.value ?: return
@@ -1399,6 +1664,8 @@ object Conferbot {
         _chatSessionId.value = null
         _currentAgent.value = null
         _unreadCount.value = 0
+        _isLiveChatMode.value = false
+        _isAgentTyping.value = false
         // Reset flow state so it can be re-triggered with same bot data
         flowStarted = false
         // Keep cachedChatbotNodes/Edges — same bot, new session
@@ -1560,6 +1827,24 @@ object Conferbot {
      * @param response The user's response (String, Int, List, or other type depending on node)
      */
     fun submitNodeResponse(response: Any) {
+        // Extract the display label from the response to show as a user message bubble
+        val displayText = when (response) {
+            is String -> response
+            is Map<*, *> -> (response["text"] ?: response["label"] ?: response["selectedChoice"])?.toString()
+            is List<*> -> response.joinToString(", ")
+            else -> response.toString()
+        }
+
+        // Add user message to the visible record (right-aligned bubble)
+        if (!displayText.isNullOrBlank()) {
+            val userMessage = RecordItem.UserInputResponse(
+                id = "user-choice-${System.currentTimeMillis()}",
+                time = java.util.Date(),
+                text = displayText
+            )
+            addMessageToRecord(userMessage)
+        }
+
         nodeFlowEngine?.submitResponse(response)
     }
 
@@ -1613,6 +1898,8 @@ object Conferbot {
         _serverCustomization.value = null
         // Reset widget state
         _isChatVisible.value = false
+        _isLiveChatMode.value = false
+        _isAgentTyping.value = false
         // FIX 6: Cancel coroutine scope to prevent leaked coroutines
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         _isConnected.value = false
