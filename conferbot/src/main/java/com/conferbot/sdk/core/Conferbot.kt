@@ -420,6 +420,17 @@ object Conferbot {
             Log.d(TAG, "Socket disconnected")
         })
 
+        // Re-join chat room on reconnect (socket.io drops room membership on disconnect)
+        socketClient?.setReconnectionListener {
+            _isConnected.value = true
+            val sessionId = _chatSessionId.value
+            if (sessionId != null) {
+                socketClient?.joinChatRoom(chatSessionId = sessionId, deviceInfo = "Android")
+                Log.d(TAG, "Rejoined chat room on reconnect: $sessionId")
+            }
+            socketClient?.getChatbotData()
+        }
+
         // Fetched chatbot data - contains nodes/edges for the flow graph
         socketClient?.on(SocketEvents.FETCHED_CHATBOT_DATA, Emitter.Listener { args ->
             handleFetchedChatbotData(args)
