@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.core.graphics.PathParser
 
 // ============================================================
 // TYPES
@@ -123,9 +124,7 @@ private val DEFAULT_ICON_DATA: IconData = listOf(
 // ============================================================
 
 private fun parseAndroidPath(d: String): android.graphics.Path? = try {
-    val cls = Class.forName("android.util.PathParser")
-    val method = cls.getMethod("createPathFromPathData", String::class.java)
-    method.invoke(null, d) as? android.graphics.Path
+    PathParser.createPathFromPathData(d)
 } catch (_: Exception) {
     null
 }
