@@ -75,7 +75,21 @@ data class ServerChatbotCustomization(
     val tagline: String? = null,
     val gradientBgOne: String? = null,
     val gradientBgTwo: String? = null,
-    val chatBgImg: String? = null
+    val chatBgImg: String? = null,
+    // Widget FAB customizations
+    val widgetIconBgColor: String? = null,
+    val headerBgColor: String? = null,       // fallback for FAB color
+    val widgetBorderRadius: Int? = null,
+    val widgetSize: Int? = null,
+    val widgetPosition: String? = null,       // "left" or "right"
+    val widgetOffsetRight: Int? = null,
+    val widgetOffsetLeft: Int? = null,
+    val widgetOffsetBottom: Int? = null,
+    val widgetIconSVG: String? = null,        // e.g. "WidgetBubbleIcon10"
+    val widgetIconType: String? = null,       // "Icon" or "Image"
+    val widgetIconImage: String? = null,      // URL when widgetIconType = "Image"
+    val chatIconCtaText: String? = null,
+    val widgetIconThemeType: String? = null,  // "Solid" or "Gradient"
 )
 
 /**
@@ -841,7 +855,20 @@ object Conferbot {
                 tagline = customizations.optStringOrNull("tagline"),
                 gradientBgOne = customizations.optStringOrNull("gradientBgOne"),
                 gradientBgTwo = customizations.optStringOrNull("gradientBgTwo"),
-                chatBgImg = customizations.optStringOrNull("chatBgImg")
+                chatBgImg = customizations.optStringOrNull("chatBgImg"),
+                widgetIconBgColor = customizations.optStringOrNull("widgetIconBgColor"),
+                headerBgColor = customizations.optStringOrNull("headerBgColor"),
+                widgetBorderRadius = if (customizations.has("widgetBorderRadius")) customizations.optInt("widgetBorderRadius") else null,
+                widgetSize = if (customizations.has("widgetSize")) customizations.optInt("widgetSize") else null,
+                widgetPosition = customizations.optStringOrNull("widgetPosition"),
+                widgetOffsetRight = if (customizations.has("widgetOffsetRight")) customizations.optInt("widgetOffsetRight") else null,
+                widgetOffsetLeft = if (customizations.has("widgetOffsetLeft")) customizations.optInt("widgetOffsetLeft") else null,
+                widgetOffsetBottom = if (customizations.has("widgetOffsetBottom")) customizations.optInt("widgetOffsetBottom") else null,
+                widgetIconSVG = customizations.optStringOrNull("widgetIconSVG"),
+                widgetIconType = customizations.optStringOrNull("widgetIconType"),
+                widgetIconImage = customizations.optStringOrNull("widgetIconImage"),
+                chatIconCtaText = customizations.optStringOrNull("chatIconCtaText"),
+                widgetIconThemeType = customizations.optStringOrNull("widgetIconThemeType")
             )
             _serverCustomization.value = serverCustom
 
