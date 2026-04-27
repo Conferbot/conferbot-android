@@ -136,7 +136,34 @@ fun SupportScreen() {
 }
 ```
 
-### Pattern 3: Headless (Custom UI)
+### Pattern 3: Floating Widget (FAB)
+
+Overlay a floating chat button on top of your app. Tapping opens an animated chat bottom sheet. The widget reads server customizations automatically (color, icon, CTA text, position).
+
+```kotlin
+import com.conferbot.sdk.ui.compose.ConferBotWidget
+import com.conferbot.sdk.ui.compose.ConferBotWidgetScope
+
+// Option A: Overlay on any content
+@Composable
+fun MyApp() {
+    ConferBotWidgetScope {
+        // Your app content here
+        MyMainScreen()
+    }
+}
+
+// Option B: Place in a Box
+@Composable
+fun MyApp() {
+    Box(Modifier.fillMaxSize()) {
+        MyMainScreen()
+        ConferBotWidget()
+    }
+}
+```
+
+### Pattern 4: Headless (Custom UI)
 
 Build your own interface using the SDK's reactive state:
 
