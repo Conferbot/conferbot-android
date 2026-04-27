@@ -266,6 +266,22 @@ object Conferbot {
     private val gson = Gson()
 
     /**
+     * Get or create a persistent visitor ID that survives across sessions and app restarts.
+     * The visitor ID is stored in SharedPreferences and is only cleared on app uninstall.
+     */
+    private fun getOrCreateVisitorId(context: Context): String {
+        val prefs = context.getSharedPreferences("conferbot_prefs", Context.MODE_PRIVATE)
+        val key = "conferbot_visitor_id"
+        val existing = prefs.getString(key, null)
+        if (!existing.isNullOrEmpty()) {
+            return existing
+        }
+        val newId = "v_${System.currentTimeMillis().toString(36)}_${java.util.UUID.randomUUID().toString().take(8)}"
+        prefs.edit().putString(key, newId).apply()
+        return newId
+    }
+
+    /**
      * Initialize the SDK
      */
     fun initialize(
@@ -1181,11 +1197,14 @@ object Conferbot {
                     )
                 )
 
+                // Resolve visitor ID: server > user > persistent device ID
+                val resolvedVisitorId = session.visitorId ?: user?.id ?: getOrCreateVisitorId(context)
+
                 // Initialize ChatState for flow engine with context
                 ChatState.initializeWithContext(
                     context = context,
                     chatSessionId = session.chatSessionId,
-                    visitorId = session.visitorId ?: user?.id ?: "",
+                    visitorId = resolvedVisitorId,
                     botId = botId ?: "",
                     workspaceId = cachedWorkspaceId,
                     maxMessages = paginationConfig.maxMemoryMessages,
@@ -1196,7 +1215,7 @@ object Conferbot {
                 ChatAnalytics.initializeChatAnalytics(
                     sessionId = session.chatSessionId,
                     botIdentifier = botId ?: "",
-                    visitorIdentifier = session.visitorId ?: user?.id ?: ""
+                    visitorIdentifier = resolvedVisitorId
                 )
 
                 try {
@@ -1755,7 +1774,7 @@ object Conferbot {
             ChatAnalytics.initializeChatAnalytics(
                 sessionId = result.sessionId,
                 botIdentifier = currentBotId,
-                visitorIdentifier = result.visitorId ?: user?.id ?: ""
+                visitorIdentifier = result.visitorId ?: user?.id ?: appContext?.let { getOrCreateVisitorId(it) } ?: ""
             )
 
             eventListener?.onSessionStarted(result.sessionId)
@@ -1819,7 +1838,7 @@ object Conferbot {
         edges: List<Map<String, Any>>
     ) {
         val sessionId = _chatSessionId.value ?: return
-        val visitorId = user?.id ?: ""
+        val visitorId = user?.id ?: appContext?.let { getOrCreateVisitorId(it) } ?: ""
         val currentBotId = botId ?: return
 
         nodeFlowEngine?.initialize(
@@ -2161,7 +2180,7 @@ object Conferbot {
      */
     fun initKnowledgeBaseService(): KnowledgeBaseService? {
         val sessionId = _chatSessionId.value ?: return null
-        val visitorId = user?.id ?: ""
+        val visitorId = user?.id ?: appContext?.let { getOrCreateVisitorId(it) } ?: ""
         val socket = socketClient ?: return null
 
         if (_knowledgeBaseService == null) {
