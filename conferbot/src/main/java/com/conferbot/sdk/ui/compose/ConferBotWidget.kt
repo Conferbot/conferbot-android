@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -113,27 +114,35 @@ data class ConferBotWidgetConfig(
  * @param onDismiss Called when the user taps the tooltip to dismiss it.
  */
 @Composable
-fun WidgetCtaTooltip(text: String, onDismiss: () -> Unit) {
+fun WidgetCtaTooltip(
+    text: String,
+    backgroundColor: Color,
+    borderRadius: Dp,
+    onDismiss: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(borderRadius)
     Surface(
         modifier = Modifier
             .widthIn(max = 212.dp)
-            .shadow(elevation = 4.dp, shape = RoundedCornerShape(20.dp))
+            .shadow(
+                elevation = 8.dp,
+                shape = shape,
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onDismiss,
             ),
-        shape = RoundedCornerShape(20.dp),
-        color = Color.White,
-        contentColor = Color(0xFF1F2937),
+        shape = shape,
+        color = backgroundColor,
+        contentColor = Color.White,
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
+            fontSize = 14.sp,
+            maxLines = 3,
         )
     }
 }
@@ -179,7 +188,8 @@ fun ConferBotWidget(
 ) {
     var isChatOpen by remember { mutableStateOf(false) }
     var isCtaVisible by remember { mutableStateOf(false) }
-    var isPressed by remember { mutableStateOf(false) }
+    val fabInteractionSource = remember { MutableInteractionSource() }
+    val isPressed by fabInteractionSource.collectIsPressedAsState()
 
     val unreadCount by Conferbot.unreadCount.collectAsState()
     val serverTheme by Conferbot.serverTheme.collectAsState()
@@ -334,6 +344,8 @@ fun ConferBotWidget(
                 Box(modifier = Modifier.widthIn(max = 212.dp)) {
                     WidgetCtaTooltip(
                         text = ctaText,
+                        backgroundColor = fabColor,
+                        borderRadius = ctaBorderRadius,
                         onDismiss = { isCtaVisible = false },
                     )
                 }
@@ -380,6 +392,7 @@ fun ConferBotWidget(
                     shape = fabShape,
                     color = fabColor,
                     contentColor = Color.White,
+                    interactionSource = fabInteractionSource,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         AnimatedContent(
