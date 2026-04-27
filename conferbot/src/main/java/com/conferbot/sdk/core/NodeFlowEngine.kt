@@ -212,6 +212,14 @@ class NodeFlowEngine(
                 if (result.uiState is NodeUIState.HumanHandover &&
                     (result.uiState as NodeUIState.HumanHandover).state == NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
                 ) {
+                    // Send response-record BEFORE initiate-handover so the server
+                    // has the Response document when creating the ticket/notification
+                    sendResponseToServer()
+                    // Re-join chat room to ensure socket is in the correct room
+                    val sessionId = chatSessionId
+                    if (sessionId != null) {
+                        socketClient?.joinChatRoom(chatSessionId = sessionId, deviceInfo = "Android")
+                    }
                     emitInitiateHandover(nodeData)
                 }
 
