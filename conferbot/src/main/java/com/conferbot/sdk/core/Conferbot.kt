@@ -425,7 +425,15 @@ object Conferbot {
             _isConnected.value = true
             val sessionId = _chatSessionId.value
             if (sessionId != null) {
-                socketClient?.joinChatRoom(chatSessionId = sessionId, deviceInfo = "Android")
+                socketClient?.joinChatRoom(
+                    chatSessionId = sessionId,
+                    deviceInfo = mapOf(
+                        "os" to "Android",
+                        "osVersion" to Build.VERSION.RELEASE,
+                        "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                        "deviceModel" to Build.MODEL
+                    )
+                )
                 Log.d(TAG, "Rejoined chat room on reconnect: $sessionId")
             }
             socketClient?.getChatbotData()

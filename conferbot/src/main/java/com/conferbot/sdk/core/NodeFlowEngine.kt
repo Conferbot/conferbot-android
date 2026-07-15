@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core
 
+import android.os.Build
 import com.conferbot.sdk.core.analytics.ChatAnalytics
 import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
@@ -216,9 +217,17 @@ class NodeFlowEngine(
                     // has the Response document when creating the ticket/notification
                     sendResponseToServer()
                     // Re-join chat room to ensure socket is in the correct room
-                    val sessionId = chatSessionId
+                    val sessionId = ChatState.chatSessionId
                     if (sessionId != null) {
-                        socketClient?.joinChatRoom(chatSessionId = sessionId, deviceInfo = "Android")
+                        socketClient?.joinChatRoom(
+                            chatSessionId = sessionId,
+                            deviceInfo = mapOf(
+                                "os" to "Android",
+                                "osVersion" to (Build.VERSION.RELEASE ?: "unknown"),
+                                "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                                "deviceModel" to (Build.MODEL ?: "unknown")
+                            )
+                        )
                     }
                     emitInitiateHandover(nodeData)
                 }
