@@ -21,7 +21,7 @@ import com.conferbot.sdk.core.ServerChatbotCustomization
 
 private const val CONFERBOT_URL = "https://www.conferbot.com"
 private const val CONFERBOT_LOGO_URL =
-    "https://prd.media.cdn.conferbot.com/62829a1c49f355163dfdbfb2/conferbot-logo-1710782074234.png"
+    "https://www.conferbot.com/img/logo/conferbot-logo.png"
 
 /**
  * "Powered by [Conferbot Logo]" footer matching the web widget.

@@ -34,7 +34,7 @@ import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 
 private const val CONFERBOT_URL = "https://www.conferbot.com"
 private const val CONFERBOT_LOGO_URL =
-    "https://prd.media.cdn.conferbot.com/62829a1c49f355163dfdbfb2/conferbot-logo-1710782074234.png"
+    "https://www.conferbot.com/img/logo/conferbot-logo.png"
 
 /**
  * Unified bottom bar: chat input + powered-by footer as one seamless unit.
