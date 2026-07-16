@@ -27,7 +27,8 @@ data class IntegrationResult(
     val data: Map<String, Any?>? = null,
     val message: String? = null,
     val answerVariable: String? = null,
-    val answerValue: Any? = null
+    val answerValue: Any? = null,
+    val columnMappedValues: Map<String, Any?>? = null
 )
 
 /**
@@ -432,6 +433,7 @@ class SocketClient(
         chatbotId: String,
         workspaceId: String?,
         answerVariables: Map<String, Any?>,
+        visitorData: Map<String, Any?> = emptyMap(),
         callback: (IntegrationResult) -> Unit,
         timeoutMs: Long = 30000
     ) {
@@ -453,8 +455,16 @@ class SocketClient(
             put("chatSessionId", chatSessionId)
             put("chatbotId", chatbotId)
             workspaceId?.let { put("workspaceId", it) }
-            put("answerVariables", JSONObject(answerVariables.filterValues { it != null }))
-            put("visitorData", JSONObject())
+            // Server resolves ${var} in nodeData from an ARRAY of {key, value} entries
+            put("answerVariables", org.json.JSONArray().apply {
+                answerVariables.forEach { (key, value) ->
+                    put(JSONObject().apply {
+                        put("key", key)
+                        put("value", value ?: JSONObject.NULL)
+                    })
+                }
+            })
+            put("visitorData", JSONObject(visitorData.filterValues { it != null }))
         }
 
         // Track if callback has been invoked to prevent double-invocation
@@ -479,7 +489,8 @@ class SocketClient(
                         data = result.optJSONObject("data")?.let { jsonToMap(it) },
                         message = result.optString("message", null),
                         answerVariable = result.optString("answerVariable", null),
-                        answerValue = result.opt("answerValue")
+                        answerValue = result.opt("answerValue"),
+                        columnMappedValues = result.optJSONObject("columnMappedValues")?.let { jsonToMap(it) }
                     )
 
                     // Remove listener to prevent memory leaks
@@ -511,6 +522,31 @@ class SocketClient(
                 ))
             }
         }, timeoutMs)
+    }
+
+    /**
+     * Trigger a server-side email send (web parity: email-node-trigger).
+     * Fire-and-forget, mirrors the web widget's _handleEmailNode payload.
+     */
+    fun sendEmailNodeTrigger(payload: JSONObject) {
+        socket?.emit(SocketEvents.EMAIL_NODE_TRIGGER, payload)
+        Log.d(TAG, "Emitted email-node-trigger")
+    }
+
+    /**
+     * Trigger a server-side Zapier webhook post (web parity: zapier-node-trigger).
+     */
+    fun sendZapierNodeTrigger(payload: JSONObject) {
+        socket?.emit(SocketEvents.ZAPIER_NODE_TRIGGER, payload)
+        Log.d(TAG, "Emitted zapier-node-trigger")
+    }
+
+    /**
+     * Record a calendar slot selection server-side (web parity: calendar-slot-selection-record).
+     */
+    fun sendCalendarSlotSelectionRecord(data: JSONObject) {
+        socket?.emit(SocketEvents.CALENDAR_SLOT_SELECTION_RECORD, data)
+        Log.d(TAG, "Emitted calendar-slot-selection-record")
     }
 
     /**
