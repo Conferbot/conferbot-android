@@ -23,7 +23,7 @@ class ExampleApplication : Application() {
         Conferbot.initialize(
             context = this,
             apiKey = "test_key", // Replace with your API key
-            botId = "69e8503cf33718a92ea792fe", // Replace with your bot ID
+            botId = "691c970890527a0468f9b2c9", // Replace with your bot ID
             config = ConferBotConfig(
                 enableNotifications = true,
                 enableOfflineMode = true,
