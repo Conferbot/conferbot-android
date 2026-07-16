@@ -912,12 +912,26 @@ object Conferbot {
                 .name("ServerCustomized")
 
             // Helper to safely parse a hex color string to Compose Color
-            fun parseHexColor(hex: String?): androidx.compose.ui.graphics.Color? {
-                if (hex.isNullOrBlank()) return null
+            fun parseHexColor(raw: String?): androidx.compose.ui.graphics.Color? {
+                if (raw.isNullOrBlank()) return null
+                var hex = raw.trim()
+                // rgb()/rgba() and short-hex forms come from the flow builder
+                val rgb = Regex("rgba?\\((\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)(?:\\s*,\\s*([\\d.]+))?\\)").find(hex)
+                if (rgb != null) {
+                    val (r, g, b) = rgb.destructured
+                    val a = rgb.groupValues[4].toFloatOrNull() ?: 1f
+                    return androidx.compose.ui.graphics.Color(
+                        red = r.toInt() / 255f, green = g.toInt() / 255f,
+                        blue = b.toInt() / 255f, alpha = a.coerceIn(0f, 1f)
+                    )
+                }
+                if (hex.startsWith("#") && (hex.length == 4 || hex.length == 5)) {
+                    hex = "#" + hex.drop(1).map { "$it$it" }.joinToString("")
+                }
                 return try {
                     androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(hex))
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse color: $hex", e)
+                    Log.w(TAG, "Failed to parse color: $raw", e)
                     null
                 }
             }
@@ -936,32 +950,32 @@ object Conferbot {
                 builder.primaryColor(headerBg)
             }
 
-            // Bot message bubble
-            val botBubbleBg = parseHexColor(customizations.optStringOrNull("botMsgColor"))
-            val botBubbleText = parseHexColor(customizations.optStringOrNull("botTextColor"))
-            if (botBubbleBg != null || botBubbleText != null) {
-                builder.botBubbleColors(
-                    background = botBubbleBg ?: com.conferbot.sdk.ui.theme.LightTheme.colors.botBubble,
-                    text = botBubbleText ?: com.conferbot.sdk.ui.theme.LightTheme.colors.botBubbleText
-                )
-            }
+            // Bot message bubble - web widget contract defaults
+            // (conferbot-widget/src/index.ts): #1b55f3 bubbles, white text.
+            val webBubbleDefault = androidx.compose.ui.graphics.Color(0xFF1B55F3)
+            val webTextDefault = androidx.compose.ui.graphics.Color.White
+            builder.botBubbleColors(
+                background = parseHexColor(customizations.optStringOrNull("botMsgColor"))
+                    ?: webBubbleDefault,
+                text = parseHexColor(customizations.optStringOrNull("botTextColor"))
+                    ?: webTextDefault
+            )
 
             // User message bubble
-            val userBubbleBg = parseHexColor(customizations.optStringOrNull("userMsgColor"))
-            val userBubbleText = parseHexColor(customizations.optStringOrNull("userTextColor"))
-            if (userBubbleBg != null || userBubbleText != null) {
-                builder.userBubbleColors(
-                    background = userBubbleBg ?: com.conferbot.sdk.ui.theme.LightTheme.colors.userBubble,
-                    text = userBubbleText ?: com.conferbot.sdk.ui.theme.LightTheme.colors.userBubbleText
-                )
-            }
+            builder.userBubbleColors(
+                background = parseHexColor(customizations.optStringOrNull("userMsgColor"))
+                    ?: webBubbleDefault,
+                text = parseHexColor(customizations.optStringOrNull("userTextColor"))
+                    ?: webTextDefault
+            )
 
-            // Option bubble colors -> mapped to button colors
-            val optionBubbleBg = parseHexColor(customizations.optStringOrNull("optionBubbleMsgColor"))
-            val optionBubbleText = parseHexColor(customizations.optStringOrNull("optionBubbleTextColor"))
-            // The builder doesn't have a direct setter for button colors individually,
-            // but we can use primaryColor for button background (already done via headerBg).
-            // For more granular control we note these are available in serverCustomization.
+            // Option bubble colors - web widget default is light gray with dark text
+            builder.optionBubbleColors(
+                background = parseHexColor(customizations.optStringOrNull("optionBubbleMsgColor"))
+                    ?: androidx.compose.ui.graphics.Color(0xFFF5F5F5),
+                text = parseHexColor(customizations.optStringOrNull("optionBubbleTextColor"))
+                    ?: androidx.compose.ui.graphics.Color(0xFF1C1B1F)
+            )
 
             // Chat background
             val chatBgColor = parseHexColor(customizations.optStringOrNull("chatBgColor"))
@@ -1064,7 +1078,8 @@ object Conferbot {
                     is NodeUIState.Image -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
                         time = java.util.Date(),
-                        text = uiState.caption ?: "[Image]"
+                        text = uiState.caption,
+                        imageUrl = uiState.url
                     )
                     is NodeUIState.Video -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
@@ -1249,10 +1264,67 @@ object Conferbot {
                 true
             } else {
                 Log.e(TAG, "Failed to initialize session: ${response.error}")
-                false
+                startLocalSession(context)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize session", e)
+            startLocalSession(context)
+        }
+    }
+
+    /**
+     * Fallback when the REST session API is unavailable: generate a local
+     * session so the socket-driven flow still runs (web widget parity -
+     * the Flutter SDK does the same).
+     */
+    private suspend fun startLocalSession(context: android.content.Context): Boolean {
+        return try {
+            val localSessionId = "mobile_${System.currentTimeMillis()}"
+            _chatSessionId.value = localSessionId
+
+            messageManager = PaginatedMessageManager.getInstance(
+                context = context,
+                sessionId = localSessionId,
+                config = paginationConfig
+            )
+            _record.value = messageManager?.initialize() ?: emptyList()
+            updatePaginationState()
+
+            socketClient?.joinChatRoom(
+                chatSessionId = localSessionId,
+                deviceInfo = mapOf(
+                    "os" to "Android",
+                    "osVersion" to Build.VERSION.RELEASE,
+                    "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+                    "deviceModel" to Build.MODEL
+                )
+            )
+
+            val resolvedVisitorId = user?.id ?: getOrCreateVisitorId(context)
+            ChatState.initializeWithContext(
+                context = context,
+                chatSessionId = localSessionId,
+                visitorId = resolvedVisitorId,
+                botId = botId ?: "",
+                workspaceId = cachedWorkspaceId,
+                maxMessages = paginationConfig.maxMemoryMessages,
+                pageSizeConfig = paginationConfig.pageSize
+            )
+            ChatAnalytics.initializeChatAnalytics(
+                sessionId = localSessionId,
+                botIdentifier = botId ?: "",
+                visitorIdentifier = resolvedVisitorId
+            )
+            try {
+                eventListener?.onSessionStarted(localSessionId)
+            } catch (e: Exception) {
+                Log.e(TAG, "Event listener onSessionStarted failed", e)
+            }
+
+            tryStartFlow()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Local session fallback failed", e)
             false
         }
     }
@@ -1320,8 +1392,13 @@ object Conferbot {
             messageText = text
         )
 
+        Log.d(TAG, "sendMessage route: live=${_isLiveChatMode.value} awaiting=${nodeFlowEngine?.isAwaitingInput} ui=${nodeFlowEngine?.currentUIState?.value?.javaClass?.simpleName}")
         if (_isLiveChatMode.value) {
             sendLiveChatMessage(text, sessionId)
+        } else if (nodeFlowEngine?.isAwaitingInput == true) {
+            // Web widget parity: typed text answers the active question node
+            // through the unified bottom bar.
+            submitNodeResponse(text)
         } else {
             sendBotFlowMessage(text, sessionId)
         }
@@ -1892,6 +1969,30 @@ object Conferbot {
      * @param response The user's response (String, Int, List, or other type depending on node)
      */
     fun submitNodeResponse(response: Any) {
+        // Web widget parity: persist the choice question in the transcript
+        // before the answer, so it does not vanish when the node advances.
+        val displayTextEarly = when (response) {
+            is String -> response
+            is Map<*, *> -> (response["text"] ?: response["label"] ?: response["selectedChoice"])?.toString()
+            is List<*> -> response.joinToString(", ")
+            else -> response.toString()
+        }
+        when (val ui = nodeFlowEngine?.currentUIState?.value) {
+            is NodeUIState.SingleChoice -> ui.questionText to ui.choices.map { it.text }
+            is NodeUIState.MultipleChoice -> ui.questionText to ui.options.map { it.text }
+            else -> null
+        }?.let { (question, choiceTexts) ->
+            addMessageToRecord(RecordItem.BotMessage(
+                id = "flow-q-${System.currentTimeMillis()}",
+                time = java.util.Date(),
+                text = question,
+                nodeData = mapOf(
+                    "choices" to choiceTexts,
+                    "selected" to (displayTextEarly ?: "")
+                )
+            ))
+        }
+
         // Extract the display label from the response to show as a user message bubble
         val displayText = when (response) {
             is String -> response
