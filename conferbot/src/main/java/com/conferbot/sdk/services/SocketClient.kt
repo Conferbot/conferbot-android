@@ -63,6 +63,10 @@ class SocketClient(
                 reconnectionDelay = ConferBotNetworkConfig.reconnectionDelay.toLong()
                 reconnectionDelayMax = ConferBotNetworkConfig.reconnectionDelayMax.toLong()
                 timeout = ConferBotNetworkConfig.socketTimeout
+                // The embed-server handshake requires botId in query or auth,
+                // matching the web widget (headers are not read there).
+                query = "botId=$botId"
+                auth = mapOf("botId" to botId)
                 extraHeaders = mapOf(
                     Constants.HEADER_API_KEY to listOf(apiKey),
                     Constants.HEADER_BOT_ID to listOf(botId),
