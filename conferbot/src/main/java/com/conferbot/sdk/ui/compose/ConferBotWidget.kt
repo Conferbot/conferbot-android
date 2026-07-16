@@ -353,6 +353,9 @@ fun ConferBotWidget(
         }
 
         // ---- FAB ----
+        // Hidden while the chat is open - the chat sheet has its own close
+        // control and the toggle would overlap the send button
+        if (!isChatOpen) {
         Box(
             modifier = Modifier
                 .align(fabAlignment)
@@ -432,6 +435,7 @@ fun ConferBotWidget(
                     }
                 }
             }
+        }
         }
     }
 }
