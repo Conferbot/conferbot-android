@@ -37,7 +37,7 @@ fun initialize(
 
 **Parameters**:
 - `context`: Application context
-- `apiKey`: Your Conferbot API key (starts with `conf_sk_`)
+- `apiKey`: Your Conferbot API key - any placeholder works (e.g. `conf_test_key`); the bot ID is the credential
 - `botId`: Your bot ID
 - `config`: SDK configuration options
 - `customization`: UI customization options

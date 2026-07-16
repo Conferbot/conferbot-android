@@ -303,7 +303,9 @@ object Conferbot {
         // FIX 4: Validate apiKey and botId
         require(apiKey.isNotBlank()) { "apiKey must not be blank" }
         require(botId.isNotBlank()) { "botId must not be blank" }
-        require(apiKey.length >= 8) { "apiKey appears invalid (too short)" }
+        if (apiKey.length < 8) {
+            Log.w(TAG, "API key looks unusual. Any non-empty key is accepted - the bot ID is the operative credential.")
+        }
 
         // FIX 5: Wrap initialization in try-catch for cleanup on failure
         try {

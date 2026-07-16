@@ -88,9 +88,9 @@ You need two credentials to use the SDK:
 1. **Log in** to the [Conferbot Dashboard](https://app.conferbot.com)
 2. **Create or select a bot** from the dashboard
 3. **Find your Bot ID**: Go to **Bot Settings** > **General** - the Bot ID is displayed at the top
-4. **Find your API Key**: Go to **Workspace Settings** > **API Keys** - copy the key starting with `conf_`
+4. **API Key**: any placeholder works (e.g. `conf_test_key`); the bot ID is the credential
 
-Just evaluating? The public demo bot ID `691c970890527a0468f9b2c9` works without a Conferbot account (any API key of 8+ characters, e.g. `test_key`, passes local validation).
+Just evaluating? The public demo bot ID `691c970890527a0468f9b2c9` works without a Conferbot account (any non-empty API key works, e.g. `conf_test_key`; the bot ID is the credential).
 
 ## Quick Start
 
