@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.models.ConferBotUser
 import com.conferbot.sdk.ui.compose.ConferBotChatScreen
+import com.conferbot.sdk.ui.compose.ConferBotWidget
 import com.conferbot.example.ui.compose.theme.ConferBotExampleTheme
 import kotlinx.coroutines.launch
 
@@ -168,6 +169,13 @@ fun ComposeExampleScreen() {
                 Text("Clear History")
             }
         }
+    }
+
+    // Floating chat bubble (bottom-right, server customized icon, color and
+    // CTA tooltip) - same experience as the web widget embed. Hidden while
+    // the button-launched chat overlay is open.
+    if (!showChat) {
+        ConferBotWidget(modifier = Modifier.fillMaxSize())
     }
 
     // Show chat as a fullscreen overlay on top of the Scaffold
