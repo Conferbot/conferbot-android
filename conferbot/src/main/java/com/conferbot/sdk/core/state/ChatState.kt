@@ -112,6 +112,9 @@ object ChatState {
     private val _record = MutableStateFlow<MutableList<RecordEntry>>(mutableListOf())
     val record: StateFlow<List<RecordEntry>> = _record.asStateFlow()
 
+    // Zapier integration webhooks from fetched-chatbot-data (entries: nodeId, botId, webhookURL, active)
+    var integrationWebhooks: List<Map<String, Any?>> = emptyList()
+
     // ========== Paginated Messages ==========
 
     // Messages with pagination support (RecordItem type for UI)
@@ -688,6 +691,14 @@ object ChatState {
      */
     fun getAnswerVariablesMap(): Map<String, Any?> {
         return _answerVariables.value.associate { it.key to it.value }
+    }
+
+    /**
+     * Get all answer variables as a list of {key, value} maps.
+     * This is the shape the embed-server expects for ${var} resolution.
+     */
+    fun getAnswerVariablesList(): List<Map<String, Any?>> {
+        return _answerVariables.value.map { mapOf("key" to it.key, "value" to it.value) }
     }
 
     // ========== Variables (Temporary Calculations) ==========

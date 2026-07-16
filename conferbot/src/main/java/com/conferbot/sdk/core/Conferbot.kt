@@ -841,6 +841,16 @@ object Conferbot {
                 cachedWorkspaceId = serverWorkspaceId
             }
 
+            // Store Zapier integration webhooks (matched by nodeId at zapier-node runtime)
+            chatbotData.optJSONArray("integrationWebhooks")?.let { webhooksArray ->
+                val webhooks = mutableListOf<Map<String, Any?>>()
+                for (i in 0 until webhooksArray.length()) {
+                    val webhookJson = webhooksArray.optJSONObject(i) ?: continue
+                    webhooks.add(jsonObjectToMap(webhookJson))
+                }
+                ChatState.integrationWebhooks = webhooks
+            }
+
             // Parse server customizations and build theme
             parseServerCustomizations(chatbotData.optJSONObject("customizations"))
 

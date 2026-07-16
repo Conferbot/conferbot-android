@@ -7,6 +7,8 @@ import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.services.SocketClient
 import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -312,6 +314,13 @@ class NodeFlowEngine(
         val workspaceId = ChatState.workspaceId
         val answerVariables = ChatState.getAnswerVariablesMap()
 
+        // email-node and zapier-node are NOT handled by the server's execute-integration
+        // dispatcher - they have dedicated socket events (web widget parity)
+        if (result.nodeType == "email-node" || result.nodeType == "zapier-node") {
+            executeTriggerIntegration(result, nodeData, chatSessionId, botId, workspaceId)
+            return
+        }
+
         socketClient.executeIntegration(
             nodeType = result.nodeType,
             nodeId = result.nodeId,
@@ -320,6 +329,7 @@ class NodeFlowEngine(
             chatbotId = botId,
             workspaceId = workspaceId,
             answerVariables = answerVariables,
+            visitorData = buildVisitorData(),
             callback = { integrationResult ->
                 // Convert to IntegrationResultData and call the handler's callback
                 val resultData = IntegrationResultData(
@@ -339,6 +349,11 @@ class NodeFlowEngine(
                     )
                 }
 
+                // Google Sheets reads map spreadsheet columns to variables (web parity)
+                integrationResult.columnMappedValues?.forEach { (key, value) ->
+                    if (value != null) ChatState.setAnswerVariableByKey(key, value)
+                }
+
                 // Call the handler's callback to get the next result
                 val nextResult = result.onResult(resultData)
 
@@ -348,6 +363,130 @@ class NodeFlowEngine(
                 }
             }
         )
+    }
+
+    /**
+     * Visitor metadata sent with execute-integration for server-side variable resolution
+     */
+    private fun buildVisitorData(): Map<String, Any?> {
+        val metadata = ChatState.userMetadata.value
+        return mapOf(
+            "name" to metadata.name,
+            "email" to metadata.email,
+            "phone" to metadata.phone
+        )
+    }
+
+    /**
+     * Execute email-node / zapier-node via their dedicated socket trigger events.
+     * Both are fire-and-forget on the web widget; the flow proceeds immediately.
+     */
+    private fun executeTriggerIntegration(
+        result: NodeResult.ExecuteIntegration,
+        nodeData: Map<String, Any?>,
+        chatSessionId: String,
+        botId: String,
+        workspaceId: String?
+    ) {
+        try {
+            if (result.nodeType == "email-node") {
+                // Web widget payload: nodeData, botName, transcript [{by, message}],
+                // visitorName/visitorEmail, flattened answer variables, answerVariables
+                // array, chatDate, workspaceId
+                val metadata = ChatState.userMetadata.value
+                val payload = JSONObject().apply {
+                    put("nodeData", JSONObject(result.nodeData.filterValues { it != null }))
+                    put("botName", ChatState.getVariable("_botName")?.toString() ?: "")
+                    put("transcript", JSONArray().apply {
+                        ChatState.transcript.value.forEach { entry ->
+                            put(JSONObject().apply {
+                                put("by", entry.by)
+                                put("message", entry.message)
+                            })
+                        }
+                    })
+                    put("visitorName", metadata.name ?: "")
+                    put("visitorEmail", metadata.email ?: "")
+                    ChatState.getAnswerVariablesMap().forEach { (key, value) ->
+                        if (value != null) put(key, value)
+                    }
+                    put("answerVariables", JSONArray().apply {
+                        ChatState.getAnswerVariablesList().forEach { variable ->
+                            put(JSONObject().apply {
+                                put("key", variable["key"])
+                                put("value", variable["value"] ?: JSONObject.NULL)
+                            })
+                        }
+                    })
+                    put("chatDate", java.text.SimpleDateFormat(
+                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US
+                    ).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
+                    workspaceId?.let { put("workspaceId", it) }
+                }
+                socketClient.sendEmailNodeTrigger(payload)
+            } else {
+                // Zapier: webhookURL comes from integrationWebhooks matched by nodeId;
+                // without an active match the web widget skips the trigger entirely
+                val webhook = ChatState.integrationWebhooks.find { entry ->
+                    entry["nodeId"] == result.nodeId &&
+                        entry["botId"] == botId &&
+                        entry["active"] == true
+                }
+                if (webhook != null) {
+                    val zapierNodeData = JSONObject(result.nodeData.filterValues { it != null })
+                    zapierNodeData.put("nodeId", result.nodeId)
+                    zapierNodeData.put("webhookURL", webhook["webhookURL"])
+                    val flattenedAnswers = JSONObject()
+                    ChatState.getAnswerVariablesMap().forEach { (key, value) ->
+                        if (value != null) flattenedAnswers.put(key, value)
+                    }
+                    socketClient.sendZapierNodeTrigger(JSONObject().apply {
+                        put("nodeData", zapierNodeData)
+                        put("payload", flattenedAnswers)
+                        put("chatSessionId", chatSessionId)
+                        workspaceId?.let { put("workspaceId", it) }
+                    })
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Trigger integration failed for ${result.nodeType}", e)
+        }
+
+        // Fire-and-forget: proceed with whatever the handler's callback returns
+        val nextResult = result.onResult(
+            IntegrationResultData(success = true, error = null)
+        )
+        scope.launch {
+            handleNodeResult(nextResult, nodeData)
+        }
+    }
+
+    /**
+     * Send a calendar-node slot selection to the server so it is stored as a
+     * CalendarBooking (mirrors the web widget's calendar-slot-selection-record emit).
+     */
+    private fun sendCalendarSlotSelection(
+        nodeId: String,
+        nodeData: Map<String, Any?>,
+        response: Map<*, *>
+    ) {
+        try {
+            val botId = ChatState.botId ?: return
+            val date = response["date"]?.toString() ?: return
+            val time = response["time"]?.toString()
+            socketClient.sendCalendarSlotSelectionRecord(JSONObject().apply {
+                put("visitorId", ChatState.visitorId ?: "")
+                put("chatbotId", botId)
+                put("nodeId", nodeId)
+                put("selectedDate", date)
+                put("botTimeZone", nodeData["botTimeZone"] ?: nodeData["timezone"] ?: JSONObject.NULL)
+                put("visitorTimeZone", java.util.TimeZone.getDefault().id)
+                put("timeSlotSelected", time ?: JSONObject.NULL)
+                put("visitorTime", time ?: JSONObject.NULL)
+            })
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to send calendar slot selection", e)
+        }
     }
 
     /**
@@ -403,6 +542,11 @@ class NodeFlowEngine(
                     type = nodeData["type"]?.toString(),
                     text = responseText,
                 ))
+
+                // Calendar selections are also recorded server-side as bookings (web parity)
+                if (nodeType == "calendar-node" && response is Map<*, *>) {
+                    sendCalendarSlotSelection(nodeId, nodeData, response)
+                }
 
                 android.util.Log.d(TAG, "submitResponse: calling handler")
                 val result = handler.handleResponse(response, nodeData, nodeId)
