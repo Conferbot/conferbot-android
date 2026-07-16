@@ -639,7 +639,8 @@ class GoogleSheetsNodeHandler : BaseNodeHandler() {
         val operation = getString(nodeData, "operation", "write")
 
         return NodeResult.ExecuteIntegration(
-            nodeType = "google-sheets-node",
+            // Server registers separate read/write handlers - "google-sheets-node" is rejected
+            nodeType = if (operation == "read") "google-sheets-read-node" else "google-sheets-write-node",
             nodeId = nodeId,
             nodeData = nodeData,
             onResult = { result ->
