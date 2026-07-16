@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.conferbot.sdk.ui.compose.messages
 
 import androidx.compose.animation.AnimatedVisibility
@@ -7,12 +9,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +43,14 @@ fun MessageBubble(
 
     when (message) {
         is RecordItem.UserMessage -> UserMessageBubble(message, modifier, animationDuration)
+        is RecordItem.UserInputResponse -> UserMessageBubble(
+            RecordItem.UserMessage(id = message.id, time = message.time, text = message.text),
+            modifier, animationDuration
+        )
+        is RecordItem.UserLiveMessage -> UserMessageBubble(
+            RecordItem.UserMessage(id = message.id, time = message.time, text = message.text),
+            modifier, animationDuration
+        )
         is RecordItem.BotMessage -> BotMessageBubble(message, modifier, animationDuration)
         is RecordItem.AgentMessage -> AgentMessageBubble(message, modifier, animationDuration)
         is RecordItem.SystemMessage -> SystemMessageBubble(message, modifier, animationDuration)
@@ -151,35 +164,97 @@ fun BotMessageBubble(
                     slideInHorizontally(tween(dur, easing = FastOutSlowInEasing)) { -it / 4 }
         } else fadeIn(tween(0))
     ) {
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.Bottom
-        ) {
-            BotAvatar()
-            Spacer(Modifier.width(10.dp))
-            Column(
-                modifier = Modifier
-                    .widthIn(max = spacing.maxBubbleWidth)
-                    .shadow(1.dp, bubbleShape, clip = false)
-                    .background(colors.botBubble, bubbleShape)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Text(
-                    text = message.text ?: "",
-                    color = colors.botBubbleText,
-                    style = TextStyle(
-                        fontFamily = typography.fontFamily,
-                        fontSize = typography.messageSize,
-                        lineHeight = typography.messageSize * 1.4f
+        Column(modifier = modifier.fillMaxWidth()) {
+            if (!message.text.isNullOrBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    BotAvatar()
+                    Spacer(Modifier.width(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = spacing.maxBubbleWidth)
+                            .shadow(1.dp, bubbleShape, clip = false)
+                            .background(colors.botBubble, bubbleShape)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = message.text,
+                            color = colors.botBubbleText,
+                            style = TextStyle(
+                                fontFamily = typography.fontFamily,
+                                fontSize = typography.messageSize,
+                                lineHeight = typography.messageSize * 1.4f
+                            )
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = formatTime(message.time),
+                            color = colors.botBubbleText.copy(alpha = 0.6f),
+                            style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize)
+                        )
+                    }
+                }
+            }
+            // Answered choice nodes keep their chips visible but disabled,
+            // with the selection highlighted (web widget behavior).
+            @Suppress("UNCHECKED_CAST")
+            val persistedChoices = message.nodeData?.get("choices") as? List<String>
+            if (!persistedChoices.isNullOrEmpty()) {
+                val selected = message.nodeData?.get("selected")?.toString()
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.width(50.dp))
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        persistedChoices.forEach { choiceText ->
+                            val isSelected = choiceText == selected
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) colors.primary
+                                        else colors.optionBubble.copy(alpha = 0.55f),
+                                contentColor = if (isSelected) Color.White
+                                        else colors.optionBubbleText.copy(alpha = 0.6f)
+                            ) {
+                                Text(
+                                    text = choiceText,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    style = TextStyle(
+                                        fontFamily = typography.fontFamily,
+                                        fontSize = typography.messageSize * 0.9f
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            // Web widget parity: media renders as its own block below the
+            // text bubble, indented past the avatar, full bubble width.
+            message.imageUrl?.let { url ->
+                Spacer(Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    if (message.text.isNullOrBlank()) {
+                        BotAvatar()
+                        Spacer(Modifier.width(10.dp))
+                    } else {
+                        Spacer(Modifier.width(50.dp))
+                    }
+                    coil.compose.AsyncImage(
+                        model = coil.request.ImageRequest.Builder(
+                            androidx.compose.ui.platform.LocalContext.current
+                        ).data(url).crossfade(true).build(),
+                        contentDescription = message.text,
+                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                        modifier = Modifier
+                            .width(spacing.maxBubbleWidth * 0.75f)
+                            .clip(RoundedCornerShape(10.dp))
                     )
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = formatTime(message.time),
-                    color = colors.botBubbleText.copy(alpha = 0.6f),
-                    style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize)
-                )
+                }
             }
         }
     }

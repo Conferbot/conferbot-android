@@ -56,7 +56,13 @@ fun PaginatedMessageList(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    val hasInlineNode = currentUIState != null && onNodeResponse != null
+    // TextInput nodes are answered via the unified bottom bar (web parity),
+    // so they render no inline UI and must not reserve an avatar row.
+    val hasInlineNode = currentUIState != null && onNodeResponse != null &&
+        currentUIState !is NodeUIState.TextInput &&
+        currentUIState !is NodeUIState.Message &&
+        currentUIState !is NodeUIState.Image &&
+        currentUIState !is NodeUIState.Video
 
     // Pagination trigger
     val shouldLoadMore by remember {
