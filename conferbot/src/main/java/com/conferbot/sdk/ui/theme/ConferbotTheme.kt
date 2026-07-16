@@ -91,6 +91,8 @@ data class ConferbotColors(
     // Message bubble colors
     val botBubble: Color,
     val botBubbleText: Color,
+    val optionBubble: Color = Color(0xFFF5F5F5),
+    val optionBubbleText: Color = Color(0xFF1C1B1F),
     val userBubble: Color,
     val userBubbleText: Color,
     val agentBubble: Color,

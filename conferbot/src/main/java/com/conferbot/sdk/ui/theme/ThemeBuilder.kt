@@ -37,6 +37,8 @@ class ConferbotThemeBuilder {
     // Message bubble colors
     private var botBubbleColor: Color? = null
     private var botBubbleTextColor: Color? = null
+    private var optionBubbleColor: Color? = null
+    private var optionBubbleTextColor: Color? = null
     private var userBubbleColor: Color? = null
     private var userBubbleTextColor: Color? = null
     private var agentBubbleColor: Color? = null
@@ -150,6 +152,10 @@ class ConferbotThemeBuilder {
     fun botBubbleColors(background: Color, text: Color) = apply {
         this.botBubbleColor = background
         this.botBubbleTextColor = text
+    }
+    fun optionBubbleColors(background: Color, text: Color) = apply {
+        this.optionBubbleColor = background
+        this.optionBubbleTextColor = text
     }
 
     /**
@@ -506,6 +512,8 @@ class ConferbotThemeBuilder {
             error = errorColor ?: baseColors.error,
             botBubble = botBubbleColor ?: baseColors.botBubble,
             botBubbleText = botBubbleTextColor ?: baseColors.botBubbleText,
+            optionBubble = optionBubbleColor ?: baseColors.optionBubble,
+            optionBubbleText = optionBubbleTextColor ?: baseColors.optionBubbleText,
             userBubble = userBubbleColor ?: primaryColor ?: baseColors.userBubble,
             userBubbleText = userBubbleTextColor ?: baseColors.userBubbleText,
             agentBubble = agentBubbleColor ?: baseColors.agentBubble,
