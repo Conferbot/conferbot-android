@@ -10,7 +10,7 @@ class AskNameNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_NAME
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "What is your name?")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your name?"))
         val answerKey = getString(nodeData, "answerVariable", "name")
 
         // Add question to transcript
@@ -84,7 +84,7 @@ class AskEmailNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_EMAIL
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "What is your email?")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your email?"))
         val answerKey = getString(nodeData, "answerVariable", "email")
         val errorMessage = getString(nodeData, "incorrectEmailResponse", "Please enter a valid email address")
 
@@ -138,7 +138,7 @@ class AskPhoneNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_PHONE
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "What is your phone number?")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your phone number?"))
         val answerKey = getString(nodeData, "answerVariable", "phone")
         val errorMessage = getString(nodeData, "incorrectPhoneNumberResponse", "Please enter a valid phone number")
 
@@ -192,7 +192,7 @@ class AskNumberNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_NUMBER
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "Please enter a number")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please enter a number"))
         val answerKey = getString(nodeData, "answerVariable", "number")
 
         state.addToTranscript("bot", questionText)
@@ -245,7 +245,7 @@ class AskUrlNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_URL
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "Please enter a URL")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please enter a URL"))
         val answerKey = getString(nodeData, "answerVariable", "url")
 
         state.addToTranscript("bot", questionText)
@@ -296,7 +296,7 @@ class AskLocationNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_LOCATION
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "What is your location?")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your location?"))
         val answerKey = getString(nodeData, "answerVariable", "location")
 
         state.addToTranscript("bot", questionText)
@@ -346,7 +346,7 @@ class AskCustomNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_CUSTOM
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "Please answer the question")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please answer the question"))
         val answerKey = getString(nodeData, "answerVariable", nodeId)
 
         state.addToTranscript("bot", questionText)
@@ -403,7 +403,7 @@ class AskFileNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_FILE
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = getString(nodeData, "questionText", "Please upload a file")
+        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please upload a file"))
         val answerKey = getString(nodeData, "answerVariable", "file")
         val maxSizeMb = getInt(nodeData, "maxSize", 5)
 
@@ -656,7 +656,7 @@ class AskMultipleQuestionsNodeHandler : BaseNodeHandler() {
         }
 
         val question = questions[currentIndex]
-        val questionText = question["questionText"]?.toString() ?: "Please answer"
+        val questionText = state.resolveVariables(question["questionText"]?.toString() ?: "Please answer")
         val answerType = question["answerVariable"]?.toString() ?: "text"
 
         state.addToTranscript("bot", questionText)
@@ -770,7 +770,7 @@ class CalendarNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.CALENDAR
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = nodeData["questionText"]?.toString()
+        val questionText = nodeData["questionText"]?.toString()?.let { state.resolveVariables(it) }
         val showTimeSelection = getBoolean(nodeData, "showTimeSelection", false)
         val timezone = nodeData["botTimeZone"]?.toString()
             ?: nodeData["timezone"]?.toString()

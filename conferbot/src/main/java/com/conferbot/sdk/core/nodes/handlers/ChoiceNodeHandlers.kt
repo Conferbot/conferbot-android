@@ -14,7 +14,7 @@ class TwoChoicesNodeHandler : BaseNodeHandler() {
         val choice2 = getString(nodeData, "choice2", "Option 2")
         val disableSecond = getBoolean(nodeData, "disableSecondChoice", false)
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -101,7 +101,7 @@ class ThreeChoicesNodeHandler : BaseNodeHandler() {
         val choice2 = getString(nodeData, "choice2", "Option 2")
         val choice3 = getString(nodeData, "choice3", "Option 3")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -168,7 +168,7 @@ class NChoicesNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val choicesData = getList<Map<String, Any?>>(nodeData, "choices")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -232,7 +232,7 @@ class SelectOptionNodeHandler : BaseNodeHandler() {
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
         state.addAnswerVariable(nodeId, answerKey)
 
         // Build options from option1, option2, etc.
@@ -301,7 +301,7 @@ class NSelectOptionNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val optionsData = getList<Map<String, Any?>>(nodeData, "options")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -360,7 +360,7 @@ class NCheckOptionsNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val optionsData = getList<Map<String, Any?>>(nodeData, "options")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -421,7 +421,7 @@ class ImageChoiceNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val imagesData = getList<Map<String, Any?>>(nodeData, "images")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -486,7 +486,7 @@ class YesOrNoChoiceNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val optionsData = getList<Map<String, Any?>>(nodeData, "options")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -554,7 +554,7 @@ class RatingChoiceNodeHandler : BaseNodeHandler() {
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val ratingType = getString(nodeData, "ratingType", "5")
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -614,7 +614,7 @@ class OpinionScaleChoiceNodeHandler : BaseNodeHandler() {
         val from = getInt(nodeData, "from", 1)
         val to = getInt(nodeData, "to", 10)
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
 
         state.addAnswerVariable(nodeId, answerKey)
 
@@ -667,7 +667,7 @@ class UserRatingNodeHandler : BaseNodeHandler() {
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { stripHtml(it) }?.takeIf { it.isNotBlank() }
+        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
         state.addAnswerVariable(nodeId, answerKey)
 
         return NodeResult.DisplayUI(
