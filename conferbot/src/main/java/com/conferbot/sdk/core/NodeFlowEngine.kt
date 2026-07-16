@@ -39,7 +39,14 @@ class NodeFlowEngine(
 
     // Current node being processed
     private var currentNodeId: String? = null
+
+    /** True while an interactive node is awaiting a visitor response. */
+    val isAwaitingInput: Boolean
+        get() = currentNodeId != null && _currentUIState.value.let {
+            it is NodeUIState.TextInput
+        }
     private var currentNodeData: Map<String, Any?>? = null
+    private var currentNodeType: String? = null
 
     // Reference to steps from server
     private var steps: List<Map<String, Any>> = emptyList()
@@ -104,7 +111,9 @@ class NodeFlowEngine(
 
         currentNodeId = nodeId
         currentNodeData = nodeData
+        currentNodeType = nodeType
 
+        android.util.Log.d(TAG, "processNode idx=$index id=$nodeId type=$nodeType")
         processNode(nodeId, nodeType, nodeData)
     }
 
@@ -260,6 +269,7 @@ class NodeFlowEngine(
                 _isProcessing.value = true
                 delay(result.delayMs)
                 _isProcessing.value = false
+                android.util.Log.d(TAG, "DelayedProceed: delay done, sending record")
                 // Track node exit after delay
                 currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
                 sendResponseToServer()
@@ -344,6 +354,7 @@ class NodeFlowEngine(
      * Handle user response for current interactive node
      */
     fun submitResponse(response: Any) {
+        android.util.Log.d(TAG, "submitResponse node=$currentNodeId resp=${response.toString().take(30)}")
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
 
@@ -359,8 +370,14 @@ class NodeFlowEngine(
                 )
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val nodeType = nodeData["type"]?.toString() ?: return@launch
+            // The node type lives on the step object, not inside its data
+            // map; a silent bail here left isProcessing stuck forever.
+            val nodeType = currentNodeType ?: nodeData["type"]?.toString()
+            if (nodeType == null) {
+                android.util.Log.w(TAG, "submitResponse: no node type for $nodeId")
+                _isProcessing.value = false
+                return@launch
+            }
 
             val handler = NodeHandlerRegistry.getHandler(nodeType)
             if (handler == null) {
@@ -387,11 +404,14 @@ class NodeFlowEngine(
                     text = responseText,
                 ))
 
+                android.util.Log.d(TAG, "submitResponse: calling handler")
                 val result = handler.handleResponse(response, nodeData, nodeId)
+                android.util.Log.d(TAG, "submitResponse: handler returned ${result.javaClass.simpleName}")
                 // Track node exit with user input
                 val userInput = if (response is String) response else response.toString()
                 ChatAnalytics.trackNodeExit(nodeId, "proceeded", userInput = userInput)
                 handleNodeResult(result, nodeData)
+                android.util.Log.d(TAG, "submitResponse: handleNodeResult done")
             } catch (e: Exception) {
                 _errorMessage.value = e.message
                 _isProcessing.value = false
@@ -420,6 +440,7 @@ class NodeFlowEngine(
             findNextNodeByDefaultEdge(currentId)
         }
 
+        android.util.Log.d(TAG, "proceedToNextNode from=$currentId port=$targetPort next=$nextNodeId")
         if (nextNodeId != null) {
             val nextIndex = steps.indexOfFirst { it["id"] == nextNodeId }
             if (nextIndex >= 0) {
