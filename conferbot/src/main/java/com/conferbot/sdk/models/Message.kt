@@ -91,7 +91,10 @@ sealed class RecordItem {
         @SerializedName("text")
         val text: String? = null,
 
-        val nodeData: Map<String, Any>? = null
+        val nodeData: Map<String, Any>? = null,
+
+        /** Inline media persisted with the message (welcome gif, image nodes). */
+        val imageUrl: String? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.BOT_MESSAGE
     }
