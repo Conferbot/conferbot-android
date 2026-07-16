@@ -412,86 +412,9 @@ fun TextInputNode(
     primaryColor: Color,
     modifier: Modifier = Modifier
 ) {
-    var text by remember { mutableStateOf("") }
-    var hasError by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = modifier.animateContentSize(
-            animationSpec = tween(APPEAR_DURATION_MS, easing = PremiumEasing)
-        )
-    ) {
-        if (state.questionText.isNotEmpty()) {
-            BotMessageBubble(text = state.questionText)
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Inline text field with embedded send button
-        OutlinedTextField(
-            value = text,
-            onValueChange = {
-                text = it
-                hasError = false
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = {
-                Text(
-                    state.placeholder ?: "Type here...",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = when (state.inputType) {
-                    NodeUIState.TextInput.InputType.EMAIL -> KeyboardType.Email
-                    NodeUIState.TextInput.InputType.PHONE -> KeyboardType.Phone
-                    NodeUIState.TextInput.InputType.NUMBER -> KeyboardType.Number
-                    NodeUIState.TextInput.InputType.URL -> KeyboardType.Uri
-                    else -> KeyboardType.Text
-                },
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    if (text.isNotBlank()) {
-                        onResponse(text)
-                    }
-                }
-            ),
-            trailingIcon = {
-                AnimatedVisibility(
-                    visible = text.isNotBlank(),
-                    enter = fadeIn(tween(FADE_DURATION_MS)) + scaleIn(tween(SCALE_DURATION_MS)),
-                    exit = fadeOut(tween(FADE_DURATION_MS)) + scaleOut(tween(SCALE_DURATION_MS))
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (text.isNotBlank()) {
-                                onResponse(text)
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Submit",
-                            tint = primaryColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            },
-            isError = hasError,
-            supportingText = if (hasError && state.errorMessage != null) {
-                { Text(state.errorMessage) }
-            } else null,
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = primaryColor,
-                unfocusedBorderColor = primaryColor.copy(alpha = 0.3f),
-                cursorColor = primaryColor
-            )
-        )
-    }
+    // Web widget parity: the question already lives in the transcript and
+    // the visitor answers through the unified bottom bar (Conferbot
+    // .sendMessage routes to the active node), so this node renders nothing.
 }
 
 @Composable
@@ -1112,9 +1035,10 @@ fun SingleChoiceNode(
                         },
                         modifier = Modifier.graphicsLayer { this.alpha = alpha },
                         shape = RoundedCornerShape(12.dp), // 0.75rem
-                        color = if (isSelected) theme.colors.botBubble
-                               else theme.colors.botBubble.copy(alpha = 0.85f),
-                        contentColor = theme.colors.botBubbleText,
+                        color = if (isSelected) primaryColor
+                               else theme.colors.optionBubble,
+                        contentColor = if (isSelected) Color.White
+                               else theme.colors.optionBubbleText,
                         shadowElevation = 1.dp, // subtle shadow matching web widget
                         enabled = selectedId == null
                     ) {

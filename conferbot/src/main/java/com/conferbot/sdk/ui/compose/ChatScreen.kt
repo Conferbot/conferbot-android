@@ -158,7 +158,7 @@ private fun ConferBotChatScreenContent(
                     isLoadingMore = isLoadingMore,
                     onLoadMore = { Conferbot.loadMoreMessages() },
                     currentUIState = if (!isFlowComplete) currentUIState else null,
-                    onNodeResponse = { response -> flowEngine?.submitResponse(response) },
+                    onNodeResponse = { response -> Conferbot.submitNodeResponse(response) },
                     modifier = Modifier.weight(1f)
                 )
 
