@@ -470,7 +470,7 @@ class GptNodeHandlerTest {
     }
 
     @Test
-    fun `handler falls back to gpt-3.5-turbo when all else fails`() = runTest {
+    fun `handler falls back to gpt-3_5-turbo when all else fails`() = runTest {
         val settings = AISettings()
         val handler = GptNodeHandler(settings)
 
@@ -608,7 +608,7 @@ class GptNodeHandlerTest {
             "temperature" to "0.8"
         )
 
-        val value = nodeData["temperature"]
+        val value: Any? = nodeData["temperature"]
         val temperature = when (value) {
             is Number -> value.toFloat()
             is String -> value.toFloatOrNull() ?: 0.7f
@@ -627,7 +627,7 @@ class GptNodeHandlerTest {
             "temperature" to "invalid"
         )
 
-        val value = nodeData["temperature"]
+        val value: Any? = nodeData["temperature"]
         val temperature = when (value) {
             is Number -> value.toFloat()
             is String -> value.toFloatOrNull() ?: 0.7f

@@ -351,7 +351,7 @@ class DeepSeekProviderTest {
         }
 
         assertThat(requestBody.getString("model")).isEqualTo("deepseek-chat")
-        assertThat(requestBody.getDouble("temperature")).isEqualTo(0.8)
+        assertThat(requestBody.getDouble("temperature")).isWithin(1e-6).of(0.8)
         assertThat(requestBody.getInt("max_tokens")).isEqualTo(2000)
     }
 
@@ -409,9 +409,9 @@ class DeepSeekProviderTest {
             config.presencePenalty?.let { put("presence_penalty", it.toDouble()) }
         }
 
-        assertThat(requestBody.getDouble("top_p")).isEqualTo(0.9)
-        assertThat(requestBody.getDouble("frequency_penalty")).isEqualTo(0.3)
-        assertThat(requestBody.getDouble("presence_penalty")).isEqualTo(0.2)
+        assertThat(requestBody.getDouble("top_p")).isWithin(1e-6).of(0.9)
+        assertThat(requestBody.getDouble("frequency_penalty")).isWithin(1e-6).of(0.3)
+        assertThat(requestBody.getDouble("presence_penalty")).isWithin(1e-6).of(0.2)
     }
 
     // ==================== Connection Setup Tests ====================

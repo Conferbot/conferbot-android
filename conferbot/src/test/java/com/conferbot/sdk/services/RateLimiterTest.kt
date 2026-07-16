@@ -107,7 +107,7 @@ class RateLimiterTest {
         val endTime = testScheduler.currentTime
 
         // Then - Should have waited approximately 1000ms
-        assertThat(endTime - startTime).isAtLeast(900)
+        assertThat(endTime - startTime).isAtLeast(900L)
     }
 
     @Test
@@ -264,8 +264,8 @@ class RateLimiterTest {
         val waitTime = limiter.getTimeUntilNextPermit()
 
         // Then
-        assertThat(waitTime).isGreaterThan(0)
-        assertThat(waitTime).isAtMost(1000)
+        assertThat(waitTime).isGreaterThan(0L)
+        assertThat(waitTime).isAtMost(1000L)
     }
 
     // ==================== RESET TESTS ====================

@@ -54,11 +54,11 @@ class MemoryManagerTest {
         every { ChatState.clearOldMessages(any()) } just Runs
         every { ChatState.onLowMemory() } just Runs
         every { ChatState.getMemoryUsageInfo() } returns MemoryUsageInfo(
-            answerVariables = 10,
+            messagesInMemory = 5,
             transcriptEntries = 50,
             recordEntries = 20,
-            tempVariables = 5,
-            totalSteps = 100
+            answerVariables = 10,
+            totalMessageCount = 100
         )
 
         // Mock PaginatedMessageManager

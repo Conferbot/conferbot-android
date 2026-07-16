@@ -445,7 +445,7 @@ class IntegrationNodeHandlersTest {
     @Test
     fun `GptNodeHandler - proceeds when no user message`() = runTest {
         val mockAISettings = AISettings(
-            openAIApiKey = "test-key"
+            apiKeys = mapOf("openai" to "test-key")
         )
         val handler = GptNodeHandler(mockAISettings)
 

@@ -380,7 +380,7 @@ class OpenAIProviderTest {
             put("temperature", config.temperature.toDouble())
         }
 
-        assertThat(requestBody.getDouble("temperature")).isEqualTo(0.9)
+        assertThat(requestBody.getDouble("temperature")).isWithin(1e-6).of(0.9)
     }
 
     @Test
@@ -409,9 +409,9 @@ class OpenAIProviderTest {
             config.presencePenalty?.let { put("presence_penalty", it.toDouble()) }
         }
 
-        assertThat(requestBody.getDouble("top_p")).isEqualTo(0.95)
-        assertThat(requestBody.getDouble("frequency_penalty")).isEqualTo(0.5)
-        assertThat(requestBody.getDouble("presence_penalty")).isEqualTo(0.3)
+        assertThat(requestBody.getDouble("top_p")).isWithin(1e-6).of(0.95)
+        assertThat(requestBody.getDouble("frequency_penalty")).isWithin(1e-6).of(0.5)
+        assertThat(requestBody.getDouble("presence_penalty")).isWithin(1e-6).of(0.3)
     }
 
     @Test

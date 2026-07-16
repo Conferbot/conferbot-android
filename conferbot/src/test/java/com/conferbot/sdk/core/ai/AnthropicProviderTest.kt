@@ -474,7 +474,7 @@ class AnthropicProviderTest {
         }
 
         assertThat(requestBody.has("temperature")).isTrue()
-        assertThat(requestBody.getDouble("temperature")).isEqualTo(0.9)
+        assertThat(requestBody.getDouble("temperature")).isWithin(1e-6).of(0.9)
     }
 
     @Test
@@ -486,7 +486,7 @@ class AnthropicProviderTest {
         }
 
         assertThat(requestBody.has("top_p")).isTrue()
-        assertThat(requestBody.getDouble("top_p")).isEqualTo(0.9)
+        assertThat(requestBody.getDouble("top_p")).isWithin(1e-6).of(0.9)
     }
 
     // ==================== Connection Setup Tests ====================
