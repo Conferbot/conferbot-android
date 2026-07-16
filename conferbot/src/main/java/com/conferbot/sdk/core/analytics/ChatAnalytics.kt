@@ -487,10 +487,10 @@ object ChatAnalytics {
     fun getDeviceInfo(): DeviceInfo {
         return DeviceInfo(
             deviceType = "mobile",
-            osVersion = Build.VERSION.RELEASE,
+            osVersion = Build.VERSION.RELEASE ?: "unknown",
             sdkVersion = Build.VERSION.SDK_INT,
-            deviceModel = Build.MODEL,
-            manufacturer = Build.MANUFACTURER,
+            deviceModel = Build.MODEL ?: "unknown",
+            manufacturer = Build.MANUFACTURER ?: "unknown",
             language = Locale.getDefault().language,
             timezone = TimeZone.getDefault().id
         )
