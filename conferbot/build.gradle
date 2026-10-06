@@ -6,6 +6,12 @@ plugins {
 }
 
 android {
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     namespace 'com.conferbot.sdk'
     compileSdk 34
 
