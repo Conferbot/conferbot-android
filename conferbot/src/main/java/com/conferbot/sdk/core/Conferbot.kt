@@ -320,7 +320,8 @@ object Conferbot {
             scope = scope,
             socket = { socketClient },
             sessionId = { _chatSessionId.value },
-            addMessage = { addMessageToRecord(it) }
+            addMessage = { addMessageToRecord(it) },
+            continueFlow = { nodeFlowEngine?.continueAfterHandover() }
         )
     }
 
@@ -649,8 +650,30 @@ object Conferbot {
         // No agents available (for human handover)
         socketClient?.on(SocketEvents.NO_AGENTS_AVAILABLE, Emitter.Listener {
             // The handover step says it with the owner's fallback message.
-            if (nodeFlowEngine?.currentUIState?.value is com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover) {
-                nodeFlowEngine?.handleNoAgentsAvailable()
+            // A flow at its handover step, as the web widget does it: the
+            // owner's fallback as the bot's message, then "Leave a message"
+            // (the flow carries on once it is sent or skipped), or straight
+            // on when the owner turned that off.
+            val engine = nodeFlowEngine
+            if (engine != null && engine.isAtHandover) {
+                val raw = engine.handoverNodeData?.get("fallbackMessage")?.toString().orEmpty()
+                val fallback = ChatState.resolveVariables(raw)
+                    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n").replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n")
+                    .replace(Regex("<[^>]*>"), "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
+                scope.launch {
+                    engine.clearHandoverUI()
+                    if (fallback.isNotEmpty()) {
+                        val id = "agent-declined-${System.currentTimeMillis()}"
+                        addMessageToRecord(RecordItem.BotMessage(id = id, time = java.util.Date(), text = fallback))
+                        ChatState.pushToRecord(
+                            com.conferbot.sdk.core.state.RecordEntry(
+                                id = id, shape = "agent-declined-message", type = "agent-declined-message", text = fallback,
+                                data = mutableMapOf("message" to fallback, "renderedText" to fallback)
+                            )
+                        )
+                    }
+                    if (_serverCustomizationMap.value["chatLeaveMessage"] == false) engine.continueAfterHandover()
+                }
                 return@Listener
             }
             // Add "No agents available" system message
