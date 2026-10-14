@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -55,14 +56,19 @@ fun ChatBottomBar(
     onSendMessage: (String) -> Unit,
     onTypingChanged: (Boolean) -> Unit,
     serverCustomization: ServerChatbotCustomization?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Off while the agent turned replies off or locked the conversation. */
+    enabled: Boolean = true,
+    placeholder: String = "Type a message...",
+    /** The paperclip: shown when given (a live chat that takes visitor files). */
+    onAttach: (() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
     val context = LocalContext.current
 
     var text by remember { mutableStateOf("") }
-    val canSend = text.isNotBlank()
+    val canSend = text.isNotBlank() && enabled
 
     val sendBgColor by animateColorAsState(
         targetValue = if (canSend) colors.headerBackground else colors.headerBackground.copy(alpha = 0.35f),
@@ -91,6 +97,15 @@ fun ChatBottomBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (onAttach != null) {
+                IconButton(onClick = onAttach, enabled = enabled, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.AttachFile,
+                        contentDescription = "Attach a file",
+                        tint = colors.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f)
+                    )
+                }
+            }
             // Pill-shaped input field with subtle border
             Box(
                 modifier = Modifier
@@ -107,7 +122,7 @@ fun ChatBottomBar(
             ) {
                 if (text.isEmpty()) {
                     Text(
-                        "Type a message...",
+                        placeholder,
                         style = TextStyle(
                             fontSize = 16.sp,           // font-size: 16px
                             color = Color(0xFF4D4D4D)   // color: #4d4d4d
@@ -127,6 +142,7 @@ fun ChatBottomBar(
                     ),
                     cursorBrush = SolidColor(colors.primary),
                     maxLines = 4,
+                    enabled = enabled,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
