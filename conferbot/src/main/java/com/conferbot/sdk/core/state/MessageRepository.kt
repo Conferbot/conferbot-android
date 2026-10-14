@@ -396,6 +396,8 @@ private data class SerializableMessage(
     // AI agent replies (core/agent/AgentBot.kt): who, extras, the vote, edits
     val agentIsAI: Boolean? = null,
     val extrasJson: String? = null,
+    /** An agent message's translation (core/livechat), as JSON. */
+    val translationJson: String? = null,
     val feedbackHelpful: Boolean? = null,
     val feedbackReason: String? = null,
     val edited: Boolean? = null,
@@ -441,7 +443,8 @@ private data class SerializableMessage(
                 extras = extrasJson?.let { runCatching { GSON.fromJson(it, com.conferbot.sdk.core.agent.AIReplyExtras::class.java) }.getOrNull() },
                 feedback = feedbackHelpful?.let { com.conferbot.sdk.core.agent.AnswerFeedback(it, feedbackReason) },
                 edited = edited == true,
-                deleted = deleted == true
+                deleted = deleted == true,
+                translation = translationJson?.let { runCatching { GSON.fromJson(it, com.conferbot.sdk.core.livechat.AgentTranslation::class.java) }.getOrNull() }
             )
             "agent-message-rich" -> com.conferbot.sdk.core.agent.AgentBotParser.safeRich(rich)?.let {
                 RecordItem.AgentRichMessage(
@@ -457,6 +460,12 @@ private data class SerializableMessage(
                 id = id,
                 time = date,
                 text = text ?: ""
+            )
+            "user-live-message-file" -> RecordItem.UserLiveMessageFile(
+                id = id,
+                time = date,
+                url = url ?: "",
+                fileName = text
             )
             "agent-left-chat" -> RecordItem.AgentLeftMessage(
                 id = id,
@@ -567,7 +576,8 @@ private data class SerializableMessage(
                     feedbackHelpful = item.feedback?.helpful,
                     feedbackReason = item.feedback?.reason,
                     edited = item.edited.takeIf { it },
-                    deleted = item.deleted.takeIf { it }
+                    deleted = item.deleted.takeIf { it },
+                    translationJson = item.translation?.let { GSON.toJson(it) }
                 )
                 is RecordItem.AgentRichMessage -> SerializableMessage(
                     id = item.id,
@@ -628,6 +638,13 @@ private data class SerializableMessage(
                     type = "user-live-message",
                     time = item.time.time,
                     text = item.text
+                )
+                is RecordItem.UserLiveMessageFile -> SerializableMessage(
+                    id = item.id,
+                    type = "user-live-message-file",
+                    time = item.time.time,
+                    text = item.fileName,
+                    url = item.url
                 )
                 is RecordItem.SystemMessage -> SerializableMessage(
                     id = item.id,
