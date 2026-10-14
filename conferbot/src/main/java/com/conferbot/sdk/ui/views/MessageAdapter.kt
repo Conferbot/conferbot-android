@@ -1,5 +1,9 @@
 package com.conferbot.sdk.ui.views
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -66,6 +70,7 @@ class MessageAdapter(
         private const val VIEW_TYPE_BOT_NODE = 3
         private const val VIEW_TYPE_AGENT = 4
         private const val VIEW_TYPE_SYSTEM = 5
+        private const val VIEW_TYPE_AGENT_COMPOSE = 6
     }
 
     // Track which nodes have been responded to
@@ -97,6 +102,8 @@ class MessageAdapter(
         return when (item) {
             is RecordItem.UserMessage -> VIEW_TYPE_USER
             is RecordItem.UserInputResponse -> VIEW_TYPE_USER
+            // Live chat messages are the visitor's own bubbles (they drew blank).
+            is RecordItem.UserLiveMessage -> VIEW_TYPE_USER
             is RecordItem.BotMessage -> {
                 // Check if this has nodeData that needs special rendering
                 if (item.nodeData != null && item.nodeData.isNotEmpty()) {
@@ -105,7 +112,10 @@ class MessageAdapter(
                     VIEW_TYPE_BOT
                 }
             }
-            is RecordItem.AgentMessage -> VIEW_TYPE_AGENT
+            // An AI agent's reply and rich messages draw with the Compose
+            // bubbles (formatted text, sources, cards, "Helpful?").
+            is RecordItem.AgentMessage -> if (item.agentDetails.isAIAgent) VIEW_TYPE_AGENT_COMPOSE else VIEW_TYPE_AGENT
+            is RecordItem.AgentRichMessage -> VIEW_TYPE_AGENT_COMPOSE
             else -> VIEW_TYPE_SYSTEM
         }
     }
@@ -135,6 +145,12 @@ class MessageAdapter(
                 val view = inflater.inflate(R.layout.item_message_agent, parent, false)
                 AgentMessageViewHolder(view)
             }
+            VIEW_TYPE_AGENT_COMPOSE -> ComposeMessageViewHolder(
+                androidx.compose.ui.platform.ComposeView(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                }
+            )
             else -> {
                 val view = inflater.inflate(R.layout.item_message_bot, parent, false)
                 SystemMessageViewHolder(view)
@@ -166,6 +182,10 @@ class MessageAdapter(
                     timeText.text = formatTime(message.time)
                 }
                 is RecordItem.UserInputResponse -> {
+                    messageText.text = message.text
+                    timeText.text = formatTime(message.time)
+                }
+                is RecordItem.UserLiveMessage -> {
                     messageText.text = message.text
                     timeText.text = formatTime(message.time)
                 }
@@ -1647,6 +1667,20 @@ class MessageAdapter(
         }
     }
 
+    /** A message drawn by the Compose bubbles, in the server theme. */
+    class ComposeMessageViewHolder(private val composeView: androidx.compose.ui.platform.ComposeView) : MessageViewHolder(composeView) {
+        override fun bind(message: RecordItem) {
+            composeView.setContent {
+                val serverTheme by com.conferbot.sdk.core.Conferbot.serverTheme.collectAsState()
+                com.conferbot.sdk.ui.theme.ConferbotThemeProvider(theme = serverTheme ?: com.conferbot.sdk.ui.theme.LightTheme) {
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(bottom = 8.dp)) {
+                        com.conferbot.sdk.ui.compose.messages.MessageBubble(message = message, animate = false)
+                    }
+                }
+            }
+        }
+    }
+
     class AgentMessageViewHolder(itemView: View) : MessageViewHolder(itemView) {
         private val agentName: TextView = itemView.findViewById(R.id.agentName)
         private val messageText: TextView = itemView.findViewById(R.id.messageText)
@@ -1656,7 +1690,9 @@ class MessageAdapter(
         override fun bind(message: RecordItem) {
             if (message is RecordItem.AgentMessage) {
                 agentName.text = message.agentDetails.name
-                messageText.text = message.text
+                // Lists, bold and tappable links (utils/ChatMarkdown.kt).
+                messageText.text = com.conferbot.sdk.ui.views.ChatMarkdownSpans.toSpanned(message.text)
+                messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 timeText.text = formatTime(message.time)
             }
         }
@@ -1667,11 +1703,32 @@ class MessageAdapter(
         private val timeText: TextView = itemView.findViewById(R.id.timeText)
 
         override fun bind(message: RecordItem) {
-            if (message is RecordItem.SystemMessage) {
-                messageText.text = message.text
-                timeText.text = formatTime(message.time)
+            messageText.movementMethod = null
+            when (message) {
+                is RecordItem.SystemMessage -> messageText.text = message.text
+                // Agent events and files drew as empty bubbles: say what they are.
+                is RecordItem.AgentJoinedMessage -> messageText.text = "${message.agentDetails.name} joined the chat"
+                is RecordItem.AgentLeftMessage -> messageText.text = message.text
+                is RecordItem.AgentMessageFile -> {
+                    messageText.text = linkText("\uD83D\uDCCE " + fileNameOf(message.file), message.file)
+                    messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                }
+                is RecordItem.AgentMessageAudio -> {
+                    messageText.text = linkText("\uD83C\uDFA4 Voice message", message.url)
+                    messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                }
+                else -> messageText.text = ""
             }
+            timeText.text = formatTime(message.time)
         }
+
+        private fun fileNameOf(url: String): String =
+            url.substringAfterLast('/').substringBefore('?').replace("%20", " ").ifBlank { "File" }
+
+        private fun linkText(label: String, url: String): android.text.Spanned =
+            android.text.SpannableString(label).apply {
+                setSpan(android.text.style.URLSpan(url), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
     }
 
     class MessageDiffCallback : DiffUtil.ItemCallback<RecordItem>() {
