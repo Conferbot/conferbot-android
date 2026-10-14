@@ -129,4 +129,12 @@ class LiveChatTest {
             .isEqualTo("Do you ship to Oman ?")
         assertThat(LiveChat.lastQuestion(listOf(mapOf("shape" to "user-live-message", "text" to "jo@example.com")))).isEmpty()
     }
+
+    @Test
+    fun `asks the server to decide once the max wait passes`() {
+        val p = LiveChat.handoverTimeoutPayload("s1", mapOf("assignmentType" to "manual", "assignedAgents" to listOf("a2"), "agentAssignmentStrategy" to "round_robin"), "w1")
+        assertThat(p["chatSessionId"]).isEqualTo("s1")
+        assertThat(p["workspaceId"]).isEqualTo("w1")
+        assertThat(p["assignmentData"]).isEqualTo(mapOf("assignmentType" to "manual", "assignmentStrategy" to "round_robin", "assignedAgents" to listOf("a2")))
+    }
 }
