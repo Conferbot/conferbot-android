@@ -28,6 +28,16 @@
         app:layout_constraintTop_toBottomOf="@id/chatHeader" />
 
     <!-- Messages RecyclerView -->
+    <!-- The bot's chat background behind the messages (gradient, image, pattern) -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/chatBackground"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toTopOf="@id/agentStrip"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/connectionStatus" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/messagesRecyclerView"
         android:layout_width="0dp"

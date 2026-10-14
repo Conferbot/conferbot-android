@@ -148,6 +148,15 @@ class ChatActivity : AppCompatActivity() {
 
         // AI agent bots: the reply as it is written and the one-tap
         // questions, drawn with the Compose pieces in the server theme.
+        // The bot's chat background (core/customization ChatBackground), as on the web.
+        binding.chatBackground.setContent {
+            val map by Conferbot.serverCustomizationMap.collectAsState()
+            if (map.isNotEmpty()) {
+                val background = androidx.compose.runtime.remember(map) { com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(map) }
+                com.conferbot.sdk.ui.compose.chat.ChatBackgroundLayer(background)
+            }
+        }
+
         // "Powered by Conferbot", or the owner's own text, or nothing (hideBrand).
         binding.brandFooter.setContent {
             val serverCustomization by Conferbot.serverCustomization.collectAsState()
@@ -292,8 +301,8 @@ class ChatActivity : AppCompatActivity() {
             header.subtitleText.setTextColor(ink)
             header.backButton.imageTintList = android.content.res.ColorStateList.valueOf(ink)
             binding.sendButton.imageTintList = android.content.res.ColorStateList.valueOf(bg)
-            // The chat background (a solid colour; gradients and patterns come with the background work).
-            (map["chatBgColor"] as? String)?.let { binding.messagesRecyclerView.setBackgroundColor(XmlLook.color(it, android.graphics.Color.WHITE)) }
+            // The chat background (gradient, image, pattern) is drawn behind a see-through list.
+            binding.messagesRecyclerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             val dots = (0 until (binding.typingIndicator.root as android.view.ViewGroup).childCount).map { (binding.typingIndicator.root as android.view.ViewGroup).getChildAt(it) }
             XmlLook.typing(binding.typingIndicator.root, dots)
         }
