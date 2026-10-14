@@ -168,6 +168,34 @@ class MessageAdapter(
     abstract class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         abstract fun bind(message: RecordItem)
 
+        /** A bot bubble in the bot's colours and the web's corners; its avatar as the web draws it. */
+        protected fun applyBotLook(messageText: TextView, timeText: TextView, avatarImage: ImageView?) {
+            if (!XmlLook.loaded) return
+            (messageText.parent as? android.view.View)?.let { XmlLook.botBubble(it) }
+            val ink = XmlLook.botText(android.graphics.Color.BLACK)
+            messageText.setTextColor(ink)
+            timeText.setTextColor((ink and 0x00FFFFFF) or (0xA6 shl 24))
+            avatarImage?.let { img ->
+                val look = com.conferbot.sdk.core.Conferbot.customizations.value
+                if (look.hideAvatar) {
+                    img.visibility = android.view.View.GONE
+                } else {
+                    img.visibility = android.view.View.VISIBLE
+                    val size = (look.avatarSize * img.resources.displayMetrics.density).toInt()
+                    img.layoutParams = img.layoutParams.apply { width = size; height = size }
+                    img.clipToOutline = true
+                    img.outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                            outline.setRoundRect(0, 0, view.width, view.height, look.avatarRadius * view.resources.displayMetrics.density)
+                        }
+                    }
+                    coil.Coil.imageLoader(img.context).enqueue(
+                        coil.request.ImageRequest.Builder(img.context).data(look.avatar).target(img).build()
+                    )
+                }
+            }
+        }
+
         protected fun formatTime(date: Date): String {
             val format = SimpleDateFormat("hh:mm a", Locale.getDefault())
             return format.format(date)
@@ -184,6 +212,16 @@ class MessageAdapter(
                     messageText.text = message.text
                     timeText.text = formatTime(message.time)
                 }
+                else -> {}
+            }
+            // The bot's visitor-bubble colours and corners, as on the web.
+            if (XmlLook.loaded) {
+                (messageText.parent as? android.view.View)?.let { XmlLook.userBubble(it) }
+                val ink = XmlLook.userText(android.graphics.Color.WHITE)
+                messageText.setTextColor(ink)
+                timeText.setTextColor((ink and 0x00FFFFFF) or (0xA6 shl 24))
+            }
+            when (message) {
                 is RecordItem.UserInputResponse -> {
                     messageText.text = message.text
                     timeText.text = formatTime(message.time)
@@ -207,6 +245,7 @@ class MessageAdapter(
                 messageText.text = message.text ?: ""
                 timeText.text = formatTime(message.time)
             }
+            applyBotLook(messageText, timeText, avatarImage)
         }
     }
 
@@ -403,7 +442,7 @@ class MessageAdapter(
             return LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
@@ -448,7 +487,7 @@ class MessageAdapter(
             return LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
@@ -470,7 +509,7 @@ class MessageAdapter(
                         marginStart = dpToPx(12)
                     }
                     text = fileName
-                    setTextColor(Color.BLACK)
+                    setTextColor(XmlLook.botText(Color.BLACK))
                     textSize = 14f
                 })
 
@@ -1008,7 +1047,7 @@ class MessageAdapter(
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                     setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24))
-                    setBackgroundResource(R.drawable.bg_bot_bubble)
+                    setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                     isClickable = !isResponded
                     isFocusable = !isResponded
                     setOnClickListener {
@@ -1025,7 +1064,7 @@ class MessageAdapter(
 
                     addView(TextView(context).apply {
                         text = "Tap to upload file"
-                        setTextColor(Color.BLACK)
+                        setTextColor(XmlLook.botText(Color.BLACK))
                         textSize = 14f
                         gravity = Gravity.CENTER
                         setPadding(0, dpToPx(8), 0, 0)
@@ -1284,7 +1323,7 @@ class MessageAdapter(
             return TextView(context).apply {
                 text = Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_COMPACT)
                 setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
             }
         }
 
@@ -1294,7 +1333,7 @@ class MessageAdapter(
             return LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                 gravity = Gravity.CENTER_VERTICAL
                 isClickable = true
                 isFocusable = true
@@ -1313,7 +1352,7 @@ class MessageAdapter(
 
                 addView(TextView(context).apply {
                     text = "Opening link..."
-                    setTextColor(Color.BLACK)
+                    setTextColor(XmlLook.botText(Color.BLACK))
                     textSize = 14f
                     setPadding(dpToPx(8), 0, 0, 0)
                 })
@@ -1334,7 +1373,7 @@ class MessageAdapter(
             return LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                 gravity = Gravity.CENTER
 
                 when (state.lowercase()) {
@@ -1344,7 +1383,7 @@ class MessageAdapter(
                         })
                         addView(TextView(context).apply {
                             text = message
-                            setTextColor(Color.BLACK)
+                            setTextColor(XmlLook.botText(Color.BLACK))
                             textSize = 14f
                             gravity = Gravity.CENTER
                             setPadding(0, dpToPx(8), 0, 0)
@@ -1358,7 +1397,7 @@ class MessageAdapter(
                         })
                         addView(TextView(context).apply {
                             text = "${agentName ?: "Agent"} has joined the chat"
-                            setTextColor(Color.BLACK)
+                            setTextColor(XmlLook.botText(Color.BLACK))
                             textSize = 14f
                             gravity = Gravity.CENTER
                             setPadding(0, dpToPx(8), 0, 0)
@@ -1372,7 +1411,7 @@ class MessageAdapter(
                         })
                         addView(TextView(context).apply {
                             text = message
-                            setTextColor(Color.BLACK)
+                            setTextColor(XmlLook.botText(Color.BLACK))
                             textSize = 14f
                             gravity = Gravity.CENTER
                             setPadding(0, dpToPx(8), 0, 0)
@@ -1398,12 +1437,12 @@ class MessageAdapter(
                 ).apply {
                     setMargins(0, 0, dpToPx(48), dpToPx(8))
                 }
-                setBackgroundResource(R.drawable.bg_bot_bubble)
+                setBackgroundResource(R.drawable.bg_bot_bubble); XmlLook.botBubble(this)
                 setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
 
                 addView(TextView(context).apply {
                     this.text = text
-                    setTextColor(Color.BLACK)
+                    setTextColor(XmlLook.botText(Color.BLACK))
                     textSize = 14f
                 })
             }
@@ -1430,6 +1469,8 @@ class MessageAdapter(
                     setBackgroundColor(Color.LTGRAY)
                     setTextColor(Color.GRAY)
                 }
+                // The owner's choice colours and radius, as on the web.
+                XmlLook.option(this, isEnabled)
                 setOnClickListener { if (isEnabled) onClick() }
             }
         }
@@ -1697,6 +1738,14 @@ class MessageAdapter(
                 messageText.text = com.conferbot.sdk.ui.views.ChatMarkdownSpans.toSpanned(message.text)
                 messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 timeText.text = formatTime(message.time)
+            }
+            // An agent - person or AI - speaks in the bot's colours, as on the web.
+            if (XmlLook.loaded) {
+                (messageText.parent as? android.view.View)?.let { XmlLook.botBubble(it) }
+                val ink = XmlLook.botText(android.graphics.Color.BLACK)
+                agentName.setTextColor(ink)
+                messageText.setTextColor(ink)
+                timeText.setTextColor((ink and 0x00FFFFFF) or (0xA6 shl 24))
             }
         }
     }
