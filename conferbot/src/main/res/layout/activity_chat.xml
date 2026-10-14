@@ -70,7 +70,7 @@
         android:elevation="4dp"
         android:orientation="horizontal"
         android:padding="8dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/brandFooter"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
@@ -106,5 +106,15 @@
             android:src="@drawable/ic_send"
             android:tint="@color/primary" />
     </LinearLayout>
+
+    <!-- "Powered by Conferbot" (or the owner's own text), as the web footer -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/brandFooter"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@android:color/white"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
