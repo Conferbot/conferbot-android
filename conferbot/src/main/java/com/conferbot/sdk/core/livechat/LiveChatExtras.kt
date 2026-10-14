@@ -80,6 +80,7 @@ class LiveChatExtras(
     val csatSent: StateFlow<Boolean> = _csatSent.asStateFlow()
 
     private var queuePoll: Job? = null
+    private var waitTimer: Job? = null
     private var reportedDelivered = ""
     private var reportedSeen = ""
 
@@ -170,6 +171,26 @@ class LiveChatExtras(
     fun stopQueuePoll() {
         queuePoll?.cancel()
         queuePoll = null
+    }
+
+    /**
+     * The handover step's max wait: once it passes with nobody joined, the
+     * server is asked to decide (handover-timeout) and answers with
+     * no-agents-available. Once per wait.
+     */
+    fun startWaitTimer(nodeData: Map<String, Any?>?, workspaceId: String?) {
+        if (waitTimer?.isActive == true) return
+        val minutes = com.conferbot.sdk.core.agent.HandoverPayload.waitMinutesOf(nodeData?.get("maxWaitTime")).toDouble()
+        waitTimer = scope.launch {
+            delay((minutes * 60_000).toLong())
+            val id = sessionId() ?: return@launch
+            socket()?.emit("handover-timeout", JSONObject(LiveChat.handoverTimeoutPayload(id, nodeData, workspaceId)))
+        }
+    }
+
+    fun stopWaitTimer() {
+        waitTimer?.cancel()
+        waitTimer = null
     }
 
     /**
@@ -295,6 +316,7 @@ class LiveChatExtras(
 
     fun reset() {
         stopQueuePoll()
+        stopWaitTimer()
         _queue.value = null
         _handoverWaiting.value = null
         _noAgentsAvailable.value = false
