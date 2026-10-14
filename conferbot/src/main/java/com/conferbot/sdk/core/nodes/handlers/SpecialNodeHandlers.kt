@@ -110,7 +110,8 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
         nodeData: Map<String, Any?>,
         nodeId: String
     ): NodeResult {
-        val handoverMessage = getString(nodeData, "handoverMessage", "Connecting you to an agent...")
+        // The builder writes it as rich text (<p>...</p>).
+        val handoverMessage = stripHtml(getString(nodeData, "handoverMessage", "Connecting you to an agent..."))
         val maxWaitTime = getInt(nodeData, "maxWaitTime", 5)  // minutes
         val priority = getString(nodeData, "priority", "normal")
 
@@ -143,7 +144,7 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
     ): NodeUIState.HumanHandover {
         return NodeUIState.HumanHandover(
             state = handoverState[nodeId] ?: NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT,
-            handoverMessage = getString(nodeData, "handoverMessage", ""),
+            handoverMessage = stripHtml(getString(nodeData, "handoverMessage", "")),
             maxWaitTime = getInt(nodeData, "maxWaitTime", 5),
             nodeId = nodeId
         )
@@ -389,7 +390,7 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
      */
     fun onNoAgentsAvailable(nodeId: String, nodeData: Map<String, Any?>): NodeResult {
         handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE
-        val fallbackMessage = getString(nodeData, "fallbackMessage", "No agents available at the moment.")
+        val fallbackMessage = stripHtml(getString(nodeData, "fallbackMessage", "No agents available at the moment."))
 
         state.addToTranscript("bot", fallbackMessage)
 
