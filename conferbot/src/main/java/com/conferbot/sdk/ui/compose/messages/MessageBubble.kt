@@ -52,7 +52,16 @@ fun MessageBubble(
             modifier, animationDuration
         )
         is RecordItem.BotMessage -> BotMessageBubble(message, modifier, animationDuration)
-        is RecordItem.AgentMessage -> AgentMessageBubble(message, modifier, animationDuration)
+        is RecordItem.AgentMessage -> Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AgentMessageBubble(message, Modifier, animationDuration)
+            // An AI reply's sources, buttons, cards and "Helpful?" (AgentReply.kt).
+            AgentReplyExtras(message)
+        }
+        is RecordItem.AgentRichMessage -> RichAgentMessageBubble(message, modifier)
+        is RecordItem.AgentLeftMessage -> SystemMessageBubble(
+            RecordItem.SystemMessage(id = message.id, time = message.time, text = message.text),
+            modifier, animationDuration
+        )
         is RecordItem.SystemMessage -> SystemMessageBubble(message, modifier, animationDuration)
         is RecordItem.AgentJoinedMessage -> SystemMessageBubble(
             RecordItem.SystemMessage(
@@ -308,7 +317,7 @@ fun AgentMessageBubble(
             ) {
                 Text(
                     text = message.agentDetails.name,
-                    color = colors.primary,
+                    color = colors.agentBubbleText.copy(alpha = 0.85f),
                     style = TextStyle(
                         fontFamily = typography.fontFamily,
                         fontSize = typography.captionSize,
@@ -316,15 +325,25 @@ fun AgentMessageBubble(
                     )
                 )
                 Spacer(Modifier.height(spacing.xs))
-                Text(
-                    text = message.text,
-                    color = colors.agentBubbleText,
-                    style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize)
-                )
+                if (message.deleted) {
+                    Text(
+                        text = "This message was deleted",
+                        color = colors.agentBubbleText.copy(alpha = 0.7f),
+                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    )
+                } else {
+                    // Lists, bold and tappable links (utils/ChatMarkdown.kt).
+                    ChatMarkdownText(
+                        text = message.text,
+                        color = colors.agentBubbleText,
+                        linkColor = colors.agentBubbleText,
+                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, lineHeight = typography.messageSize * 1.4f)
+                    )
+                }
                 Spacer(Modifier.height(spacing.xs))
                 Text(
-                    text = formatTime(message.time),
-                    color = colors.botBubbleText.copy(alpha = 0.7f),
+                    text = if (message.edited) "Edited · ${formatTime(message.time)}" else formatTime(message.time),
+                    color = colors.agentBubbleText.copy(alpha = 0.7f),
                     style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize)
                 )
             }
