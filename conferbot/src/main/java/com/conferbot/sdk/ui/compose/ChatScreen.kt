@@ -14,6 +14,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.WindowManager
 import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.core.ServerChatbotCustomization
 import com.conferbot.sdk.core.nodes.NodeUIState
@@ -37,11 +42,16 @@ fun ConferBotChatScreen(
     val serverTheme by Conferbot.serverTheme.collectAsState()
     val serverCustom by Conferbot.serverCustomization.collectAsState()
 
+    // The keyboard pushes the composer up instead of covering it (or panning
+    // the header off screen): the host window resizes while the chat is up,
+    // and an edge-to-edge host gets the keyboard's inset as padding.
+    KeyboardResizesWindow()
+
     val content: @Composable () -> Unit = {
         ConferBotChatScreenContent(
             onDismiss = onDismiss,
             serverCustomization = serverCustom,
-            modifier = modifier
+            modifier = modifier.imePadding()
         )
     }
 
@@ -86,6 +96,32 @@ private fun ConferBotChatScreenContent(
         ?: remember { mutableStateOf<String?>(null) }
     val isFlowComplete by flowEngine?.isFlowComplete?.collectAsState()
         ?: remember { mutableStateOf(false) }
+
+    // Live chat extras (core/livechat)
+    val live = Conferbot.liveChat
+    val isLiveChatMode by Conferbot.isLiveChatMode.collectAsState()
+    val lockedBy by live.lockedBy.collectAsState()
+    val inputEnabled by live.visitorInputEnabled.collectAsState()
+    val agentLost by live.agentConnectionLost.collectAsState()
+    val fileRequestedBy by live.fileRequestedBy.collectAsState()
+    val noAgents by live.noAgentsAvailable.collectAsState()
+    val handoverWaiting by live.handoverWaiting.collectAsState()
+    val leadOpen by live.leadCardOpen.collectAsState()
+    val csatOpen by live.csatOpen.collectAsState()
+    val csatSent by live.csatSent.collectAsState()
+    val leftMessageTo by live.leftMessageTo.collectAsState()
+    val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // The system file picker: no extra library in the host app.
+    val pickFile = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) Conferbot.sendLiveFile(uri) { error ->
+            if (error != null) android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    val canAttach = isLiveChatMode && (com.conferbot.sdk.core.livechat.LiveChat.visitorUploadsOn(customizationMap) || fileRequestedBy != null)
+    val repliesOff = lockedBy != null || !inputEnabled
 
     val headerTitle = currentAgent?.name
         ?: serverCustomization?.botName?.takeIf { it.isNotBlank() }
@@ -159,16 +195,64 @@ private fun ConferBotChatScreenContent(
                     onLoadMore = { Conferbot.loadMoreMessages() },
                     currentUIState = if (!isFlowComplete) currentUIState else null,
                     onNodeResponse = { response -> Conferbot.submitNodeResponse(response) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    footer = { LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }) },
+                    footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo)
                 )
+
+                lockedBy?.let { SystemLine("This conversation has been locked") }
+                agentLost?.let { SystemLine("$it's connection dropped. Hang on, they should be right back.") }
+                QuickActionsStrip()
 
                 // Unified input + footer — one seamless bottom bar
                 ChatBottomBar(
                     onSendMessage = { text -> Conferbot.sendMessage(text) },
                     onTypingChanged = { isTyping -> Conferbot.sendTypingStatus(isTyping) },
-                    serverCustomization = serverCustomization
+                    serverCustomization = serverCustomization,
+                    enabled = !repliesOff,
+                    placeholder = if (repliesOff) "Replies are turned off for now" else "Type a message...",
+                    onAttach = if (canAttach) ({ pickFile.launch("*/*") }) else null
                 )
             }
         }
     }
+}
+
+/** While shown: the host window resizes for the keyboard; its own mode comes back after. */
+@Composable
+internal fun KeyboardResizesWindow() {
+    val activity = LocalContext.current.findActivity() ?: return
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(activity, lifecycleOwner) {
+        val window = activity.window
+        val previous = window.attributes.softInputMode
+        val resize = {
+            window.setSoftInputMode(
+                (previous and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST.inv()) or
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+        resize()
+        // Back from another screen (the file picker): the system puts the
+        // window's own mode back after resuming, so it is set again once the
+        // window has focus.
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resize()
+        }
+        val focus = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus -> if (hasFocus) resize() }
+        val tree = window.decorView.viewTreeObserver
+        lifecycleOwner.lifecycle.addObserver(observer)
+        tree.addOnWindowFocusChangeListener(focus)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (window.decorView.viewTreeObserver.isAlive) window.decorView.viewTreeObserver.removeOnWindowFocusChangeListener(focus)
+            window.setSoftInputMode(previous)
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
