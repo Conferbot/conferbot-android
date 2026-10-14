@@ -98,14 +98,7 @@ fun UserMessageBubble(
     val typography = theme.typography
 
     // Matches web widget: all corners rounded except bottom-right (user's side)
-    val bubbleShape = remember(shapes.bubbleRadius) {
-        RoundedCornerShape(
-            topStart = shapes.bubbleRadius,
-            topEnd = shapes.bubbleRadius,
-            bottomStart = shapes.bubbleRadius,
-            bottomEnd = 0.dp
-        )
-    }
+    val bubbleShape = userBubbleShape()
     val dur = if (animationDuration > 0) 300 else 0
 
     AnimatedVisibility(
@@ -163,14 +156,7 @@ fun BotMessageBubble(
     val typography = theme.typography
 
     // Matches web widget: rounded except bottom-left (bot's side)
-    val bubbleShape = remember(shapes.bubbleRadius) {
-        RoundedCornerShape(
-            topStart = shapes.bubbleRadius,
-            topEnd = shapes.bubbleRadius,
-            bottomStart = 0.dp,
-            bottomEnd = shapes.bubbleRadius
-        )
-    }
+    val bubbleShape = botBubbleShape()
     val dur = if (animationDuration > 0) 300 else 0
 
     AnimatedVisibility(
@@ -291,14 +277,7 @@ fun AgentMessageBubble(
     val typography = theme.typography
 
     // Same shape as bot bubble — rounded except bottom-left
-    val bubbleShape = remember(shapes.bubbleRadius) {
-        RoundedCornerShape(
-            topStart = shapes.bubbleRadius,
-            topEnd = shapes.bubbleRadius,
-            bottomStart = 0.dp,
-            bottomEnd = shapes.bubbleRadius
-        )
-    }
+    val bubbleShape = botBubbleShape()
     val dur = if (animationDuration > 0) 300 else 0
     var showOriginal by remember(message.id) { androidx.compose.runtime.mutableStateOf(false) }
 
