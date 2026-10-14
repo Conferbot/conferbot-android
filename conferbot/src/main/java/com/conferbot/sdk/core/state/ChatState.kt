@@ -891,6 +891,12 @@ object ChatState {
                 if (entry.shape.startsWith("user-")) {
                     put("shape", entry.shape)
                     put("text", entry.text)
+                    // A live chat file ({url}) and a message left by email
+                    // ({via, data}) carry their fields at the top, as the
+                    // web widget records them.
+                    if (entry.shape == "user-live-message-file" || entry.data.containsKey("via")) {
+                        entry.data.forEach { (k, v) -> if (!containsKey(k)) put(k, v) }
+                    }
                 } else {
                     // For bot messages, nest data as sub-object (web widget format)
                     val dataMap = entry.data.toMutableMap()
