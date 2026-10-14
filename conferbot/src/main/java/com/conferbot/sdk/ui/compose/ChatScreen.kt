@@ -154,11 +154,14 @@ private fun ConferBotChatScreenContent(
         },
         modifier = modifier
     ) { paddingValues ->
+        // The bot's chat background (core/customization ChatBackground) once its
+        // settings arrived; the host app's theme background before that.
+        val chatBackground = remember(customizationMap) { com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(customizationMap) }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(paddingValues)) {
+        if (hasLook) com.conferbot.sdk.ui.compose.chat.ChatBackgroundLayer(chatBackground)
         ConferbotBackgroundContainer(
-            background = theme.background,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+            background = if (hasLook) com.conferbot.sdk.ui.theme.ConferbotBackground.SolidColor(androidx.compose.ui.graphics.Color.Transparent) else theme.background,
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Status banners
@@ -219,6 +222,7 @@ private fun ConferBotChatScreenContent(
                     onAttach = if (canAttach) ({ pickFile.launch("*/*") }) else null
                 )
             }
+        }
         }
     }
 }
