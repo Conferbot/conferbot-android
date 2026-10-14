@@ -39,5 +39,9 @@ data class AgentDetails(
     val email: String? = null,
 
     @SerializedName("avatar")
-    val avatar: String? = null
+    val avatar: String? = null,
+
+    /** An AI agent (Agent Studio) rather than a person. */
+    @SerializedName("isAIAgent")
+    val isAIAgent: Boolean = false
 )
