@@ -15,6 +15,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +67,9 @@ fun MessageBubble(
             modifier, animationDuration
         )
         is RecordItem.SystemMessage -> SystemMessageBubble(message, modifier, animationDuration)
+        // Files: the agent's, and the visitor's in a live chat.
+        is RecordItem.AgentMessageFile -> FileBubble(message.file, null, null, fromVisitor = false, sender = message.agentDetails?.name, modifier = modifier)
+        is RecordItem.UserLiveMessageFile -> FileBubble(message.url, message.fileName, message.mimeType, fromVisitor = true, sender = null, modifier = modifier)
         is RecordItem.AgentJoinedMessage -> SystemMessageBubble(
             RecordItem.SystemMessage(
                 id = message.id,
@@ -293,6 +300,7 @@ fun AgentMessageBubble(
         )
     }
     val dur = if (animationDuration > 0) 300 else 0
+    var showOriginal by remember(message.id) { androidx.compose.runtime.mutableStateOf(false) }
 
     AnimatedVisibility(
         visible = true,
@@ -334,10 +342,20 @@ fun AgentMessageBubble(
                 } else {
                     // Lists, bold and tappable links (utils/ChatMarkdown.kt).
                     ChatMarkdownText(
-                        text = message.text,
+                        text = if (showOriginal && message.translation != null) message.translation.original else message.text,
                         color = colors.agentBubbleText,
                         linkColor = colors.agentBubbleText,
                         style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, lineHeight = typography.messageSize * 1.4f)
+                    )
+                }
+                // Sent in the visitor's language: the agent's own words one tap away.
+                message.translation?.takeIf { !message.deleted }?.let { tr ->
+                    val (seeOriginal, seeTranslation) = com.conferbot.sdk.core.livechat.LiveChat.translationLabels(tr.to)
+                    Text(
+                        text = if (showOriginal) seeTranslation else seeOriginal,
+                        color = colors.agentBubbleText.copy(alpha = 0.75f),
+                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                        modifier = Modifier.padding(top = 4.dp).clickable { showOriginal = !showOriginal }
                     )
                 }
                 Spacer(Modifier.height(spacing.xs))
@@ -387,4 +405,80 @@ fun SystemMessageBubble(
 private fun formatTime(date: Date): String {
     val format = SimpleDateFormat("hh:mm a", Locale.getDefault())
     return format.format(date)
+}
+
+/**
+ * A file in the chat: an image shows as a picture, anything else as a named
+ * link; a tap opens it. Relative links (the /media proxy) open on the server.
+ */
+@Composable
+fun FileBubble(
+    rawUrl: String,
+    fileName: String?,
+    mimeType: String?,
+    fromVisitor: Boolean,
+    sender: String?,
+    modifier: Modifier = Modifier
+) {
+    val theme = ConferbotThemeAmbient.current
+    val colors = theme.colors
+    val spacing = theme.spacing
+    val typography = theme.typography
+    val context = LocalContext.current
+    val url = com.conferbot.sdk.core.livechat.LiveChat.resolveMediaUrl(rawUrl, com.conferbot.sdk.core.Conferbot.serverOrigin) ?: return
+    val name = com.conferbot.sdk.core.livechat.LiveChat.fileNameOf(fileName, url)
+    var imageFailed by remember(url) { androidx.compose.runtime.mutableStateOf(false) }
+    val isImage = !imageFailed && com.conferbot.sdk.core.livechat.LiveChat.isImageUrl(url, mimeType)
+    val bg = if (fromVisitor) colors.userBubble else colors.agentBubble
+    val fg = if (fromVisitor) colors.userBubbleText else colors.agentBubbleText
+    val shape = RoundedCornerShape(theme.shapes.bubbleRadius)
+    val open = {
+        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        Unit
+    }
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = if (fromVisitor) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        if (!fromVisitor) {
+            BotAvatar()
+            Spacer(Modifier.width(10.dp))
+        }
+        Column(
+            modifier = Modifier
+                .widthIn(max = spacing.maxBubbleWidth)
+                .shadow(1.dp, shape, clip = false)
+                .background(bg, shape)
+                .clip(shape)
+                .clickable { open() }
+                .padding(if (isImage) 4.dp else 12.dp)
+        ) {
+            if (!sender.isNullOrBlank() && !isImage) {
+                Text(sender, color = fg.copy(alpha = 0.85f), style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.captionSize, fontWeight = FontWeight.Bold))
+                Spacer(Modifier.height(spacing.xs))
+            }
+            if (isImage) {
+                coil.compose.AsyncImage(
+                    model = url,
+                    contentDescription = name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    onError = { imageFailed = true },
+                    modifier = Modifier.size(width = 220.dp, height = 160.dp).clip(RoundedCornerShape(theme.shapes.bubbleRadius - 2.dp))
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("\uD83D\uDCCE", style = TextStyle(fontSize = typography.messageSize))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = name,
+                        color = fg,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+                    )
+                }
+            }
+        }
+    }
 }
