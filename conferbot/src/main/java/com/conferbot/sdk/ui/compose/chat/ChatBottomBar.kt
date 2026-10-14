@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -169,7 +170,8 @@ fun ChatBottomBar(
                     Icon(
                         imageVector = Icons.Filled.Send,
                         contentDescription = "Send",
-                        tint = Color.White,
+                        // Readable on whatever the header colour is.
+                        tint = if (colors.headerBackground.luminance() > 0.5f) Color.Black else Color.White,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -184,7 +186,8 @@ fun ChatBottomBar(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
+                    // The owner's own text is not a link; "Powered by" opens conferbot.com.
+                    .clickable(enabled = !isCustom) {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(CONFERBOT_URL))
                         context.startActivity(intent)
                     }
@@ -195,9 +198,9 @@ fun ChatBottomBar(
                     Text(
                         text = serverCustomization!!.customBrand!!,
                         style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF687882)
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF56595B)
                         )
                     )
                 } else {
