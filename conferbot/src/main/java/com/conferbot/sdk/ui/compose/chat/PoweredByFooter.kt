@@ -47,7 +47,8 @@ fun PoweredByFooter(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable {
+            // The owner's own text is not a link; "Powered by" opens conferbot.com.
+            .clickable(enabled = !isCustom) {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(CONFERBOT_URL))
                 context.startActivity(intent)
             }
@@ -58,9 +59,9 @@ fun PoweredByFooter(
             Text(
                 text = serverCustomization!!.customBrand!!,
                 style = TextStyle(
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF687882)
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF56595B)
                 )
             )
         } else {
