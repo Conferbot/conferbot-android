@@ -381,6 +381,29 @@ class SocketClient(
     }
 
     /**
+     * Emit and wait for the server's acknowledgement (ai-action-decision,
+     * ai-answer-feedback). [onAck] gets the first ack argument, or null when
+     * offline or after [timeoutMs].
+     */
+    fun emitWithAck(event: String, data: Any, timeoutMs: Long = 30_000L, onAck: (Any?) -> Unit = {}) {
+        if (socket?.connected() != true) {
+            onAck(null)
+            return
+        }
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        val timer = java.util.Timer()
+        timer.schedule(object : java.util.TimerTask() {
+            override fun run() {
+                if (done.compareAndSet(false, true)) onAck(null)
+            }
+        }, timeoutMs)
+        socket?.emit(event, arrayOf(data), io.socket.client.Ack { args ->
+            timer.cancel()
+            if (done.compareAndSet(false, true)) onAck(args.firstOrNull())
+        })
+    }
+
+    /**
      * Listen to event
      */
     fun on(event: String, callback: Emitter.Listener) {
