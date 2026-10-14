@@ -74,6 +74,16 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
+        <ImageButton
+            android:id="@+id/attachButton"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Attach a file"
+            android:src="@drawable/ic_attach"
+            android:visibility="gone" />
+
         <EditText
             android:id="@+id/messageInput"
             android:layout_width="0dp"
