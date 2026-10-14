@@ -114,9 +114,15 @@ private fun Field(value: String, onChange: (String) -> Unit, placeholder: String
 
 /** An email field (and an optional message) with one button. [onSubmit] reports ok. */
 @Composable
-private fun EmailForm(button: String, messagePlaceholder: String? = null, onSubmit: (email: String, message: String, done: (Boolean) -> Unit) -> Unit) {
-    var email by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
+private fun EmailForm(
+    button: String,
+    messagePlaceholder: String? = null,
+    initialEmail: String = "",
+    initialMessage: String = "",
+    onSubmit: (email: String, message: String, done: (Boolean) -> Unit) -> Unit
+) {
+    var email by remember { mutableStateOf(initialEmail) }
+    var message by remember { mutableStateOf(initialMessage) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val colors = ConferbotThemeAmbient.current.colors
@@ -241,9 +247,17 @@ fun LeaveMessageCard() {
         } else {
             CardTitle("Leave a message")
             CardSub("No one is available right now. We'll reply by email.")
-            EmailForm("Send", messagePlaceholder = "How can we help?") { email, message, done ->
+            // Their email if known, and what they last asked in their own words.
+            val (knownEmail, lastAsked) = remember { Conferbot.liveChat.leaveMessagePrefill() }
+            EmailForm("Send", messagePlaceholder = "How can we help?", initialEmail = knownEmail, initialMessage = lastAsked) { email, message, done ->
                 Conferbot.liveChat.leaveMessage(email, message, done)
             }
+            Text(
+                "Not now",
+                color = ConferbotThemeAmbient.current.colors.onSurfaceVariant,
+                style = TextStyle(fontSize = 13.sp),
+                modifier = Modifier.padding(top = 8.dp).clickable { Conferbot.liveChat.skipLeaveMessage() }
+            )
         }
     }
 }
