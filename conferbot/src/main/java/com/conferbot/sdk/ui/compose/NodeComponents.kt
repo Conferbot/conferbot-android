@@ -1034,7 +1034,7 @@ fun SingleChoiceNode(
                             }
                         },
                         modifier = Modifier.graphicsLayer { this.alpha = alpha },
-                        shape = RoundedCornerShape(12.dp), // 0.75rem
+                        shape = com.conferbot.sdk.ui.compose.messages.optionShape(), // the owner's option radius
                         color = if (isSelected) primaryColor
                                else theme.colors.optionBubble,
                         contentColor = if (isSelected) Color.White
