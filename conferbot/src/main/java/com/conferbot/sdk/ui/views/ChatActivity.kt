@@ -148,6 +148,12 @@ class ChatActivity : AppCompatActivity() {
 
         // AI agent bots: the reply as it is written and the one-tap
         // questions, drawn with the Compose pieces in the server theme.
+        // "Powered by Conferbot", or the owner's own text, or nothing (hideBrand).
+        binding.brandFooter.setContent {
+            val serverCustomization by Conferbot.serverCustomization.collectAsState()
+            com.conferbot.sdk.ui.compose.chat.PoweredByFooter(serverCustomization = serverCustomization)
+        }
+
         binding.agentStrip.setContent {
             val serverTheme by Conferbot.serverTheme.collectAsState()
             val stream by Conferbot.agentStream.collectAsState()
@@ -249,19 +255,82 @@ class ChatActivity : AppCompatActivity() {
         combine(Conferbot.isAgentTyping, Conferbot.isProcessingNode, Conferbot.awaitingReply, Conferbot.agentStream) { typing, processing, awaiting, stream ->
             (typing || processing || awaiting) && stream == null
         }
-            .onEach { show -> binding.typingIndicator.root.visibility = if (show) View.VISIBLE else View.GONE }
-            .launchIn(lifecycleScope)
-
-        // Observe current agent
-        Conferbot.currentAgent
-            .onEach { agent ->
-                if (agent != null) {
-                    binding.chatHeader.titleText.text = agent.name
-                    // Load avatar if available
-                    // You can use Coil or Glide here
-                }
+            .onEach { show ->
+                binding.typingIndicator.root.visibility = if (show) View.VISIBLE else View.GONE
+                // The dots sit over the list's end: make room so they never cover the last message.
+                val room = if (show) (52 * resources.displayMetrics.density).toInt() else (8 * resources.displayMetrics.density).toInt()
+                binding.messagesRecyclerView.clipToPadding = false
+                binding.messagesRecyclerView.setPadding(
+                    binding.messagesRecyclerView.paddingLeft, binding.messagesRecyclerView.paddingTop,
+                    binding.messagesRecyclerView.paddingRight, room
+                )
+                if (show && messageAdapter.itemCount > 0) binding.messagesRecyclerView.smoothScrollToPosition(messageAdapter.itemCount - 1)
             }
             .launchIn(lifecycleScope)
+
+        // The bot's look (core/customization) and the agent in the chat: the
+        // header, background, send button and typing dots, as on the web.
+        combine(Conferbot.customizations, Conferbot.serverCustomizationMap, Conferbot.currentAgent) { look, map, agent ->
+            Triple(look, map, agent)
+        }
+            .onEach { (look, map, agent) -> applyLook(look, map, agent) }
+            .launchIn(lifecycleScope)
+    }
+
+    private fun applyLook(
+        look: com.conferbot.sdk.core.customization.ResolvedCustomizations,
+        map: Map<String, Any?>,
+        agent: com.conferbot.sdk.models.Agent?
+    ) {
+        val header = binding.chatHeader
+        val loaded = map.isNotEmpty()
+        if (loaded) {
+            val bg = XmlLook.headerBg(android.graphics.Color.parseColor("#0100EC"))
+            val ink = XmlLook.headerText(android.graphics.Color.WHITE)
+            header.root.setBackgroundColor(bg)
+            header.titleText.setTextColor(ink)
+            header.subtitleText.setTextColor(ink)
+            header.backButton.imageTintList = android.content.res.ColorStateList.valueOf(ink)
+            binding.sendButton.imageTintList = android.content.res.ColorStateList.valueOf(bg)
+            // The chat background (a solid colour; gradients and patterns come with the background work).
+            (map["chatBgColor"] as? String)?.let { binding.messagesRecyclerView.setBackgroundColor(XmlLook.color(it, android.graphics.Color.WHITE)) }
+            val dots = (0 until (binding.typingIndicator.root as android.view.ViewGroup).childCount).map { (binding.typingIndicator.root as android.view.ViewGroup).getChildAt(it) }
+            XmlLook.typing(binding.typingIndicator.root, dots)
+        }
+        header.titleText.text = agent?.name
+            ?: look.title.takeIf { loaded }
+            ?: Conferbot.getCustomization()?.headerTitle
+            ?: "Support Chat"
+        // Under the title: the tagline, else "Online" with the green dot.
+        val subtitle: CharSequence? = when {
+            agent != null || !loaded -> null
+            look.tagline != null -> look.tagline
+            look.showOnline -> android.text.SpannableString("\u25CF  Online").apply {
+                setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#22C55E")), 0, 1, 0)
+            }
+            else -> null
+        }
+        header.subtitleText.text = subtitle
+        header.subtitleText.visibility = if (subtitle != null) View.VISIBLE else View.GONE
+        // The agent's photo, else the bot's logo (none when the owner hid it).
+        val image = when {
+            agent != null -> agent.avatar
+            loaded && !look.hideLogo -> look.logo
+            else -> null
+        }
+        header.avatarImage.visibility = if (image != null) View.VISIBLE else View.GONE
+        if (image != null) {
+            header.avatarImage.clipToOutline = true
+            header.avatarImage.outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                    outline.setOval(0, 0, view.width, view.height)
+                }
+            }
+            coil.Coil.imageLoader(this).enqueue(
+                coil.request.ImageRequest.Builder(this).data(image).target(header.avatarImage).build()
+            )
+        }
+        messageAdapter.notifyDataSetChanged()
     }
 
     private fun ensureSessionInitialized() {
