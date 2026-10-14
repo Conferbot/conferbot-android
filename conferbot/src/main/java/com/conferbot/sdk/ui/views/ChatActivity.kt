@@ -17,6 +17,12 @@ import com.conferbot.sdk.databinding.ActivityChatBinding
 import com.conferbot.sdk.notifications.ConferbotNotificationManager
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.combine
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
+import com.conferbot.sdk.models.RecordItem
 
 /**
  * Chat Activity for XML Views implementation
@@ -131,6 +137,29 @@ class ChatActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
+        // AI agent bots: the reply as it is written and the one-tap
+        // questions, drawn with the Compose pieces in the server theme.
+        binding.agentStrip.setContent {
+            val serverTheme by Conferbot.serverTheme.collectAsState()
+            val stream by Conferbot.agentStream.collectAsState()
+            val suggestions by Conferbot.suggestions.collectAsState()
+            com.conferbot.sdk.ui.theme.ConferbotThemeProvider(theme = serverTheme ?: com.conferbot.sdk.ui.theme.LightTheme) {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    stream?.let {
+                        com.conferbot.sdk.ui.compose.messages.MessageBubble(
+                            message = RecordItem.AgentMessage(id = "stream-${it.id}", time = java.util.Date(), text = it.text, agentDetails = it.agentDetails),
+                            animate = false
+                        )
+                    }
+                    if (stream == null) {
+                        com.conferbot.sdk.ui.compose.messages.SuggestionChips(items = suggestions, onPick = { Conferbot.sendMessage(it) })
+                    }
+                }
+            }
+        }
+
         // Apply customization
         val customization = Conferbot.getCustomization()
         customization?.headerTitle?.let {
@@ -157,22 +186,12 @@ class ChatActivity : AppCompatActivity() {
             }
             .launchIn(lifecycleScope)
 
-        // Observe typing indicator (show for both agent typing and flow engine processing)
-        Conferbot.isAgentTyping
-            .onEach { isTyping ->
-                val isProcessing = Conferbot.isProcessingNode.value
-                binding.typingIndicator.root.visibility =
-                    if (isTyping || isProcessing) View.VISIBLE else View.GONE
-            }
-            .launchIn(lifecycleScope)
-
-        // Also observe flow engine processing state for typing indicator
-        Conferbot.isProcessingNode
-            .onEach { isProcessing ->
-                val isAgentTyping = Conferbot.isAgentTyping.value
-                binding.typingIndicator.root.visibility =
-                    if (isProcessing || isAgentTyping) View.VISIBLE else View.GONE
-            }
+        // Observe typing indicator: agent typing, flow engine processing, or
+        // waiting on an AI reply (none once the reply is being written)
+        combine(Conferbot.isAgentTyping, Conferbot.isProcessingNode, Conferbot.awaitingReply, Conferbot.agentStream) { typing, processing, awaiting, stream ->
+            (typing || processing || awaiting) && stream == null
+        }
+            .onEach { show -> binding.typingIndicator.root.visibility = if (show) View.VISIBLE else View.GONE }
             .launchIn(lifecycleScope)
 
         // Observe current agent
