@@ -392,8 +392,26 @@ private data class SerializableMessage(
     val file: String? = null,
     val url: String? = null,
     val metadata: Map<String, Any>? = null,
-    val nodeData: Map<String, Any>? = null
+    val nodeData: Map<String, Any>? = null,
+    // AI agent replies (core/agent/AgentBot.kt): who, extras, the vote, edits
+    val agentIsAI: Boolean? = null,
+    val extrasJson: String? = null,
+    val feedbackHelpful: Boolean? = null,
+    val feedbackReason: String? = null,
+    val edited: Boolean? = null,
+    val deleted: Boolean? = null,
+    // agent-message-rich: the rich entry in its server shape
+    val rich: Map<String, Any?>? = null,
+    val answered: String? = null
 ) {
+    private fun agent(): com.conferbot.sdk.models.AgentDetails = com.conferbot.sdk.models.AgentDetails(
+        id = agentDetailsId ?: "",
+        name = agentDetailsName ?: "",
+        email = agentDetailsEmail,
+        avatar = agentDetailsAvatar,
+        isAIAgent = agentIsAI == true
+    )
+
     fun toRecordItem(): RecordItem? {
         val date = Date(time)
         return when (type) {
@@ -419,12 +437,32 @@ private data class SerializableMessage(
                 id = id,
                 time = date,
                 text = text ?: "",
-                agentDetails = com.conferbot.sdk.models.AgentDetails(
-                    id = agentDetailsId ?: "",
-                    name = agentDetailsName ?: "",
-                    email = agentDetailsEmail,
-                    avatar = agentDetailsAvatar
+                agentDetails = agent(),
+                extras = extrasJson?.let { runCatching { GSON.fromJson(it, com.conferbot.sdk.core.agent.AIReplyExtras::class.java) }.getOrNull() },
+                feedback = feedbackHelpful?.let { com.conferbot.sdk.core.agent.AnswerFeedback(it, feedbackReason) },
+                edited = edited == true,
+                deleted = deleted == true
+            )
+            "agent-message-rich" -> com.conferbot.sdk.core.agent.AgentBotParser.safeRich(rich)?.let {
+                RecordItem.AgentRichMessage(
+                    id = id,
+                    time = date,
+                    rich = it,
+                    text = text ?: "",
+                    agentDetails = if (agentDetailsId != null) agent() else null,
+                    answered = answered
                 )
+            }
+            "user-live-message" -> RecordItem.UserLiveMessage(
+                id = id,
+                time = date,
+                text = text ?: ""
+            )
+            "agent-left-chat" -> RecordItem.AgentLeftMessage(
+                id = id,
+                time = date,
+                text = text ?: "",
+                agentDetails = if (agentDetailsId != null) agent() else null
             )
             "agent-message-file" -> RecordItem.AgentMessageFile(
                 id = id,
@@ -474,6 +512,23 @@ private data class SerializableMessage(
     }
 
     companion object {
+        private val GSON = com.google.gson.Gson()
+
+        /** A rich entry back in its server shape (what safeRich reads). */
+        fun richToMap(rich: com.conferbot.sdk.core.agent.RichEntry): Map<String, Any?> = when (rich) {
+            is com.conferbot.sdk.core.agent.RichEntry.Article ->
+                mapOf("kind" to "article", "articleId" to rich.articleId, "title" to rich.title, "snippet" to rich.snippet, "url" to rich.url)
+            is com.conferbot.sdk.core.agent.RichEntry.QuickReplies ->
+                mapOf("kind" to "quick_replies", "text" to rich.text, "options" to rich.options)
+            is com.conferbot.sdk.core.agent.RichEntry.Card -> mapOf(
+                "kind" to "card",
+                "title" to rich.title,
+                "description" to rich.description,
+                "imageUrl" to rich.imageUrl,
+                "button" to if (rich.buttonLabel != null) mapOf("label" to rich.buttonLabel, "url" to rich.buttonUrl) else null
+            )
+        }
+
         fun fromRecordItem(item: RecordItem): SerializableMessage {
             return when (item) {
                 is RecordItem.UserMessage -> SerializableMessage(
@@ -505,7 +560,26 @@ private data class SerializableMessage(
                     agentDetailsId = item.agentDetails.id,
                     agentDetailsName = item.agentDetails.name,
                     agentDetailsEmail = item.agentDetails.email,
-                    agentDetailsAvatar = item.agentDetails.avatar
+                    agentDetailsAvatar = item.agentDetails.avatar,
+                    agentIsAI = item.agentDetails.isAIAgent.takeIf { it },
+                    // An action awaiting confirmation belongs to the moment, not a reload.
+                    extrasJson = item.extras?.copy(actionRequest = null)?.let { GSON.toJson(it) },
+                    feedbackHelpful = item.feedback?.helpful,
+                    feedbackReason = item.feedback?.reason,
+                    edited = item.edited.takeIf { it },
+                    deleted = item.deleted.takeIf { it }
+                )
+                is RecordItem.AgentRichMessage -> SerializableMessage(
+                    id = item.id,
+                    type = "agent-message-rich",
+                    time = item.time.time,
+                    text = item.text,
+                    agentDetailsId = item.agentDetails?.id,
+                    agentDetailsName = item.agentDetails?.name,
+                    agentDetailsAvatar = item.agentDetails?.avatar,
+                    agentIsAI = item.agentDetails?.isAIAgent?.takeIf { it },
+                    rich = richToMap(item.rich),
+                    answered = item.answered
                 )
                 is RecordItem.AgentMessageFile -> SerializableMessage(
                     id = item.id,
