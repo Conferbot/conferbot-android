@@ -56,6 +56,12 @@ fun PaginatedMessageList(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
+    // AI agent bots: the reply being written, one-tap questions, the wait.
+    val agentStream by com.conferbot.sdk.core.Conferbot.agentStream.collectAsState()
+    val suggestions by com.conferbot.sdk.core.Conferbot.suggestions.collectAsState()
+    val awaitingReply by com.conferbot.sdk.core.Conferbot.awaitingReply.collectAsState()
+    val showTyping = (isAgentTyping || awaitingReply) && agentStream == null
+
     // TextInput nodes are answered via the unified bottom bar (web parity),
     // so they render no inline UI and must not reserve an avatar row.
     val hasInlineNode = currentUIState != null && onNodeResponse != null &&
@@ -115,10 +121,30 @@ fun PaginatedMessageList(
                 MessageBubble(message = message)
             }
 
+            // The AI reply as it is written
+            agentStream?.let { stream ->
+                item(key = "agent_stream") {
+                    MessageBubble(
+                        message = RecordItem.AgentMessage(id = "stream-${stream.id}", time = java.util.Date(), text = stream.text, agentDetails = stream.agentDetails),
+                        animate = false
+                    )
+                }
+            }
+
             // Typing indicator
-            if (isAgentTyping) {
+            if (showTyping) {
                 item(key = "typing_indicator") {
                     TypingIndicator()
+                }
+            }
+
+            // Starters under the greeting, follow-ups under the latest answer
+            if (suggestions.isNotEmpty() && !showTyping && agentStream == null) {
+                item(key = "agent_suggestions") {
+                    com.conferbot.sdk.ui.compose.messages.SuggestionChips(
+                        items = suggestions,
+                        onPick = { com.conferbot.sdk.core.Conferbot.sendMessage(it) }
+                    )
                 }
             }
 
@@ -182,7 +208,8 @@ fun PaginatedMessageList(
     }
 
     // Auto-scroll to bottom on new messages / node UI change
-    LaunchedEffect(messages.size, currentUIState) {
+    // ...and as a reply is written, or suggestions and the dots appear.
+    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping) {
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0 && !showScrollToBottom) {
             coroutineScope.launch { listState.animateScrollToItem(count - 1) }
