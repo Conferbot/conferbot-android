@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxWidth
 import com.conferbot.sdk.models.RecordItem
 
 /**
@@ -36,6 +38,13 @@ class ChatActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityChatBinding
     private lateinit var messageAdapter: MessageAdapter
+
+    // The system file picker for a live chat file: no extra library needed.
+    private val pickFile = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) Conferbot.sendLiveFile(uri) { error ->
+            if (error != null) android.widget.Toast.makeText(this, error, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -156,6 +165,34 @@ class ChatActivity : AppCompatActivity() {
                     if (stream == null) {
                         com.conferbot.sdk.ui.compose.messages.SuggestionChips(items = suggestions, onPick = { Conferbot.sendMessage(it) })
                     }
+                    // Live chat: "Sent / Seen" for the visitor's latest message,
+                    // the cards (leave a message, file request, lead, rating),
+                    // locked / connection lines and the owner's quick actions.
+                    val record by Conferbot.record.collectAsState()
+                    val marks by Conferbot.liveChat.receiptMarks.collectAsState()
+                    val agent by Conferbot.currentAgent.collectAsState()
+                    val lockedBy by Conferbot.liveChat.lockedBy.collectAsState()
+                    val agentLost by Conferbot.liveChat.agentConnectionLost.collectAsState()
+                    val receipt = if (agent?.id?.startsWith("ai-agent-") == false)
+                        com.conferbot.sdk.core.livechat.LiveChat.visitorReceiptOf(com.conferbot.sdk.core.livechat.LiveChatExtras.entriesOf(record), marks) else null
+                    receipt?.let {
+                        androidx.compose.material3.Text(
+                            com.conferbot.sdk.core.livechat.LiveChat.receiptLabel(it.state),
+                            fontSize = 12.sp,
+                            color = androidx.compose.ui.graphics.Color.Gray,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                        )
+                    }
+                    // The handover step while it waits: the compact queue card.
+                    val ui by Conferbot.currentUIState.collectAsState()
+                    (ui as? com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover)
+                        ?.takeIf { it.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT }
+                        ?.let { com.conferbot.sdk.ui.compose.chat.HandoverWaitCard(message = it.handoverMessage) }
+                    com.conferbot.sdk.ui.compose.chat.LiveChatFooterCards(onUpload = { pickFile.launch("*/*") })
+                    lockedBy?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("This conversation has been locked") }
+                    agentLost?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("$it's connection dropped. Hang on, they should be right back.") }
+                    com.conferbot.sdk.ui.compose.chat.QuickActionsStrip()
                 }
             }
         }
@@ -168,6 +205,27 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun setupObservers() {
+        // Live chat: the paperclip, and the composer while the agent turned
+        // replies off or locked the conversation.
+        binding.attachButton.setOnClickListener { pickFile.launch("*/*") }
+        combine(
+            Conferbot.isLiveChatMode,
+            Conferbot.liveChat.fileRequestedBy,
+            Conferbot.serverCustomizationMap,
+            Conferbot.liveChat.lockedBy,
+            Conferbot.liveChat.visitorInputEnabled
+        ) { live, requested, custom, locked, inputOn ->
+            val attach = live && (com.conferbot.sdk.core.livechat.LiveChat.visitorUploadsOn(custom) || requested != null)
+            Triple(attach, locked != null || !inputOn, Unit)
+        }
+            .onEach { (attach, repliesOff, _) ->
+                binding.attachButton.visibility = if (attach) View.VISIBLE else View.GONE
+                binding.messageInput.isEnabled = !repliesOff
+                binding.messageInput.hint = if (repliesOff) "Replies are turned off for now" else "Type a message..."
+                binding.sendButton.isEnabled = !repliesOff && !binding.messageInput.text.isNullOrBlank()
+            }
+            .launchIn(lifecycleScope)
+
         // Observe messages
         Conferbot.record
             .onEach { messages ->
