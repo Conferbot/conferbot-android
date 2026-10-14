@@ -270,6 +270,26 @@ object LiveChat {
         return try { java.net.URLDecoder.decode(last, "UTF-8") } catch (_: Exception) { last }.ifEmpty { "File" }
     }
 
+    /** The visitor's email for leave a message: their own, else the latest email they answered. */
+    fun knownEmail(visitorEmail: String?, answerValues: List<Any?>): String {
+        if (isEmail(visitorEmail)) return visitorEmail!!.trim()
+        return answerValues.lastOrNull { isEmail(it?.toString()) }?.toString()?.trim().orEmpty()
+    }
+
+    /** What they last asked in their own words: the newest typed visitor message, not a button tap. */
+    fun lastQuestion(record: List<Map<String, Any?>>): String {
+        val kinds = setOf("user-live-message", "user-input", "user-message", "ask-question-answer")
+        for (r in record.asReversed()) {
+            val kind = (r["shape"] ?: r["type"])?.toString().orEmpty()
+            if (kind in kinds) {
+                val text = (r["text"] ?: r["userInput"] ?: r["value"])?.toString().orEmpty()
+                    .replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+                if (text.isNotEmpty() && !isEmail(text)) return text.take(2000)
+            }
+        }
+        return ""
+    }
+
     const val TALK_TO_PERSON_ASK = "I'd like to talk to a person, please."
     const val QUEUE_POLL_MS = 20_000L
 }
