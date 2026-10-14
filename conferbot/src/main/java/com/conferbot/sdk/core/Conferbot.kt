@@ -49,6 +49,7 @@ import com.conferbot.sdk.core.agent.HandoverPayload
 import com.conferbot.sdk.utils.ChatMarkdown
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -122,6 +123,10 @@ object Conferbot {
     private var user: ConferBotUser? = null
     private var baseUrl: String? = null
     private var socketUrl: String? = null
+
+    /** The server's origin: relative file links (the /media proxy) open on it. */
+    val serverOrigin: String
+        get() = (socketUrl ?: ConferBotEndpoints.socketUrl).trimEnd('/')
 
     // Application context for memory management
     private var appContext: Context? = null
@@ -306,6 +311,18 @@ object Conferbot {
 
     // Coroutine scope
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // ========== Live chat extras ==========
+    // Queue position, leave a message, receipts, locks, file requests, the
+    // lead card and the post-chat rating (core/livechat).
+    val liveChat: com.conferbot.sdk.core.livechat.LiveChatExtras by lazy {
+        com.conferbot.sdk.core.livechat.LiveChatExtras(
+            scope = scope,
+            socket = { socketClient },
+            sessionId = { _chatSessionId.value },
+            addMessage = { addMessageToRecord(it) }
+        )
+    }
 
     // Gson for JSON parsing
     private val gson = Gson()
@@ -596,6 +613,8 @@ object Conferbot {
         })
 
         setupAgentBotListeners()
+        liveChat.setupListeners()
+        watchLiveChat()
 
         // Chat ended
         socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener {
@@ -629,6 +648,11 @@ object Conferbot {
 
         // No agents available (for human handover)
         socketClient?.on(SocketEvents.NO_AGENTS_AVAILABLE, Emitter.Listener {
+            // The handover step says it with the owner's fallback message.
+            if (nodeFlowEngine?.currentUIState?.value is com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover) {
+                nodeFlowEngine?.handleNoAgentsAvailable()
+                return@Listener
+            }
             // Add "No agents available" system message
             val noAgentsMessage = RecordItem.SystemMessage(
                 id = "no-agents-${System.currentTimeMillis()}",
@@ -775,7 +799,8 @@ object Conferbot {
                     time = java.util.Date(),
                     text = message,
                     agentDetails = agentDetails,
-                    extras = extras?.takeUnless { it.isEmpty && !it.isFallback }
+                    extras = extras?.takeUnless { it.isEmpty && !it.isFallback },
+                    translation = com.conferbot.sdk.core.livechat.LiveChat.agentTranslationOf(dataMap)
                 )
             }
 
@@ -1102,11 +1127,70 @@ object Conferbot {
     /**
      * Add a message to the record list and persist it
      */
+    private var liveChatWatchers: List<Job> = emptyList()
+
+    /**
+     * The visitor's file in a live chat: copied from the picker, uploaded,
+     * then sent as the web widget sends it. [onDone] gets an error message,
+     * or null when it went, on the main thread.
+     */
+    fun sendLiveFile(uri: android.net.Uri, onDone: (String?) -> Unit = {}) {
+        val context = appContext ?: return onDone("Not ready")
+        val sessionId = _chatSessionId.value ?: return onDone("Not ready")
+        val service = _fileUploadService ?: return onDone("Uploads are not available")
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = context.contentResolver
+                    val mime = resolver.getType(uri) ?: "application/octet-stream"
+                    var name = "file"
+                    resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) name = c.getString(0) ?: name
+                    }
+                    val tmp = java.io.File(context.cacheDir, "cb-upload-${System.currentTimeMillis()}-$name")
+                    resolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                    val up = service.uploadDirect(tmp, name, mime, sessionId)
+                    tmp.delete()
+                    Triple(up, name, mime)
+                }.getOrNull()
+            }
+            val (up, name, mime) = result ?: return@launch onDone("That file can't be sent. Please try another one.")
+            val url = up.url
+            if (!up.success || url.isNullOrBlank()) return@launch onDone("That file can't be sent. Please try another one.")
+            liveChat.sendLiveFile(url, name, mime)
+            onDone(null)
+        }
+    }
+
+    /**
+     * The queue is asked while a handover waits for a person; the visitor's
+     * delivered / seen receipts go out as agent messages arrive and are read.
+     */
+    private fun watchLiveChat() {
+        liveChatWatchers.forEach { it.cancel() }
+        val ui = nodeFlowEngine?.currentUIState
+        liveChatWatchers = listOfNotNull(
+            ui?.let {
+                scope.launch {
+                    kotlinx.coroutines.flow.combine(it, _isLiveChatMode) { state, live -> state to live }.collect { (state, live) ->
+                        val waiting = state is com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover &&
+                            state.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+                        if (waiting && !live) liveChat.startQueuePoll() else liveChat.stopQueuePoll()
+                    }
+                }
+            },
+            scope.launch {
+                kotlinx.coroutines.flow.combine(_record, _isChatVisible) { r, v -> r to v }.collect { (r, v) ->
+                    liveChat.reportReceipts(r, v)
+                }
+            }
+        )
+    }
+
     private fun addMessageToRecord(message: RecordItem) {
         scope.launch {
-            messageManager?.addMessage(message)
-
-            // Deduplication: skip if message with this ID already exists
+            // On screen first, in arrival order; saving suspends, and two
+            // messages close together used to swap places while it did.
             val existingIds = _record.value.map { it.id }.toSet()
             if (message.id in existingIds) {
                 return@launch
@@ -1120,6 +1204,8 @@ object Conferbot {
             } else {
                 _record.value = currentRecord
             }
+
+            messageManager?.addMessage(message)
         }
     }
 
@@ -1153,6 +1239,7 @@ object Conferbot {
             _agentBot.value = AgentBotParser.parseAgentBot(chatbotMap)
             @Suppress("UNCHECKED_CAST")
             (chatbotMap["customizations"] as? Map<String, Any?>)?.let { _serverCustomizationMap.value = it }
+            liveChat.setChatbotData(chatbotMap)
 
             // Extract nodes array
             val nodesArray = firstElement.optJSONArray("nodes")
@@ -2184,6 +2271,7 @@ object Conferbot {
      * Clear chat history
      */
     fun clearHistory() {
+        liveChat.reset()
         _record.value = emptyList()
         _chatSessionId.value = null
         _currentAgent.value = null
