@@ -44,6 +44,11 @@ fun ChatHeader(
     pendingMessageCount: Int = 0,
     isSyncing: Boolean = false,
     serverCustomization: ServerChatbotCustomization? = null,
+    /** The bot's settings as the web applies them; null keeps the host app's look. */
+    look: com.conferbot.sdk.core.customization.ResolvedCustomizations? = null,
+    /** A person in the chat: their photo (or initials) instead of the bot's logo. */
+    agentName: String? = null,
+    agentAvatar: String? = null,
     modifier: Modifier = Modifier
 ) {
     val theme = ConferbotThemeAmbient.current
@@ -67,10 +72,15 @@ fun ChatHeader(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar (28dp — compact)
-            val avatarUrl = serverCustomization?.avatarUrl
-                ?: serverCustomization?.logoUrl
-            if (avatarUrl != null) {
+            // The agent's photo, else the bot's logo (the web shows the logo
+            // here, not the avatar), none when the owner hid it.
+            val avatarUrl = when {
+                agentName != null -> agentAvatar
+                look != null -> look.logo
+                else -> serverCustomization?.avatarUrl ?: serverCustomization?.logoUrl
+            }
+            val showAvatar = agentName != null || look?.hideLogo != true
+            if (showAvatar && avatarUrl != null) {
                 AsyncImage(
                     model = avatarUrl,
                     contentDescription = "Bot avatar",
@@ -79,11 +89,11 @@ fun ChatHeader(
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
-            } else {
+            } else if (showAvatar) {
                 Box(
                     modifier = Modifier
                         .size(32.dp)
-                        .background(colors.onPrimary.copy(alpha = 0.2f), CircleShape),
+                        .background(colors.headerText.copy(alpha = 0.2f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -119,10 +129,30 @@ fun ChatHeader(
                         "Offline \u00b7 $pendingMessageCount pending" else "Offline"
                     isSyncing -> "Syncing..."
                     !isConnected -> "Reconnecting..."
-                    serverCustomization?.enableTagline == true &&
+                    look?.tagline != null -> look.tagline
+                    look == null && serverCustomization?.enableTagline == true &&
                             !serverCustomization.tagline.isNullOrBlank() ->
                         serverCustomization.tagline
                     else -> null
+                }
+                // The web's "Online" line: a 7dp green dot with a soft ring.
+                if (subtitleText == null && agentName == null && look?.showOnline == true) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f), CircleShape)
+                                .padding(1.dp)
+                                .background(androidx.compose.ui.graphics.Color(0xFF22C55E), CircleShape)
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "Online",
+                            style = TextStyle(fontFamily = typography.fontFamily, fontSize = 11.sp),
+                            color = colors.headerText.copy(alpha = 0.75f),
+                            maxLines = 1
+                        )
+                    }
                 }
                 if (subtitleText != null) {
                     Text(
