@@ -722,6 +722,29 @@ class NodeFlowEngine(
         }
     }
 
+    /** The handover step's data while the flow is on it (its fallbackMessage...). */
+    val handoverNodeData: Map<String, Any?>?
+        get() = if (isAtHandover) currentNodeData?.let { (it["data"] as? Map<String, Any?>) ?: it } else null
+
+    /** The handover step's card goes (a person joined, or nobody could). */
+    fun clearHandoverUI() {
+        if (_currentUIState.value is NodeUIState.HumanHandover) _currentUIState.value = null
+    }
+
+    /** Waiting on its handover step (for a person, or after nobody came). */
+    val isAtHandover: Boolean
+        get() = (currentNodeType ?: currentNodeData?.get("type")?.toString()) == NodeTypes.HUMAN_HANDOVER
+
+    /**
+     * Nobody came and the visitor left a message or skipped it: the flow
+     * carries on from the handover step, as the web widget does.
+     */
+    fun continueAfterHandover() {
+        if (!isAtHandover) return
+        _currentUIState.value = null
+        scope.launch { proceedToNextNode(null) }
+    }
+
     /**
      * Handle chat ended (for handover)
      * Triggers post-chat survey if configured
