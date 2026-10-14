@@ -22,6 +22,7 @@ enum class MessageType(val value: String) {
     AGENT_JOINED_MESSAGE("agent-joined-message"),
     AGENT_LEFT_CHAT("agent-left-chat"),
     USER_LIVE_MESSAGE("user-live-message"),
+    USER_LIVE_MESSAGE_FILE("user-live-message-file"),
     VISITOR_DISCONNECTED_MESSAGE("visitor-disconnected-message"),
     VISITOR_RECONNECTED_MESSAGE("visitor-reconnected-message"),
     SYSTEM_MESSAGE("system-message");
@@ -124,7 +125,10 @@ sealed class RecordItem {
 
         /** The agent edited / unsent it (agent-message-edited / -deleted). */
         val edited: Boolean = false,
-        val deleted: Boolean = false
+        val deleted: Boolean = false,
+
+        /** Sent in the visitor's language: the agent's own words kept (See original). */
+        val translation: com.conferbot.sdk.core.livechat.AgentTranslation? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.AGENT_MESSAGE
     }
@@ -240,6 +244,23 @@ sealed class RecordItem {
         override val type: MessageType = MessageType.USER_LIVE_MESSAGE
     }
 
+    /** The visitor's file in a live chat (user-live-message-file). */
+    data class UserLiveMessageFile(
+        @SerializedName("_id")
+        override val id: String,
+
+        @SerializedName("time")
+        override val time: Date,
+
+        @SerializedName("url")
+        val url: String,
+
+        val fileName: String? = null,
+        val mimeType: String? = null
+    ) : RecordItem() {
+        override val type: MessageType = MessageType.USER_LIVE_MESSAGE_FILE
+    }
+
     /**
      * System message record
      */
@@ -280,6 +301,7 @@ class RecordItemDeserializer : JsonDeserializer<RecordItem> {
             MessageType.AGENT_JOINED_MESSAGE -> context.deserialize(jsonObject, RecordItem.AgentJoinedMessage::class.java)
             MessageType.AGENT_LEFT_CHAT -> context.deserialize(jsonObject, RecordItem.AgentLeftMessage::class.java)
             MessageType.USER_LIVE_MESSAGE -> context.deserialize(jsonObject, RecordItem.UserLiveMessage::class.java)
+            MessageType.USER_LIVE_MESSAGE_FILE -> context.deserialize(jsonObject, RecordItem.UserLiveMessageFile::class.java)
             else -> context.deserialize(jsonObject, RecordItem.SystemMessage::class.java)
         }
     }
