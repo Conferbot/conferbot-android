@@ -119,4 +119,14 @@ class LiveChatTest {
         assertThat(wait(null)).isEqualTo(2)
         assertThat(wait("x")).isEqualTo(2)
     }
+
+    @Test
+    fun `prefills leave a message as the web widget does`() {
+        assertThat(LiveChat.knownEmail("jo@example.com", emptyList())).isEqualTo("jo@example.com")
+        assertThat(LiveChat.knownEmail(null, listOf("old@a.co", "Jo", "new@a.co"))).isEqualTo("new@a.co")
+        assertThat(LiveChat.knownEmail("", emptyList())).isEmpty()
+        assertThat(LiveChat.lastQuestion(listOf(mapOf("shape" to "user-live-message", "text" to "Do you ship to <b>Oman</b>?"), mapOf("shape" to "user-input-response", "text" to "Jo"))))
+            .isEqualTo("Do you ship to Oman ?")
+        assertThat(LiveChat.lastQuestion(listOf(mapOf("shape" to "user-live-message", "text" to "jo@example.com")))).isEmpty()
+    }
 }
