@@ -677,59 +677,7 @@ class NodeFlowEngine(
      * Called when handover handler returns WAITING_FOR_AGENT UI state.
      */
     private fun emitInitiateHandover(nodeData: Map<String, Any?>) {
-        val chatSessionId = ChatState.chatSessionId ?: return
-        val botId = ChatState.botId ?: return
-        val workspaceId = ChatState.workspaceId ?: ""
-        val botName = ChatState.getVariable("_botName")?.toString() ?: ""
-        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
-            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-            .format(java.util.Date())
-
-        // Build chatMetaData matching web widget format exactly
-        val chatMetaData = mapOf(
-            "version" to "v2",
-            "workspaceId" to workspaceId,
-            "chatSessionId" to chatSessionId,
-            "botId" to botId,
-            "botName" to botName,
-            "chatDate" to now,
-            "deviceInfo" to "Android/${android.os.Build.MODEL}",
-            "location" to java.util.TimeZone.getDefault().id,
-            "record" to ChatState.getRecordForServer(),
-            "answerVariables" to ChatState.getAnswerVariablesMap(),
-            "transcript" to ChatState.getTranscriptForGPT()
-        )
-
-        // Build visitor metaData
-        val metaData = mapOf(
-            "visitorId" to (ChatState.visitorId ?: chatSessionId),
-            "chatDate" to now,
-            "deviceInfo" to "Android/${android.os.Build.MODEL}",
-            "location" to java.util.TimeZone.getDefault().id
-        )
-
-        // Extract handover config from nodeData
-        val maxWaitTime = when (val v = nodeData["maxWaitTime"]) {
-            is Number -> v.toInt()
-            is String -> v.toIntOrNull() ?: 2
-            else -> 2
-        }
-
-        val payload = mapOf(
-            "workspaceId" to workspaceId,
-            "chatbotId" to botId,
-            "chatbotName" to botName,
-            "chatSessionId" to chatSessionId,
-            "chatMetaData" to chatMetaData,
-            "metaData" to metaData,
-            "priority" to (nodeData["priority"]?.toString() ?: "normal"),
-            "maxWaitTime" to maxWaitTime,
-            "assignmentType" to (nodeData["assignmentType"]?.toString() ?: "auto"),
-            "assignmentStrategy" to (nodeData["agentAssignmentStrategy"]?.toString() ?: ""),
-            "assignedAgents" to (nodeData["assignedAgents"] ?: emptyList<String>()),
-            "assignedAIAgents" to (nodeData["assignedAIAgents"] ?: emptyList<String>())
-        )
-
+        val payload = com.conferbot.sdk.core.agent.HandoverPayload.build(nodeData) ?: return
         socketClient.emit("initiate-handover", org.json.JSONObject(payload))
     }
 
