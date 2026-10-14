@@ -209,6 +209,21 @@ object LiveChat {
     }
 
     /** submit-chat-rating payload for a rating of the given type (value: Int, or Boolean for thumbs). */
+    /**
+     * handover-timeout, sent once the handover step's max wait passes with
+     * nobody joined: the server then decides (no-agents-available), as the
+     * web widget's maxWaitTimer does.
+     */
+    fun handoverTimeoutPayload(chatSessionId: String, nodeData: Map<String, Any?>?, workspaceId: String?): Map<String, Any?> = mapOf(
+        "chatSessionId" to chatSessionId,
+        "assignmentData" to mapOf(
+            "assignmentType" to nodeData?.get("assignmentType"),
+            "assignmentStrategy" to nodeData?.get("agentAssignmentStrategy"),
+            "assignedAgents" to nodeData?.get("assignedAgents")
+        ),
+        "workspaceId" to workspaceId
+    )
+
     fun ratingPayload(chatSessionId: String, type: String, value: Any, feedback: String? = null): Map<String, Any> {
         val out = linkedMapOf<String, Any>("chatSessionId" to chatSessionId, "source" to "post_chat_survey")
         when (type) {
