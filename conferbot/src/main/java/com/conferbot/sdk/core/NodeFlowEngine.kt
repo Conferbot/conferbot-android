@@ -688,7 +688,7 @@ class NodeFlowEngine(
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
 
-        if (nodeData["type"]?.toString() == NodeTypes.HUMAN_HANDOVER) {
+        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
             val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
                     as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
 
@@ -709,7 +709,7 @@ class NodeFlowEngine(
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
 
-        if (nodeData["type"]?.toString() == NodeTypes.HUMAN_HANDOVER) {
+        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
             val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
                     as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
 
@@ -730,7 +730,7 @@ class NodeFlowEngine(
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
 
-        if (nodeData["type"]?.toString() == NodeTypes.HUMAN_HANDOVER) {
+        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
             val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
                     as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
 
