@@ -9,6 +9,13 @@ import com.conferbot.sdk.core.state.ChatState
  */
 object HandoverPayload {
 
+    /** Minutes, as the builder wrote them: half a minute is 0.5, not 2 (the default). */
+    fun waitMinutesOf(v: Any?): Number = when (v) {
+        is Number -> v
+        is String -> v.trim().toDoubleOrNull()?.takeIf { it > 0 }?.let { if (it % 1.0 == 0.0) it.toInt() else it } ?: 2
+        else -> 2
+    }
+
     fun build(nodeData: Map<String, Any?>, extra: Map<String, Any?> = emptyMap()): Map<String, Any?>? {
         val chatSessionId = ChatState.chatSessionId ?: return null
         val botId = ChatState.botId ?: return null
@@ -39,11 +46,7 @@ object HandoverPayload {
             "deviceInfo" to device,
             "location" to location
         )
-        val maxWaitTime = when (val v = nodeData["maxWaitTime"]) {
-            is Number -> v.toInt()
-            is String -> v.toIntOrNull() ?: 2
-            else -> 2
-        }
+        val maxWaitTime = waitMinutesOf(nodeData["maxWaitTime"])
         return mapOf(
             "workspaceId" to workspaceId,
             "chatbotId" to botId,
