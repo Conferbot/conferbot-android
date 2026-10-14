@@ -18,6 +18,7 @@ enum class MessageType(val value: String) {
     AGENT_MESSAGE("agent-message"),
     AGENT_MESSAGE_FILE("agent-message-file"),
     AGENT_MESSAGE_AUDIO("agent-message-audio"),
+    AGENT_MESSAGE_RICH("agent-message-rich"),
     AGENT_JOINED_MESSAGE("agent-joined-message"),
     AGENT_LEFT_CHAT("agent-left-chat"),
     USER_LIVE_MESSAGE("user-live-message"),
@@ -113,9 +114,41 @@ sealed class RecordItem {
         val text: String,
 
         @SerializedName("agentDetails")
-        val agentDetails: AgentDetails
+        val agentDetails: AgentDetails,
+
+        /** An AI reply's sources, buttons and cards (core/agent/AgentBot.kt). */
+        val extras: com.conferbot.sdk.core.agent.AIReplyExtras? = null,
+
+        /** The visitor's "Helpful?" vote on an AI reply. */
+        val feedback: com.conferbot.sdk.core.agent.AnswerFeedback? = null,
+
+        /** The agent edited / unsent it (agent-message-edited / -deleted). */
+        val edited: Boolean = false,
+        val deleted: Boolean = false
     ) : RecordItem() {
         override val type: MessageType = MessageType.AGENT_MESSAGE
+    }
+
+    /** An agent's article, quick replies or card (agent-message-rich). */
+    data class AgentRichMessage(
+        @SerializedName("_id")
+        override val id: String,
+
+        @SerializedName("time")
+        override val time: Date,
+
+        val rich: com.conferbot.sdk.core.agent.RichEntry,
+
+        @SerializedName("text")
+        val text: String = "",
+
+        @SerializedName("agentDetails")
+        val agentDetails: AgentDetails? = null,
+
+        /** The quick reply the visitor chose. */
+        val answered: String? = null
+    ) : RecordItem() {
+        override val type: MessageType = MessageType.AGENT_MESSAGE_RICH
     }
 
     /**
