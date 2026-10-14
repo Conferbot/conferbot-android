@@ -34,11 +34,20 @@
         android:layout_height="0dp"
         android:clipToPadding="false"
         android:padding="16dp"
-        app:layout_constraintBottom_toTopOf="@id/inputContainer"
+        app:layout_constraintBottom_toTopOf="@id/agentStrip"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/connectionStatus"
         tools:listitem="@layout/item_message_bot" />
+
+    <!-- AI agent bots: the reply being written and the one-tap questions -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/agentStrip"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toTopOf="@id/inputContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <!-- Typing Indicator -->
     <include
@@ -49,7 +58,7 @@
         android:layout_marginStart="16dp"
         android:layout_marginBottom="8dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/inputContainer"
+        app:layout_constraintBottom_toTopOf="@id/agentStrip"
         app:layout_constraintStart_toStartOf="parent" />
 
     <!-- Input Container -->
