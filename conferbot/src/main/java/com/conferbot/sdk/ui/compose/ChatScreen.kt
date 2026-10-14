@@ -123,9 +123,11 @@ private fun ConferBotChatScreenContent(
     val canAttach = isLiveChatMode && (com.conferbot.sdk.core.livechat.LiveChat.visitorUploadsOn(customizationMap) || fileRequestedBy != null)
     val repliesOff = lockedBy != null || !inputEnabled
 
+    // The bot's settings as the web applies them (core/customization).
+    val look by Conferbot.customizations.collectAsState()
+    val hasLook = customizationMap.isNotEmpty()
     val headerTitle = currentAgent?.name
-        ?: serverCustomization?.botName?.takeIf { it.isNotBlank() }
-        ?: serverCustomization?.logoText?.takeIf { it.isNotBlank() }
+        ?: look.title.takeIf { hasLook }
         ?: "Support Chat"
 
     LaunchedEffect(Unit) {
@@ -144,7 +146,10 @@ private fun ConferBotChatScreenContent(
                 isOnline = isOnline,
                 pendingMessageCount = pendingMessageCount,
                 isSyncing = isSyncingQueue,
-                serverCustomization = serverCustomization
+                serverCustomization = serverCustomization,
+                look = look.takeIf { hasLook },
+                agentName = currentAgent?.name,
+                agentAvatar = currentAgent?.avatar
             )
         },
         modifier = modifier
