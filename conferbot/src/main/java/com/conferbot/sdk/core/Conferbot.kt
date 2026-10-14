@@ -41,7 +41,15 @@ import com.conferbot.sdk.utils.ConferBotEndpoints
 import com.conferbot.sdk.utils.Constants
 import com.google.gson.Gson
 import io.socket.emitter.Emitter
+import com.conferbot.sdk.core.agent.AIReplyExtras
+import com.conferbot.sdk.core.agent.AgentBot
+import com.conferbot.sdk.core.agent.AgentBotParser
+import com.conferbot.sdk.core.agent.AnswerFeedback
+import com.conferbot.sdk.core.agent.HandoverPayload
+import com.conferbot.sdk.utils.ChatMarkdown
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,6 +111,9 @@ data class ServerChatbotCustomization(
 object Conferbot {
     private const val TAG = "ConferBot"
 
+    /** How long the "writing a reply" dots may wait for the AI. */
+    const val AWAIT_REPLY_MS = 45_000L
+
     // Configuration
     private var apiKey: String? = null
     private var botId: String? = null
@@ -162,6 +173,8 @@ object Conferbot {
     private var cachedChatbotEdges: List<Map<String, Any>>? = null
     private var cachedWorkspaceId: String? = null
     private var flowStarted = false
+    // The session came back from the device (restorePersistedSession).
+    private var restoredConversation = false
 
     /**
      * Access to the flow engine for UI components
@@ -205,6 +218,38 @@ object Conferbot {
 
     private val _isLiveChatMode = MutableStateFlow(false)
     val isLiveChatMode: StateFlow<Boolean> = _isLiveChatMode.asStateFlow()
+
+    // ========== AI Agent Bots (Agent Studio) ==========
+    // A bot with no flow, answered by an AI agent from the first message
+    // (core/agent/AgentBot.kt). Null for every flow bot.
+
+    private val _agentBot = MutableStateFlow<AgentBot?>(null)
+    val agentBot: StateFlow<AgentBot?> = _agentBot.asStateFlow()
+
+    /** The AI reply as it is being written (one live bubble), or null. */
+    data class AgentStream(val id: String, val text: String, val agentDetails: AgentDetails)
+    private val _agentStream = MutableStateFlow<AgentStream?>(null)
+    val agentStream: StateFlow<AgentStream?> = _agentStream.asStateFlow()
+
+    /** One-tap questions: the greeting's starters, then each answer's follow-ups. */
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+
+    /** Waiting for the AI's reply (the typing dots), at most [AWAIT_REPLY_MS]. */
+    private val _awaitingReply = MutableStateFlow(false)
+    val awaitingReply: StateFlow<Boolean> = _awaitingReply.asStateFlow()
+    private var awaitReplyJob: Job? = null
+
+    /** The server customizations as sent (hideAnswerFeedback, chatQuickActions, ...). */
+    private val _serverCustomizationMap = MutableStateFlow<Map<String, Any?>>(emptyMap())
+    val serverCustomizationMap: StateFlow<Map<String, Any?>> = _serverCustomizationMap.asStateFlow()
+
+    // The silent handover waits for the visitor to engage (every record sent
+    // becomes a Response - a chat on the customer's plan); live sends wait
+    // for its acceptance.
+    private var agentPendingHandover: Map<String, Any?>? = null
+    private var agentHandoverPending = false
+    private var agentStartedFor: String? = null
 
     // ========== Server Theme & Customization State ==========
 
@@ -459,6 +504,9 @@ object Conferbot {
         // Agent accepted (embed-server sends agentDetails, not agent)
         socketClient?.on(SocketEvents.AGENT_ACCEPTED, Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
+            // An agent bot's own AI agent taking the chat it already greeted:
+            // nothing to announce.
+            if (onAgentBotAccepted(data)) return@Listener
             data?.optJSONObject("agentDetails")?.let { agentJson ->
                 // Map agentDetails to Agent
                 val agent = Agent(
@@ -546,6 +594,8 @@ object Conferbot {
             ChatState.setAgentTyping(isTyping)
             eventListener?.onTypingIndicator(isTyping)
         })
+
+        setupAgentBotListeners()
 
         // Chat ended
         socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener {
@@ -675,9 +725,16 @@ object Conferbot {
     private fun handleAgentMessage(args: Array<Any>) {
         val data = args.firstOrNull() as? JSONObject ?: return
         try {
+            val eventSessionId = data.optString("chatSessionId", "")
+            if (eventSessionId.isNotEmpty() && _chatSessionId.value != null && eventSessionId != _chatSessionId.value) return
             val rawMessage = data.optString("message", "")
-            // Strip HTML tags from agent messages (admin sends via rich text editor with <p> tags)
-            val message = rawMessage.replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
+            // The inbox editor's HTML and the AI's markdown, as one markdown
+            // subset the bubbles format (utils/ChatMarkdown.kt).
+            val message = ChatMarkdown.htmlToMarkdown(rawMessage)
+            val dataMap = jsonObjectToMap(data)
+            // An AI reply's sources, buttons and cards; its follow-ups shown.
+            val extras = AgentBotParser.aiReplyExtrasOf(dataMap)
+            onAgentBotMessage(dataMap)
             val isFileInput = data.optBoolean("isFileInput", false)
             val isAudioInput = data.optBoolean("isAudioInput", false)
             val agentMessageId = data.optString("agentMessageId", "agent-msg-${System.currentTimeMillis()}")
@@ -688,7 +745,9 @@ object Conferbot {
                     id = agentDetailsJson.optString("_id", ""),
                     name = agentDetailsJson.optString("name", "Agent"),
                     email = agentDetailsJson.optString("email", null),
-                    avatar = agentDetailsJson.optString("avatar", null)
+                    avatar = agentDetailsJson.optString("avatar", null)?.takeIf { it.isNotBlank() },
+                    isAIAgent = agentDetailsJson.optBoolean("isAIAgent", false) ||
+                        agentDetailsJson.optString("_id", "").startsWith("ai-agent-")
                 )
             } else {
                 val currentAgentVal = _currentAgent.value
@@ -715,7 +774,8 @@ object Conferbot {
                     id = agentMessageId,
                     time = java.util.Date(),
                     text = message,
-                    agentDetails = agentDetails
+                    agentDetails = agentDetails,
+                    extras = extras?.takeUnless { it.isEmpty && !it.isFallback }
                 )
             }
 
@@ -755,6 +815,288 @@ object Conferbot {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to handle agent message", e)
         }
+    }
+
+    // ==================== AI Agent Bots (Agent Studio) ====================
+
+    private fun agentDetailsOf(bot: AgentBot) = AgentDetails(
+        id = bot.agentDetailsId,
+        name = bot.displayName,
+        avatar = bot.avatar,
+        isAIAgent = true
+    )
+
+    private fun setAwaitingReply(on: Boolean) {
+        awaitReplyJob?.cancel()
+        _awaitingReply.value = on
+        if (on) awaitReplyJob = scope.launch {
+            delay(AWAIT_REPLY_MS)
+            _awaitingReply.value = false
+        }
+    }
+
+    /**
+     * Open the agent chat for this session on screen: the greeting and the
+     * starters. Nothing is sent yet - only a person starts a conversation
+     * (see [engageAgent]). A restored session already has its conversation:
+     * back in the room only, nothing greeted or handed over again.
+     */
+    private fun startAgentBotChat(sessionId: String, bot: AgentBot, nodes: List<Map<String, Any>>) {
+        if (agentStartedFor == sessionId) return
+        agentStartedFor = sessionId
+        val details = agentDetailsOf(bot)
+        _currentAgent.value = Agent(id = details.id, name = details.name, avatar = details.avatar)
+        // Visitor messages go the live way from the start; they wait for the
+        // agent's acceptance (agentHandoverPending).
+        _isLiveChatMode.value = true
+        ChatState.setLiveChatMode(true)
+
+        val resumed = _record.value.any {
+            (it is RecordItem.AgentMessage && it.id.startsWith("agent-greeting-")) || it is RecordItem.UserLiveMessage
+        }
+        if (resumed) {
+            agentPendingHandover = null
+            agentHandoverPending = false
+            return
+        }
+
+        agentHandoverPending = true
+        val greeting = bot.greeting.ifBlank { AgentBotParser.DEFAULT_GREETING }
+        @Suppress("UNCHECKED_CAST")
+        val shell = AgentBotParser.agentShellNodes(nodes as List<Map<String, Any?>>, bot.agentId)
+        val (welcome, handover) = shell
+        val welcomeId = welcome?.get("id")?.toString() ?: "agent-welcome"
+        @Suppress("UNCHECKED_CAST")
+        val welcomeData = ((welcome?.get("data") as? Map<String, Any?>) ?: emptyMap()).toMutableMap().apply {
+            put("text", greeting)
+            put("disableImage", true)
+            put("agentDetails", AgentBotParser.agentDetailsOf(bot))
+        }
+        ChatState.pushToRecord(
+            com.conferbot.sdk.core.state.RecordEntry(id = welcomeId, shape = "welcome-node", type = "welcome-node", text = greeting, data = welcomeData)
+        )
+        ChatState.addToTranscript("bot", greeting)
+        addMessageToRecord(
+            RecordItem.AgentMessage(id = "agent-greeting-$sessionId", time = java.util.Date(), text = greeting, agentDetails = details)
+        )
+        _suggestions.value = bot.starters
+
+        @Suppress("UNCHECKED_CAST")
+        val shellData = handover?.get("data") as? Map<String, Any?>
+        agentPendingHandover = mapOf(
+            "id" to (handover?.get("id")?.toString() ?: "agent-handover"),
+            "data" to AgentBotParser.agentHandoverData(shellData, bot.agentId)
+        )
+    }
+
+    /**
+     * The visitor is engaging (typing, a suggestion tapped, a message sent):
+     * create the Response from the record, then the silent handover. Once.
+     */
+    fun engageAgent() {
+        val step = agentPendingHandover ?: return
+        if (socketClient?.isConnected != true) return
+        agentPendingHandover = null
+        @Suppress("UNCHECKED_CAST")
+        val data = step["data"] as Map<String, Any?>
+        socketClient?.sendResponseRecord(ChatState.buildResponseData())
+        val id = step["id"].toString()
+        ChatState.pushToRecord(
+            com.conferbot.sdk.core.state.RecordEntry(id = id, shape = "human-handover-node", type = "human-handover-node", data = data.toMutableMap())
+        )
+        HandoverPayload.build(data, mapOf("silentStart" to true))?.let {
+            socketClient?.emit("initiate-handover", JSONObject(it))
+        }
+    }
+
+    /** agent-accepted for this bot's own AI agent: nothing drawn, held messages sent. */
+    private fun onAgentBotAccepted(data: JSONObject?): Boolean {
+        if (_agentBot.value == null) return false
+        val json = data?.optJSONObject("agentDetails") ?: return false
+        if (!json.optBoolean("isAIAgent", false) && !json.optString("_id", "").startsWith("ai-agent-")) return false
+        val wasPending = agentHandoverPending
+        agentHandoverPending = false
+        _currentAgent.value = Agent(
+            id = json.optString("_id"),
+            name = json.optString("name"),
+            avatar = json.optString("avatar", "").takeIf { it.isNotBlank() }
+        )
+        _isLiveChatMode.value = true
+        ChatState.setLiveChatMode(true)
+        if (wasPending && ChatState.getRecordForServer().any { it["shape"] == "user-live-message" }) {
+            socketClient?.sendResponseRecord(ChatState.buildResponseData())
+            setAwaitingReply(true)
+        }
+        return true
+    }
+
+    /** An agent message arrived: the wait and the live bubble end, its follow-ups show. */
+    private fun onAgentBotMessage(data: Map<String, Any?>) {
+        setAwaitingReply(false)
+        _agentStream.value = null
+        @Suppress("UNCHECKED_CAST")
+        val details = data["agentDetails"] as? Map<String, Any?>
+        _suggestions.value = if (AgentBotParser.isAIAgent(details) && data["isFallback"] != true) {
+            AgentBotParser.followUpsOf(data["followUps"])
+        } else emptyList()
+    }
+
+    /** The visitor said something: the chips go, the dots wait for the AI. */
+    private fun noteVisitorMessage() {
+        _suggestions.value = emptyList()
+        if (_agentBot.value != null &&
+            AgentBotParser.isAgentAIActive(ChatState.getRecordForServer().map { it["type"] as? String })
+        ) setAwaitingReply(true)
+    }
+
+    private fun isOwnSession(data: JSONObject?): Boolean {
+        val sid = data?.optString("chatSessionId", "") ?: ""
+        return sid.isEmpty() || _chatSessionId.value == null || sid == _chatSessionId.value
+    }
+
+    private fun agentDetailsFrom(json: JSONObject?): AgentDetails = AgentDetails(
+        id = json?.optString("_id", "") ?: "",
+        name = json?.optString("name", "Agent") ?: "Agent",
+        avatar = json?.optString("avatar", "")?.takeIf { it.isNotBlank() },
+        isAIAgent = json?.optBoolean("isAIAgent", false) == true || json?.optString("_id", "")?.startsWith("ai-agent-") == true
+    )
+
+    private fun setupAgentBotListeners() {
+        // The reply as it is written: one live bubble, replaced by the finished agent-message.
+        socketClient?.on("agent-message-stream", Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject ?: return@Listener
+            if (!isOwnSession(data)) return@Listener
+            val text = data.optString("text", "")
+            val streamId = data.optString("streamId", "")
+            if (text.isBlank() || streamId.isEmpty()) return@Listener
+            setAwaitingReply(false)
+            _isAgentTyping.value = false
+            _agentStream.value = AgentStream(streamId, ChatMarkdown.htmlToMarkdown(text), agentDetailsFrom(data.optJSONObject("agentDetails")))
+        })
+
+        // An article, quick replies or a card from the agent.
+        socketClient?.on("agent-message-rich", Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject ?: return@Listener
+            if (!isOwnSession(data)) return@Listener
+            val entry = data.optJSONObject("entry") ?: return@Listener
+            val id = entry.optString("id", "")
+            val entryMap = jsonObjectToMap(entry)
+            val rich = AgentBotParser.safeRich(entryMap["rich"]) ?: return@Listener
+            if (id.isEmpty()) return@Listener
+            setAwaitingReply(false)
+            _agentStream.value = null
+            val text = entry.optString("text", "")
+            addMessageToRecord(
+                RecordItem.AgentRichMessage(id = id, time = java.util.Date(), rich = rich, text = text, agentDetails = agentDetailsFrom(entry.optJSONObject("agentDetails")))
+            )
+            @Suppress("UNCHECKED_CAST")
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(
+                    id = id, shape = "agent-message-rich", type = "agent-message-rich", text = text,
+                    data = mutableMapOf("rich" to entryMap["rich"], "agentDetails" to entryMap["agentDetails"])
+                )
+            )
+        })
+
+        // An agent edited or unsent a message: the bubble changes in place.
+        fun change(deleted: Boolean) = Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject ?: return@Listener
+            if (!isOwnSession(data)) return@Listener
+            val id = data.optString("agentMessageId", "")
+            if (id.isEmpty()) return@Listener
+            val newText = data.optString("text", data.optString("message", ""))
+            _record.value = _record.value.map { item ->
+                if (item is RecordItem.AgentMessage && item.id == id) {
+                    if (deleted) item.copy(text = "", deleted = true)
+                    else item.copy(text = if (newText.isNotEmpty()) ChatMarkdown.htmlToMarkdown(newText) else item.text, edited = true)
+                } else item
+            }
+        }
+        socketClient?.on("agent-message-edited", change(false))
+        socketClient?.on("agent-message-deleted", change(true))
+
+        // Closed for inactivity; the visitor's next message reopens it.
+        socketClient?.on("ai-agent-inactive-close", Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject
+            if (!isOwnSession(data)) return@Listener
+            setAwaitingReply(false)
+            _suggestions.value = emptyList()
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(id = "ai-close-${System.currentTimeMillis()}", shape = "ai-agent-inactive-close", type = "ai-agent-inactive-close")
+            )
+        })
+        socketClient?.on("ai-agent-resumed", Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject
+            if (!isOwnSession(data)) return@Listener
+            ChatState.pushToRecord(
+                com.conferbot.sdk.core.state.RecordEntry(id = "ai-resumed-${System.currentTimeMillis()}", shape = "ai-agent-resumed", type = "ai-agent-resumed")
+            )
+            _isLiveChatMode.value = true
+            ChatState.setLiveChatMode(true)
+        })
+    }
+
+    private fun resetAgentBotChat() {
+        agentStartedFor = null
+        agentPendingHandover = null
+        agentHandoverPending = false
+        _agentStream.value = null
+        _suggestions.value = emptyList()
+        setAwaitingReply(false)
+    }
+
+    /** "Helpful?" on an AI answer: kept on the message, sent to the server. */
+    fun sendAnswerFeedback(agentMessageId: String, helpful: Boolean, reason: String? = null) {
+        val feedback = AnswerFeedback(helpful, reason?.takeIf { !helpful })
+        _record.value = _record.value.map {
+            if (it is RecordItem.AgentMessage && it.id == agentMessageId) it.copy(feedback = feedback) else it
+        }
+        scope.launch {
+            _record.value.firstOrNull { it.id == agentMessageId }?.let { messageManager?.addMessage(it) }
+        }
+        val payload = JSONObject().apply {
+            put("chatSessionId", _chatSessionId.value)
+            put("agentMessageId", agentMessageId)
+            put("helpful", helpful)
+            feedback.reason?.let { put("reason", it) }
+        }
+        socketClient?.emitWithAck("ai-answer-feedback", payload, 10_000L)
+    }
+
+    /**
+     * The visitor's Confirm / Not now on an action the AI is about to take.
+     * [onResult] gets (ok, code) on the main thread's caller scope.
+     */
+    fun decideAction(token: String, accept: Boolean, onResult: (Boolean, String?) -> Unit) {
+        val payload = JSONObject().apply {
+            put("chatSessionId", _chatSessionId.value)
+            put("token", token)
+            put("accept", accept)
+        }
+        socketClient?.emitWithAck("ai-action-decision", payload) { res ->
+            val json = res as? JSONObject
+            val ok = json?.optBoolean("ok", false) == true
+            if (ok && accept) setAwaitingReply(true)
+            scope.launch(Dispatchers.Main) { onResult(ok, json?.optString("code", null)) }
+        } ?: onResult(false, null)
+    }
+
+    /** A tapped answer button or quick action, as a goal. */
+    fun trackGoal(goalId: String, conversionEvent: String) {
+        val payload = JSONObject().apply {
+            put("chatSessionId", _chatSessionId.value)
+            put("goalId", goalId)
+            put("conversionEvent", conversionEvent)
+        }
+        socketClient?.emit("track-goal-completion", payload)
+    }
+
+    /** A quick reply chosen on a rich message: the chips freeze, the label is sent. */
+    fun answerRichMessage(messageId: String, label: String) {
+        _record.value = _record.value.map {
+            if (it is RecordItem.AgentRichMessage && it.id == messageId) it.copy(answered = label) else it
+        }
+        sendMessage(label)
     }
 
     /**
@@ -806,6 +1148,12 @@ object Conferbot {
 
             val firstElement = elementsArray.optJSONObject(0) ?: return
 
+            // No-flow AI agent bot (Agent Studio)? null for every flow bot.
+            val chatbotMap = jsonObjectToMap(chatbotData)
+            _agentBot.value = AgentBotParser.parseAgentBot(chatbotMap)
+            @Suppress("UNCHECKED_CAST")
+            (chatbotMap["customizations"] as? Map<String, Any?>)?.let { _serverCustomizationMap.value = it }
+
             // Extract nodes array
             val nodesArray = firstElement.optJSONArray("nodes")
             val nodes = mutableListOf<Map<String, Any>>()
@@ -828,7 +1176,7 @@ object Conferbot {
 
             Log.d(TAG, "Parsed chatbot data: ${nodes.size} nodes, ${edges.size} edges")
 
-            if (nodes.isEmpty()) {
+            if (nodes.isEmpty() && _agentBot.value == null) {
                 Log.w(TAG, "No nodes found in chatbot data")
                 return
             }
@@ -966,12 +1314,11 @@ object Conferbot {
             // (conferbot-widget/src/index.ts): #1b55f3 bubbles, white text.
             val webBubbleDefault = androidx.compose.ui.graphics.Color(0xFF1B55F3)
             val webTextDefault = androidx.compose.ui.graphics.Color.White
-            builder.botBubbleColors(
-                background = parseHexColor(customizations.optStringOrNull("botMsgColor"))
-                    ?: webBubbleDefault,
-                text = parseHexColor(customizations.optStringOrNull("botTextColor"))
-                    ?: webTextDefault
-            )
+            val botBubble = parseHexColor(customizations.optStringOrNull("botMsgColor")) ?: webBubbleDefault
+            val botText = parseHexColor(customizations.optStringOrNull("botTextColor")) ?: webTextDefault
+            builder.botBubbleColors(background = botBubble, text = botText)
+            // An agent - person or AI - speaks in the bot's colours, as on the web.
+            builder.agentBubbleColors(background = botBubble, text = botText)
 
             // User message bubble
             builder.userBubbleColors(
@@ -1054,6 +1401,19 @@ object Conferbot {
         val edges = cachedChatbotEdges ?: return
         val sessionId = _chatSessionId.value ?: return
         val currentBotId = botId ?: return
+
+        // An agent bot opens into the agent chat, never the shell flow.
+        _agentBot.value?.let { bot ->
+            flowStarted = true
+            startAgentBotChat(sessionId, bot, nodes)
+            return
+        }
+
+        // A restored conversation is not replayed from the first node.
+        if (restoredConversation) {
+            flowStarted = true
+            return
+        }
 
         Log.d(TAG, "Starting chatbot flow with ${nodes.size} nodes and ${edges.size} edges")
         flowStarted = true
@@ -1420,6 +1780,9 @@ object Conferbot {
      * Send a message during live chat (agent handover) mode
      */
     private fun sendLiveChatMessage(text: String, sessionId: String) {
+        // An agent bot's conversation starts with the visitor's first word.
+        engageAgent()
+
         // Create user live message
         val userMessage = RecordItem.UserLiveMessage(
             id = System.currentTimeMillis().toString(),
@@ -1455,8 +1818,13 @@ object Conferbot {
         // Add to transcript
         ChatState.addToTranscript("user", text)
 
-        // Send via response-record with full ChatState record (same as bot flow)
-        socketClient?.sendResponseRecord(ChatState.buildResponseData())
+        // Send via response-record with full ChatState record (same as bot
+        // flow) - held while an agent bot's handover is being accepted; the
+        // acceptance sends it.
+        if (!agentHandoverPending) {
+            socketClient?.sendResponseRecord(ChatState.buildResponseData())
+        }
+        noteVisitorMessage()
 
         // Stop visitor typing indicator
         socketClient?.sendTypingStatus(sessionId, false)
@@ -1781,6 +2149,8 @@ object Conferbot {
      * Send typing status (emits visitor-typing event for live chat)
      */
     fun sendTypingStatus(isTyping: Boolean) {
+        // Typing in the composer: a person is here.
+        if (isTyping) engageAgent()
         val sessionId = _chatSessionId.value ?: return
         socketClient?.sendTypingStatus(sessionId, isTyping)
 
@@ -1822,6 +2192,8 @@ object Conferbot {
         _isAgentTyping.value = false
         // Reset flow state so it can be re-triggered with same bot data
         flowStarted = false
+        restoredConversation = false
+        resetAgentBotChat()
         // Keep cachedChatbotNodes/Edges — same bot, new session
         // Clean up Knowledge Base service when history is cleared
         disposeKnowledgeBaseService()
@@ -1867,6 +2239,18 @@ object Conferbot {
         if (result.success && result.sessionId != null) {
             _chatSessionId.value = result.sessionId
 
+            // The conversation on screen again: it was restored to the
+            // database only, and the chat opened empty.
+            messageManager = PaginatedMessageManager.getInstance(
+                context = context,
+                sessionId = result.sessionId,
+                config = paginationConfig
+            )
+            val restoredMessages = messageManager?.initialize() ?: emptyList()
+            if (restoredMessages.isNotEmpty()) _record.value = restoredMessages
+            updatePaginationState()
+            restoredConversation = restoredMessages.isNotEmpty()
+
             // Rejoin socket room with restored session
             socketClient?.joinChatRoom(
                 chatSessionId = result.sessionId,
@@ -1887,6 +2271,10 @@ object Conferbot {
 
             eventListener?.onSessionStarted(result.sessionId)
             Log.d(TAG, "Restored persisted session: ${result.sessionId}")
+
+            // An agent bot picks its conversation back up; a flow bot keeps
+            // what is on screen (see tryStartFlow).
+            tryStartFlow()
         }
 
         return result
