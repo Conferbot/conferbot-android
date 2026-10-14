@@ -2163,145 +2163,26 @@ fun HumanHandoverNode(
             }
 
             NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT -> {
-                // Pulsing animation for waiting state
-                val infiniteTransition = rememberInfiniteTransition(label = "waiting_pulse")
-                val pulseAlpha by infiniteTransition.animateFloat(
-                    initialValue = 0.6f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1200, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "pulse_alpha"
-                )
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(2.dp, RoundedCornerShape(16.dp)),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Pulsing indicator ring
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .graphicsLayer { alpha = pulseAlpha },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = primaryColor,
-                                strokeWidth = 3.dp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = state.handoverMessage ?: "Connecting you to an agent...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center
-                        )
-                        if (state.maxWaitTime != null) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Estimated wait: ${state.maxWaitTime} minutes",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = theme.colors.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                // The web widget's compact wait card: where they stand in line.
+                com.conferbot.sdk.ui.compose.chat.HandoverWaitCard(message = state.handoverMessage)
             }
 
             NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED -> {
-                // Smooth slide-in green banner
-                AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn(tween(APPEAR_DURATION_MS)) +
-                            slideInVertically(tween(APPEAR_DURATION_MS, easing = PremiumEasing)) { -it }
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(2.dp, RoundedCornerShape(12.dp)),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF4CAF50)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Connected",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "${state.agentName ?: "Agent"} has joined the chat",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF2E7D32)
-                            )
-                        }
-                    }
-                }
+                // "{name} joined the chat" is already a line in the chat.
             }
 
             NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE -> {
-                Card(
+                // The owner's fallback, as the bot says it; leave a message follows.
+                Text(
+                    text = state.handoverMessage ?: "No agents are available at the moment.",
+                    color = theme.colors.botBubbleText,
+                    style = androidx.compose.ui.text.TextStyle(fontFamily = theme.typography.fontFamily, fontSize = theme.typography.messageSize, lineHeight = theme.typography.messageSize * 1.4f),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(1.dp, RoundedCornerShape(12.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(36.dp),
-                            shape = CircleShape,
-                            color = Color(0xFFFF9800).copy(alpha = 0.15f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = "No agents",
-                                    tint = Color(0xFFE65100),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = state.handoverMessage ?: "No agents available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFFE65100)
-                        )
-                    }
-                }
+                        .widthIn(max = theme.spacing.maxBubbleWidth)
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp))
+                        .background(theme.colors.botBubble)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                )
             }
 
             NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY -> {
