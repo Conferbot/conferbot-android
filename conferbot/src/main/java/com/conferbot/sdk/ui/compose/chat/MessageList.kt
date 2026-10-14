@@ -20,8 +20,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.nodes.NodeUIState
 import com.conferbot.sdk.core.state.PaginationState
 import com.conferbot.sdk.models.RecordItem
@@ -46,7 +48,11 @@ fun PaginatedMessageList(
     onLoadMore: () -> Unit,
     currentUIState: NodeUIState? = null,
     onNodeResponse: ((Any) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Live chat cards below the messages (leave a message, rating...). */
+    footer: (@Composable () -> Unit)? = null,
+    /** Changes when those cards change, to keep them in view. */
+    footerKey: Any? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -62,9 +68,21 @@ fun PaginatedMessageList(
     val awaitingReply by com.conferbot.sdk.core.Conferbot.awaitingReply.collectAsState()
     val showTyping = (isAgentTyping || awaitingReply) && agentStream == null
 
+    val receiptMarks by com.conferbot.sdk.core.Conferbot.liveChat.receiptMarks.collectAsState()
+    val currentAgent by com.conferbot.sdk.core.Conferbot.currentAgent.collectAsState()
+    val receipt = remember(messages, receiptMarks, currentAgent) {
+        val person = currentAgent?.let { !it.id.startsWith("ai-agent-") } == true
+        if (!person) null
+        else com.conferbot.sdk.core.livechat.LiveChat.visitorReceiptOf(
+            com.conferbot.sdk.core.livechat.LiveChatExtras.entriesOf(messages), receiptMarks
+        )
+    }
+
     // TextInput nodes are answered via the unified bottom bar (web parity),
     // so they render no inline UI and must not reserve an avatar row.
     val hasInlineNode = currentUIState != null && onNodeResponse != null &&
+        // A person joined: the chat's own line says so.
+        !(currentUIState is NodeUIState.HumanHandover && currentUIState.state == NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED) &&
         currentUIState !is NodeUIState.TextInput &&
         currentUIState !is NodeUIState.Message &&
         currentUIState !is NodeUIState.Image &&
@@ -92,7 +110,15 @@ fun PaginatedMessageList(
         if (shouldLoadMore) onLoadMore()
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // The keyboard opened (the list got shorter): the latest stays in view.
+            .onSizeChanged {
+                val count = listState.layoutInfo.totalItemsCount
+                if (count > 0 && !showScrollToBottom) coroutineScope.launch { listState.scrollToItem(count - 1) }
+            }
+    ) {
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -116,9 +142,21 @@ fun PaginatedMessageList(
                 }
             }
 
-            // Messages
+            // Messages, and "Sent / Delivered / Seen" under the visitor's
+            // latest live message while a person is on the other end.
             items(items = messages, key = { it.id }) { message ->
+                Column {
                 MessageBubble(message = message)
+                if (receipt?.id == message.id) {
+                    Text(
+                        text = com.conferbot.sdk.core.livechat.LiveChat.receiptLabel(receipt.state),
+                        color = colors.onSurfaceVariant,
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, end = 2.dp)
+                    )
+                }
+                }
             }
 
             // The AI reply as it is written
@@ -175,6 +213,15 @@ fun PaginatedMessageList(
                     }
                 }
             }
+            footer?.let { cards ->
+                item(key = "live_chat_cards") {
+                    // A card grew (a rating opened its feedback box): kept in view.
+                    Box(Modifier.onSizeChanged {
+                        val count = listState.layoutInfo.totalItemsCount
+                        if (count > 0 && !showScrollToBottom) coroutineScope.launch { listState.animateScrollToItem(count - 1, Int.MAX_VALUE / 2) }
+                    }) { cards() }
+                }
+            }
         }
 
         // Scroll-to-bottom FAB
@@ -209,7 +256,7 @@ fun PaginatedMessageList(
 
     // Auto-scroll to bottom on new messages / node UI change
     // ...and as a reply is written, or suggestions and the dots appear.
-    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping) {
+    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping, footerKey) {
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0 && !showScrollToBottom) {
             coroutineScope.launch { listState.animateScrollToItem(count - 1) }
