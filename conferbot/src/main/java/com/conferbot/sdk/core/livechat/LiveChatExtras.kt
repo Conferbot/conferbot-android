@@ -31,7 +31,9 @@ class LiveChatExtras(
     private val scope: CoroutineScope,
     private val socket: () -> SocketClient?,
     private val sessionId: () -> String?,
-    private val addMessage: (RecordItem) -> Unit
+    private val addMessage: (RecordItem) -> Unit,
+    /** The flow carries on from the handover (a message was left, or skipped). */
+    private val continueFlow: () -> Unit = {}
 ) {
     private val _queue = MutableStateFlow<QueueStatus?>(null)
     val queue: StateFlow<QueueStatus?> = _queue.asStateFlow()
@@ -209,10 +211,14 @@ class LiveChatExtras(
                     )
                 )
                 addMessage(RecordItem.UserMessage(id = entryId, time = java.util.Date(), text = message))
+                ChatState.setUserMetadata("email", email)
                 _leftMessageTo.value = email
                 _noAgentsAvailable.value = false
             }
-            scope.launch(Dispatchers.Main) { onDone(ok) }
+            scope.launch(Dispatchers.Main) {
+                onDone(ok)
+                if (ok) continueFlow()
+            }
         }
     }
 
@@ -256,6 +262,18 @@ class LiveChatExtras(
         val id = sessionId() ?: return
         socket()?.emit("submit-chat-rating", JSONObject(LiveChat.ratingPayload(id, config.ratingType, value, feedback)))
         _csatSent.value = true
+    }
+
+    /** "Not now" on leave a message: the flow carries on. */
+    fun skipLeaveMessage() {
+        _noAgentsAvailable.value = false
+        continueFlow()
+    }
+
+    /** Prefill for leave a message: their email if known, and what they last asked. */
+    fun leaveMessagePrefill(): Pair<String, String> {
+        val email = LiveChat.knownEmail(ChatState.userMetadata.value.email, ChatState.getAnswerVariablesMap().values.toList())
+        return email to LiveChat.lastQuestion(ChatState.getRecordForServer())
     }
 
     fun dismissCsat() {
