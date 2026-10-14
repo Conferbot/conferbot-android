@@ -114,8 +114,11 @@ class MessageAdapter(
             }
             // An AI agent's reply and rich messages draw with the Compose
             // bubbles (formatted text, sources, cards, "Helpful?").
-            is RecordItem.AgentMessage -> if (item.agentDetails.isAIAgent) VIEW_TYPE_AGENT_COMPOSE else VIEW_TYPE_AGENT
+            is RecordItem.AgentMessage -> if (item.agentDetails.isAIAgent || item.translation != null) VIEW_TYPE_AGENT_COMPOSE else VIEW_TYPE_AGENT
             is RecordItem.AgentRichMessage -> VIEW_TYPE_AGENT_COMPOSE
+            // Files (an image, or a named link) and a translated message's
+            // "See original" draw with the Compose bubbles too.
+            is RecordItem.AgentMessageFile, is RecordItem.UserLiveMessageFile -> VIEW_TYPE_AGENT_COMPOSE
             else -> VIEW_TYPE_SYSTEM
         }
     }
