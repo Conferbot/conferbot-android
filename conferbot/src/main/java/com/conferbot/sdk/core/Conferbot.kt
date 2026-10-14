@@ -1198,7 +1198,13 @@ object Conferbot {
                     kotlinx.coroutines.flow.combine(it, _isLiveChatMode) { state, live -> state to live }.collect { (state, live) ->
                         val waiting = state is com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover &&
                             state.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
-                        if (waiting && !live) liveChat.startQueuePoll() else liveChat.stopQueuePoll()
+                        if (waiting && !live) {
+                            liveChat.startQueuePoll()
+                            liveChat.startWaitTimer(nodeFlowEngine?.handoverNodeData, cachedWorkspaceId ?: ChatState.workspaceId)
+                        } else {
+                            liveChat.stopQueuePoll()
+                            liveChat.stopWaitTimer()
+                        }
                     }
                 }
             },
