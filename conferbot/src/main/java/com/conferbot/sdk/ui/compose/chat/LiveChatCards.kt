@@ -1,0 +1,386 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
+package com.conferbot.sdk.ui.compose.chat
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.conferbot.sdk.core.Conferbot
+import com.conferbot.sdk.core.agent.AgentBotParser
+import com.conferbot.sdk.core.livechat.CsatConfig
+import com.conferbot.sdk.core.livechat.LiveChat
+import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
+
+/**
+ * The small cards and lines of a live chat, as on the web widget: the
+ * owner's quick actions and "Talk to a person" above the composer, the AI's
+ * follow-up email card, the queue position, the "nobody could join" email
+ * ask, leave a message, a locked conversation, an agent's dropped
+ * connection, an agent asking for a file, and the post-chat rating.
+ * State is on [Conferbot.liveChat] (core/livechat).
+ */
+
+@Composable
+private fun LiveCard(indent: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    val colors = ConferbotThemeAmbient.current.colors
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (indent) 42.dp else 0.dp)
+            .clip(shape)
+            .border(1.dp, colors.divider, shape)
+            .background(colors.surface, shape)
+            .padding(12.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun CardTitle(text: String) {
+    val theme = ConferbotThemeAmbient.current
+    Text(text, color = theme.colors.onSurface, style = TextStyle(fontFamily = theme.typography.fontFamily, fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
+}
+
+@Composable
+private fun CardSub(text: String) {
+    val theme = ConferbotThemeAmbient.current
+    Text(text, color = theme.colors.onSurfaceVariant, style = TextStyle(fontFamily = theme.typography.fontFamily, fontSize = 13.sp), modifier = Modifier.padding(top = 2.dp))
+}
+
+@Composable
+private fun PrimaryButton(label: String, enabled: Boolean = true, busy: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val colors = ConferbotThemeAmbient.current.colors
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (enabled) colors.primary else colors.primary.copy(alpha = 0.45f))
+            .clickable(enabled = enabled && !busy, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (busy) CircularProgressIndicator(color = colors.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+        else Text(label, color = colors.onPrimary, style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
+    }
+}
+
+@Composable
+private fun Field(value: String, onChange: (String) -> Unit, placeholder: String, minLines: Int = 1, email: Boolean = false, modifier: Modifier = Modifier) {
+    val theme = ConferbotThemeAmbient.current
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .border(1.dp, theme.colors.divider, shape)
+            .background(theme.colors.background, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .heightIn(min = (20 * minLines).dp)
+    ) {
+        if (value.isEmpty()) Text(placeholder, color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 15.sp))
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            textStyle = TextStyle(fontSize = 15.sp, color = theme.colors.onSurface),
+            cursorBrush = SolidColor(theme.colors.primary),
+            singleLine = minLines == 1,
+            keyboardOptions = if (email) KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrect = false) else KeyboardOptions.Default,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder }
+        )
+    }
+}
+
+/** An email field (and an optional message) with one button. [onSubmit] reports ok. */
+@Composable
+private fun EmailForm(button: String, messagePlaceholder: String? = null, onSubmit: (email: String, message: String, done: (Boolean) -> Unit) -> Unit) {
+    var email by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val colors = ConferbotThemeAmbient.current.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+        if (messagePlaceholder != null) Field(message, { message = it }, messagePlaceholder, minLines = 3, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Field(email, { email = it }, "you@example.com", email = true, modifier = Modifier.weight(1f))
+            PrimaryButton(button, busy = busy) {
+                when {
+                    !LiveChat.isEmail(email) -> error = "Please enter a valid email."
+                    messagePlaceholder != null && message.isBlank() -> error = "Please write a short message."
+                    else -> {
+                        error = null
+                        busy = true
+                        onSubmit(email.trim(), message.trim()) { ok ->
+                            busy = false
+                            if (!ok) error = "That did not go through. Please try again."
+                        }
+                    }
+                }
+            }
+        }
+        error?.let { Text(it, color = colors.error, style = TextStyle(fontSize = 12.sp)) }
+    }
+}
+
+/** The owner's quick actions (and "Talk to a person") above the composer, from the first AI answer on. */
+@Composable
+fun QuickActionsStrip(modifier: Modifier = Modifier) {
+    val theme = ConferbotThemeAmbient.current
+    val context = LocalContext.current
+    val customizations by Conferbot.serverCustomizationMap.collectAsState()
+    val record by Conferbot.record.collectAsState()
+    val agent by Conferbot.currentAgent.collectAsState()
+    val agentBot by Conferbot.agentBot.collectAsState()
+    val aiAnswered = record.any { it is com.conferbot.sdk.models.RecordItem.AgentMessage && it.agentDetails.isAIAgent }
+    val personHere = agent != null && agent?.id?.startsWith("ai-agent-") != true
+    if (!aiAnswered || personHere) return
+    val actions = AgentBotParser.quickActionsOf(customizations)
+    val human = agentBot != null && customizations["chatTalkToHuman"] == true
+    if (actions.isEmpty() && !human) return
+    FlowRow(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        actions.forEach { a ->
+            Pill("${a.label} ↗") {
+                Conferbot.trackGoal("quick-action:${a.label}", AgentBotParser.conversionEventOf(a.label, a.url))
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+        if (human) Pill("Talk to a person") { Conferbot.sendMessage(LiveChat.TALK_TO_PERSON_ASK) }
+    }
+}
+
+@Composable
+private fun Pill(label: String, onClick: () -> Unit) {
+    val colors = ConferbotThemeAmbient.current.colors
+    Text(
+        label,
+        color = colors.botBubbleText,
+        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(colors.botBubble)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    )
+}
+
+/** The handover step while it waits for a person: where they stand, about how long. */
+@Composable
+fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = null) {
+    val theme = ConferbotThemeAmbient.current
+    val queue by Conferbot.liveChat.queue.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Shown inline beside the bot's avatar already: no indent of its own.
+        LiveCard(indent = false) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = theme.colors.primary, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    CardTitle(LiveChat.queueLine(queue))
+                    CardSub(LiveChat.queueSubline(queue))
+                }
+                if (onCancel != null) {
+                    Text("Cancel", color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.clickable(onClick = onCancel).padding(6.dp))
+                }
+            }
+            if (!message.isNullOrBlank()) {
+                Text(message, color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+/** Nobody could take the chat: the AI is back, and the team replies by email. */
+@Composable
+fun HandoverWaitingCard() {
+    val w by Conferbot.liveChat.handoverWaiting.collectAsState()
+    val waiting = w ?: return
+    LiveCard {
+        Text(LiveChat.handoverWaitingLine(waiting), color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
+        if (waiting.email == null && waiting.askEmail) {
+            EmailForm("Send") { email, _, done -> Conferbot.liveChat.shareEmailForReply(email, done) }
+        }
+    }
+}
+
+/** No one is available: leave a message, answered by email. */
+@Composable
+fun LeaveMessageCard() {
+    val noAgents by Conferbot.liveChat.noAgentsAvailable.collectAsState()
+    val sentTo by Conferbot.liveChat.leftMessageTo.collectAsState()
+    val customizations by Conferbot.serverCustomizationMap.collectAsState()
+    if ((!noAgents && sentTo == null) || customizations["chatLeaveMessage"] == false) return
+    LiveCard {
+        if (sentTo != null) {
+            CardTitle("Message sent. We'll reply to you at $sentTo.")
+            CardSub("Replies will reach your inbox, and show here if you come back.")
+        } else {
+            CardTitle("Leave a message")
+            CardSub("No one is available right now. We'll reply by email.")
+            EmailForm("Send", messagePlaceholder = "How can we help?") { email, message, done ->
+                Conferbot.liveChat.leaveMessage(email, message, done)
+            }
+        }
+    }
+}
+
+/** The AI saw buying intent and has no email yet: one field. */
+@Composable
+fun LeadCard() {
+    val open by Conferbot.liveChat.leadCardOpen.collectAsState()
+    val done by Conferbot.liveChat.leadEmail.collectAsState()
+    if (!open && done == null) return
+    LiveCard {
+        if (done != null) {
+            Text("Thanks! We'll follow up at $done", color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
+        } else {
+            CardTitle("Want us to follow up?")
+            CardSub("Leave your email and the team will get back to you.")
+            EmailForm("Send") { email, _, finish ->
+                Conferbot.liveChat.captureLeadEmail(email)
+                finish(true)
+            }
+        }
+    }
+}
+
+/** An agent asked for a file: the visitor's upload button. */
+@Composable
+fun FileRequestCard(onUpload: (() -> Unit)?) {
+    val who by Conferbot.liveChat.fileRequestedBy.collectAsState()
+    val name = who ?: return
+    LiveCard {
+        Text("$name asked you to send a file", color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
+        if (onUpload != null) {
+            Spacer(Modifier.height(10.dp))
+            PrimaryButton("Choose a file", onClick = onUpload)
+        }
+    }
+}
+
+private val FACES = listOf("😞", "😕", "😐", "🙂", "😄")
+
+/** The post-chat rating, from the bot's csatConfig. */
+@Composable
+fun CsatCard() {
+    val config: CsatConfig? by Conferbot.liveChat.csatConfig.collectAsState()
+    val open by Conferbot.liveChat.csatOpen.collectAsState()
+    val sent by Conferbot.liveChat.csatSent.collectAsState()
+    val c = config ?: return
+    if (!open) return
+    val theme = ConferbotThemeAmbient.current
+    var value by remember { mutableStateOf<Any?>(null) }
+    var feedback by remember { mutableStateOf("") }
+    LiveCard {
+        if (sent) {
+            CardTitle(c.thankYouText)
+            return@LiveCard
+        }
+        CardTitle(c.titleText)
+        CardSub(c.subtitleText)
+        val options: List<Any> = when (c.ratingType) {
+            "thumbs" -> listOf(true, false)
+            "nps" -> (0..10).toList()
+            else -> (1..5).toList()
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 10.dp)) {
+            options.forEach { o ->
+                val chosen = value != null && if (c.ratingType == "stars") (o as Int) <= (value as Int) else o == value
+                if (c.ratingType == "stars") {
+                    Text(
+                        "★",
+                        color = if (chosen) Color(0xFFF5A623) else theme.colors.divider,
+                        style = TextStyle(fontSize = 30.sp),
+                        modifier = Modifier.clickable { value = o }.semantics { contentDescription = "$o out of 5" }
+                    )
+                } else {
+                    val label = when (c.ratingType) {
+                        "thumbs" -> if (o == true) "Yes" else "No"
+                        "emoji" -> FACES[(o as Int) - 1]
+                        else -> o.toString()
+                    }
+                    Text(
+                        label,
+                        color = if (chosen) theme.colors.onPrimary else theme.colors.onSurface,
+                        textAlign = TextAlign.Center,
+                        style = TextStyle(fontSize = 14.sp),
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .border(1.dp, if (chosen) theme.colors.primary else theme.colors.divider, CircleShape)
+                            .background(if (chosen) theme.colors.primary else Color.Transparent)
+                            .clickable { value = o }
+                            .widthIn(min = 36.dp)
+                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                    )
+                }
+            }
+        }
+        if (value != null && c.showFeedbackInput) {
+            Spacer(Modifier.height(10.dp))
+            Field(feedback, { feedback = it }, c.feedbackPlaceholder, minLines = 2, modifier = Modifier.fillMaxWidth())
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
+            PrimaryButton("Send", enabled = value != null, modifier = Modifier.weight(1f)) {
+                value?.let { Conferbot.liveChat.submitRating(it, feedback) }
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, theme.colors.divider, RoundedCornerShape(12.dp))
+                    .clickable { Conferbot.liveChat.dismissCsat() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) { Text("Not now", color = theme.colors.onSurface, style = TextStyle(fontSize = 14.sp)) }
+        }
+    }
+}
+
+/** A centred system line (locked, connection dropped). */
+@Composable
+fun SystemLine(text: String) {
+    val colors = ConferbotThemeAmbient.current.colors
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text,
+            color = colors.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            style = TextStyle(fontSize = 12.sp),
+            modifier = Modifier.clip(CircleShape).background(colors.surfaceVariant).padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+}
+
+/** The cards below the messages, in the web widget's order. */
+@Composable
+fun LiveChatFooterCards(onUpload: (() -> Unit)?) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HandoverWaitingCard()
+        LeaveMessageCard()
+        FileRequestCard(onUpload)
+        LeadCard()
+        CsatCard()
+    }
+}
