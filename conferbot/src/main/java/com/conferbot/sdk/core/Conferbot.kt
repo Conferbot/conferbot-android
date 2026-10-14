@@ -249,6 +249,13 @@ object Conferbot {
     private val _serverCustomizationMap = MutableStateFlow<Map<String, Any?>>(emptyMap())
     val serverCustomizationMap: StateFlow<Map<String, Any?>> = _serverCustomizationMap.asStateFlow()
 
+    /** The bot's settings as the web widget applies them (core/customization); defaults until it loads. */
+    private val _customizations = MutableStateFlow(com.conferbot.sdk.core.customization.ResolvedCustomizations())
+    val customizations: StateFlow<com.conferbot.sdk.core.customization.ResolvedCustomizations> = _customizations.asStateFlow()
+
+    /** True once the bot's own settings arrived (the screens keep their host-app look until then). */
+    val hasServerCustomizations: Boolean get() = _serverCustomizationMap.value.isNotEmpty()
+
     // The silent handover waits for the visitor to engage (every record sent
     // becomes a Response - a chat on the customer's plan); live sends wait
     // for its acceptance.
@@ -1267,7 +1274,10 @@ object Conferbot {
             val chatbotMap = jsonObjectToMap(chatbotData)
             _agentBot.value = AgentBotParser.parseAgentBot(chatbotMap)
             @Suppress("UNCHECKED_CAST")
-            (chatbotMap["customizations"] as? Map<String, Any?>)?.let { _serverCustomizationMap.value = it }
+            (chatbotMap["customizations"] as? Map<String, Any?>)?.let {
+                _serverCustomizationMap.value = it
+                _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(it)
+            }
             liveChat.setChatbotData(chatbotMap)
 
             // Extract nodes array
@@ -1436,20 +1446,16 @@ object Conferbot {
             // An agent - person or AI - speaks in the bot's colours, as on the web.
             builder.agentBubbleColors(background = botBubble, text = botText)
 
-            // User message bubble
+            // The visitor's bubble, option buttons: the web's defaults and
+            // fallbacks (light grey visitor bubble; choices in the bot's colours).
+            val resolved = com.conferbot.sdk.core.customization.Customizations.resolve(jsonObjectToMap(customizations))
             builder.userBubbleColors(
-                background = parseHexColor(customizations.optStringOrNull("userMsgColor"))
-                    ?: webBubbleDefault,
-                text = parseHexColor(customizations.optStringOrNull("userTextColor"))
-                    ?: webTextDefault
+                background = parseHexColor(resolved.userBubbleColor) ?: androidx.compose.ui.graphics.Color(0xFFF0F0F0),
+                text = parseHexColor(resolved.userTextColor) ?: androidx.compose.ui.graphics.Color.Black
             )
-
-            // Option bubble colors - web widget default is light gray with dark text
             builder.optionBubbleColors(
-                background = parseHexColor(customizations.optStringOrNull("optionBubbleMsgColor"))
-                    ?: androidx.compose.ui.graphics.Color(0xFFF5F5F5),
-                text = parseHexColor(customizations.optStringOrNull("optionBubbleTextColor"))
-                    ?: androidx.compose.ui.graphics.Color(0xFF1C1B1F)
+                background = parseHexColor(resolved.optionBubbleColor) ?: androidx.compose.ui.graphics.Color(0xFFE7E4E4),
+                text = parseHexColor(resolved.optionTextColor) ?: androidx.compose.ui.graphics.Color.Black
             )
 
             // Chat background
@@ -1484,16 +1490,12 @@ object Conferbot {
                 }
             }
 
-            // Bubble border radius
-            if (serverCustom.bubbleBorderRadius != null && serverCustom.bubbleBorderRadius > 0) {
-                builder.bubbleRadius(serverCustom.bubbleBorderRadius.dp)
-            }
+            // Bubble corners come from the resolved settings (MessageBubble):
+            // 10 is the web's unset value, drawn as 18/18/18/6.
 
-            // Font size -> message size
-            if (serverCustom.fontSize != null && serverCustom.fontSize > 0) {
-                builder.messageSize(serverCustom.fontSize.sp)
-                builder.bodySize(serverCustom.fontSize.sp)
-            }
+            // Font size -> message size (14 counts as unset: 14.5 on the web)
+            builder.messageSize(resolved.fontSize.sp)
+            builder.bodySize(resolved.fontSize.sp)
 
             val theme = builder.build()
             _serverTheme.value = theme
