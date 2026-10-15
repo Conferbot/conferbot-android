@@ -88,6 +88,43 @@ object NodeTypes {
     const val DELAY = "delay-node"
     const val HUMAN_HANDOVER = "human-handover-node"
 
+    // ==================== RESULT INTEGRATIONS (success / failure paths) ====================
+
+    const val MAILCHIMP = "mailchimp-node"
+    const val SEGMENT = "segment-node"
+    const val SALESFORCE = "salesforce-node"
+
+    // ==================== RICH STEPS (web richNodes.ts) ====================
+
+    const val CAROUSEL = "carousel-node"
+    const val DYNAMIC_CHOICES = "dynamic-choices-node"
+    const val HIDDEN_FIELDS = "hidden-fields-node"
+    const val CONSENT = "consent-node"
+    const val PRODUCT_CARD = "product-card-node"
+    const val SLIDER = "slider-node"
+    const val DATETIME = "datetime-node"
+    const val RANKING = "ranking-node"
+    const val OTP = "otp-node"
+    const val ADDRESS = "address-node"
+    const val MATRIX = "matrix-node"
+    const val AI_EXTRACT = "ai-extract-node"
+    const val AI_ROUTE = "ai-route-node"
+    const val KB_ANSWER = "kb-answer-node"
+    const val SIGNATURE = "signature-node"
+    const val PAYMENT = "payment-node"
+
+    // ==================== LOOPS AND SUB-FLOWS (web flowControl.ts, run by the engine) ====================
+
+    const val LOOP = "loop-node"
+    const val SUBFLOW = "subflow-node"
+    const val RUN_SUBFLOW = "run-subflow-node"
+    const val SUBFLOW_RETURN = "subflow-return-node"
+
+    val RICH_NODES = listOf(
+        CAROUSEL, DYNAMIC_CHOICES, HIDDEN_FIELDS, CONSENT, PRODUCT_CARD, SLIDER, DATETIME, RANKING, OTP, ADDRESS,
+        MATRIX, AI_EXTRACT, AI_ROUTE, KB_ANSWER, SIGNATURE, PAYMENT
+    )
+
     // ==================== CATEGORY LISTS ====================
 
     val DISPLAY_NODES = listOf(
@@ -136,8 +173,13 @@ object NodeTypes {
             USER_RATING, QUIZ, USER_INPUT, USER_RANGE -> true
             // Calendar
             CALENDAR -> true
-            // Human handover pre-chat questions
+            // Waits on the team: agent-accepted / no-agents-available move it on
             HUMAN_HANDOVER -> true
+            // Cards and links
+            CAROUSEL, NAVIGATE -> true
+            // Rich steps (web richNodes.ts)
+            DYNAMIC_CHOICES, CONSENT, PRODUCT_CARD, SLIDER, DATETIME, RANKING, OTP, ADDRESS, MATRIX,
+            AI_EXTRACT, AI_ROUTE, KB_ANSWER, SIGNATURE, PAYMENT -> true
             // Everything else auto-proceeds
             else -> false
         }
