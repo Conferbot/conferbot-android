@@ -204,7 +204,10 @@ sealed class RecordItem {
         override val time: Date,
 
         @SerializedName("agentDetails")
-        val agentDetails: AgentDetails
+        val agentDetails: AgentDetails,
+
+        /** A person joining after an AI handed the visitor on: "They can see your conversation so far". */
+        val afterAI: Boolean = false
     ) : RecordItem() {
         override val type: MessageType = MessageType.AGENT_JOINED_MESSAGE
     }
@@ -223,7 +226,16 @@ sealed class RecordItem {
         val text: String,
 
         @SerializedName("agentDetails")
-        val agentDetails: AgentDetails? = null
+        val agentDetails: AgentDetails? = null,
+
+        /**
+         * An AI handing the visitor to the team: the "Connecting you with the
+         * team…" line (core/livechat/HandoverState.kt), not a leave.
+         */
+        val handover: Boolean = false,
+
+        /** How that wait ended (joined, unavailable, cancelled, ended); null while pending. */
+        val settled: String? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.AGENT_LEFT_CHAT
     }
@@ -272,7 +284,10 @@ sealed class RecordItem {
         override val time: Date,
 
         @SerializedName("text")
-        val text: String
+        val text: String,
+
+        /** The record type it stands for (agent-chat-ended, queue-self-resolved), when it is one. */
+        val kind: String? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.SYSTEM_MESSAGE
     }
