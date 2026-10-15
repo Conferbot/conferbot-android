@@ -54,7 +54,13 @@ data class RecordEntry(
     val time: String = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
         .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
         .format(java.util.Date()),
-    val data: MutableMap<String, Any?> = mutableMapOf()
+    val data: MutableMap<String, Any?> = mutableMapOf(),
+    /**
+     * Fields the web widget records at the top of the entry: an answer's
+     * values (selectedChoice, value, url...), a step's renderedText, an
+     * edge's source / target. Sent as they are with the record.
+     */
+    val fields: Map<String, Any?> = emptyMap()
 )
 
 /**
@@ -708,6 +714,81 @@ object ChatState {
         return _answerVariables.value.map { mapOf("key" to it.key, "value" to it.value) }
     }
 
+    // ========== The web's answer-variable rules (flow-node spec) ==========
+
+    /**
+     * Card numbers, ids and passwords are masked in the answers and the
+     * visitor's record entries unless the owner set
+     * customizations.redactSensitive to false (web privacy/redact.ts). The
+     * transcript keeps what was typed.
+     */
+    @Volatile
+    var redactSensitive: Boolean = true
+
+    private fun masked(value: Any?): Any? = if (redactSensitive) com.conferbot.sdk.core.privacy.Redact.maskValue(value) else value
+
+    /**
+     * A question step with data.answerVariable registers {nodeId, key, null}
+     * when it is shown; its answer then fills it by nodeId (web index.ts
+     * _nodeCategorizeHelper / _setAnswerVariable). Every visit registers again.
+     */
+    fun registerAnswerVariable(nodeId: String, key: String) {
+        if (key.isEmpty()) return
+        _answerVariables.value = (_answerVariables.value + AnswerVariable(nodeId, key, null)).toMutableList()
+    }
+
+    /**
+     * Fills the entry a step registered (the first with that nodeId). Nothing
+     * happens when the step registered none. Returns whether one was filled.
+     */
+    fun fillAnswerVariable(nodeId: String, value: Any?): Boolean {
+        val list = _answerVariables.value.toMutableList()
+        val entry = list.find { it.nodeId == nodeId } ?: return false
+        entry.value = masked(value)
+        _answerVariables.value = list
+        return true
+    }
+
+    /**
+     * Saves a value under a variable's name: every entry with that name gets
+     * it; with none, one entry is added (nodeId "column_mapped_<key>" unless
+     * one is given) - web index.ts _setAnswerVariableByKey.
+     */
+    fun saveVariableByName(key: String, value: Any?, nodeId: String? = null) {
+        if (key.isEmpty()) return
+        val v = masked(value)
+        val list = _answerVariables.value.toMutableList()
+        val matches = list.filter { it.key == key }
+        if (matches.isNotEmpty()) matches.forEach { it.value = v }
+        else list.add(AnswerVariable(if (nodeId.isNullOrEmpty()) "column_mapped_$key" else nodeId, key, v))
+        _answerVariables.value = list
+    }
+
+    /** Whether an entry with this key exists (answered or not). */
+    fun hasAnswerVariable(key: String): Boolean = _answerVariables.value.any { it.key == key }
+
+    /** An answer by name: the FIRST entry with that key (web _getValueFromAnswerVariableKey). */
+    fun getAnswer(key: String): Any? = _answerVariables.value.firstOrNull { it.key == key }?.value
+
+    /**
+     * A placeholder's value: the answers first (the first entry with that
+     * key), then the flow variables, then the visitor's details. Internal "_"
+     * variables never fill text.
+     */
+    fun lookupVariable(key: String): Any? {
+        val name = key.trim()
+        if (name.isEmpty()) return null
+        if (hasAnswerVariable(name)) return getAnswer(name)
+        if (!name.startsWith("_")) getVariable(name)?.let { return it }
+        val meta = _userMetadata.value
+        return when (name) {
+            "name" -> meta.name
+            "email" -> meta.email
+            "phone" -> meta.phone
+            else -> meta.metadata[name]
+        }
+    }
+
     // ========== Variables (Temporary Calculations) ==========
 
     /**
@@ -760,30 +841,13 @@ object ChatState {
     }
 
     /**
-     * Resolve all variable placeholders within a text string (inline replacement).
-     * Supports: {{variable}}, ${variable}, {variable}
-     * Matches the web widget regex: /\$?\{(\w+)\}/g
+     * Fill the placeholders in a text from the answers (web nodeLogic
+     * fillVariables): {x}, ${x}, {{x}}, ${ANSWERS.x}, $${x}. An unknown, null
+     * or "" value shows nothing and the gap it leaves is tidied. [html]
+     * escapes the values (owner HTML around them).
      */
-    fun resolveVariables(text: String): String {
-        // Pattern matches {{var}}, ${var}, or {var}
-        val pattern = Regex("\\{\\{(\\w+)\\}\\}|\\$\\{(\\w+)\\}|\\{(\\w+)\\}")
-        return pattern.replace(text) { matchResult ->
-            val varName = matchResult.groupValues[1].ifEmpty {
-                matchResult.groupValues[2].ifEmpty { matchResult.groupValues[3] }
-            }
-            // Check answer variables first
-            val answerValue = getAnswerVariableValue(varName)
-            if (answerValue != null) return@replace answerValue.toString()
-            // Then check temp variables
-            val tempVar = getVariable(varName)
-            if (tempVar != null) return@replace tempVar.toString()
-            // Then check user metadata
-            val metaValue = getUserMetadata(varName)
-            if (metaValue != null) return@replace metaValue
-            // If no match, keep original text
-            matchResult.value
-        }
-    }
+    fun resolveVariables(text: String, html: Boolean = false): String =
+        com.conferbot.sdk.core.flow.FlowText.fillVariables(text, { lookupVariable(it) }, raw = !html)
 
     // ========== User Metadata ==========
 
@@ -883,6 +947,53 @@ object ChatState {
         persistRecordEntry(entry)
     }
 
+    private fun isVisitorEntry(e: RecordEntry) = e.shape.startsWith("user-") || (e.shape.isEmpty() && (e.type ?: "").startsWith("user-"))
+
+    /** The visitor's own entry with card numbers, ids and passwords masked (web privacy maskRecordEntry). */
+    private fun maskEntry(e: RecordEntry): RecordEntry {
+        if (!redactSensitive || !isVisitorEntry(e)) return e
+        val found = mutableListOf<String>()
+        fun mask(v: Any?): Any? {
+            if (v !is String) return v
+            val r = com.conferbot.sdk.core.privacy.Redact.redactText(v)
+            found += r.found
+            return if (r.found.isNotEmpty()) r.text else v
+        }
+        val text = mask(e.text) as String?
+        val fields = e.fields.mapValues { (k, v) -> if (k in com.conferbot.sdk.core.privacy.Redact.TEXT_FIELDS) mask(v) else v }
+        if (found.isEmpty()) return e
+        val redacted = ((e.fields["redacted"] as? List<*>)?.map { it.toString() } ?: emptyList()) + found
+        return e.copy(text = text, fields = fields + ("redacted" to redacted.distinct()))
+    }
+
+    /**
+     * A flow entry in the record: the same step AND kind (type and shape)
+     * merges into its entry, as the web's _pushDataToRecord; the visitor's
+     * entries are masked first.
+     */
+    fun addRecord(entry: RecordEntry) {
+        val e = maskEntry(entry)
+        val list = _record.value.toMutableList()
+        val i = list.indexOfFirst { it.id == e.id && it.type == e.type && it.shape == e.shape }
+        if (i >= 0) {
+            val old = list[i]
+            list[i] = old.copy(
+                text = e.text ?: old.text,
+                time = e.time,
+                data = (old.data + e.data).toMutableMap(),
+                fields = old.fields + e.fields
+            )
+        } else list.add(e)
+        _record.value = list
+        persistRecordEntry(e)
+    }
+
+    /** Appends an entry as it is: every visit of a step and every edge taken (web S.record.push). */
+    fun appendRecord(entry: RecordEntry) {
+        _record.value = (_record.value + entry).toMutableList()
+        persistRecordEntry(entry)
+    }
+
     /**
      * Get record as JSON-serializable list
      */
@@ -908,8 +1019,11 @@ object ChatState {
                     // For bot messages, nest data as sub-object (web widget format)
                     val dataMap = entry.data.toMutableMap()
                     if (entry.text != null) dataMap["text"] = entry.text
+                    if (entry.shape.isNotEmpty() && entry.fields.isNotEmpty()) put("shape", entry.shape)
                     put("data", dataMap)
                 }
+                // The values the web records at the top of the entry
+                entry.fields.forEach { (k, v) -> if (!containsKey(k)) put(k, v) }
             }
         }
     }
