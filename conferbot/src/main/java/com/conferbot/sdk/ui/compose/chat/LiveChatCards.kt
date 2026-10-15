@@ -149,20 +149,32 @@ private fun EmailForm(
     }
 }
 
-/** The owner's quick actions (and "Talk to a person") above the composer, from the first AI answer on. */
+/**
+ * The owner's quick actions (and "Talk to a person") above the composer, as
+ * on the web (quickActions.ts): from the first AI answer on. "Talk to a
+ * person" only for an AI agent bot, and only while no handover is under way
+ * and nobody is here (core/livechat/HandoverState.kt talkToPersonAllowed); it
+ * goes on tap and never comes back on the strip. The owner's links stay.
+ */
 @Composable
 fun QuickActionsStrip(modifier: Modifier = Modifier) {
-    val theme = ConferbotThemeAmbient.current
     val context = LocalContext.current
     val customizations by Conferbot.serverCustomizationMap.collectAsState()
     val record by Conferbot.record.collectAsState()
     val agent by Conferbot.currentAgent.collectAsState()
     val agentBot by Conferbot.agentBot.collectAsState()
+    val retired by Conferbot.talkToPersonRetired.collectAsState()
     val aiAnswered = record.any { it is com.conferbot.sdk.models.RecordItem.AgentMessage && it.agentDetails.isAIAgent }
     val personHere = agent != null && agent?.id?.startsWith("ai-agent-") != true
-    if (!aiAnswered || personHere) return
+    val allowed = remember(record) {
+        com.conferbot.sdk.core.livechat.HandoverState.talkToPersonAllowed(com.conferbot.sdk.core.livechat.HandoverState.entriesOfItems(record))
+    }
+    val offerHuman = agentBot != null && allowed && !personHere
+    // Taken off by a handover: an AI reply arriving mid-handover cannot bring it back.
+    LaunchedEffect(aiAnswered, offerHuman) { if (aiAnswered && !offerHuman) Conferbot.retireTalkToPerson() }
+    if (!aiAnswered) return
     val actions = AgentBotParser.quickActionsOf(customizations)
-    val human = agentBot != null && customizations["chatTalkToHuman"] == true
+    val human = offerHuman && !retired && customizations["chatTalkToHuman"] == true
     if (actions.isEmpty() && !human) return
     FlowRow(
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -175,7 +187,10 @@ fun QuickActionsStrip(modifier: Modifier = Modifier) {
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
-        if (human) Pill("Talk to a person") { Conferbot.sendMessage(LiveChat.TALK_TO_PERSON_ASK) }
+        if (human) Pill("Talk to a person") {
+            Conferbot.retireTalkToPerson()
+            Conferbot.sendMessage(LiveChat.TALK_TO_PERSON_ASK)
+        }
     }
 }
 
@@ -194,9 +209,13 @@ private fun Pill(label: String, onClick: () -> Unit) {
     )
 }
 
-/** The handover step while it waits for a person: where they stand, about how long. */
+/**
+ * The handover step while it waits for a person: where they stand, about how
+ * long. Cancel leaves the queue on the server (Conferbot.leaveQueue), then the
+ * flow carries on.
+ */
 @Composable
-fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = null) {
+fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = { Conferbot.leaveQueue() }) {
     val theme = ConferbotThemeAmbient.current
     val queue by Conferbot.liveChat.queue.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
