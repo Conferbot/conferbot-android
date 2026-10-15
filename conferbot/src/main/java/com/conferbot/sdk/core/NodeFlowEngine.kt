@@ -2,26 +2,111 @@ package com.conferbot.sdk.core
 
 import android.os.Build
 import com.conferbot.sdk.core.analytics.ChatAnalytics
+import com.conferbot.sdk.core.flow.ApiReply
+import com.conferbot.sdk.core.flow.CoroutineFlowClock
+import com.conferbot.sdk.core.flow.FlowApi
+import com.conferbot.sdk.core.flow.FlowCalendar
+import com.conferbot.sdk.core.flow.FlowClock
+import com.conferbot.sdk.core.flow.FlowContext
+import com.conferbot.sdk.core.flow.FlowContextElement
+import com.conferbot.sdk.core.flow.FlowControl
+import com.conferbot.sdk.core.flow.FlowEdge
+import com.conferbot.sdk.core.flow.FlowNode
+import com.conferbot.sdk.core.flow.FlowSocket
+import com.conferbot.sdk.core.flow.FlowText
+import com.conferbot.sdk.core.flow.HttpFlowApi
+import com.conferbot.sdk.core.flow.Js
+import com.conferbot.sdk.core.flow.UploadFile
+import com.conferbot.sdk.core.flow.UploadResult
 import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.services.SocketClient
+import io.socket.emitter.Emitter
 import kotlinx.coroutines.*
-import org.json.JSONArray
-import org.json.JSONObject
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
+
+/** What the engine did, step by step (the flow-node spec's `expect`). */
+sealed class FlowTrace {
+    data class Enter(val node: String, val type: String, val via: String) : FlowTrace()
+    data class Shown(val node: String) : FlowTrace()
+    data class Port(val node: String, val handle: String, val wired: Boolean) : FlowTrace()
+    data class Unsupported(val node: String, val type: String) : FlowTrace()
+    data class Error(val node: String, val message: String) : FlowTrace()
+    object End : FlowTrace()
+    data class Crash(val node: String, val reason: String) : FlowTrace()
+}
 
 /**
- * Core engine that processes the chatbot flow
- * Orchestrates node handlers, manages state, and coordinates with socket
+ * Runs a bot flow the way the web widget does. The reference is the shared
+ * flow-node spec (conferbot-react-native scripts/parity/flows,
+ * nodes.spec.json "engine"), made by running conferbot-widget's own code;
+ * FlowFixturesTest runs every fixture through this engine. Ported from the
+ * React Native SDK's src/core/NodeFlowEngine.ts.
+ *
+ * - start: the FIRST welcome-node in nodes[].
+ * - next: a step that does not branch leaves by the FIRST edge from it,
+ *   whatever its handle. No edge, or a target that does not exist: the chat ends.
+ * - port: a branching step leaves by an exact handle. No such edge: the chat
+ *   ends - never another edge. A wired edge to a missing node stops the chat
+ *   where it is (the web throws). Rich steps may name a fallback handle,
+ *   taken when only it is wired (web goPort).
+ * - unknown step types (and a welcome-node reached mid-flow) show nothing and
+ *   continue along their first edge on the next tick.
+ * - jump: to the target node; a missing target ends the chat.
+ * - end: a sub-flow call returns to its caller; otherwise the chat is over
+ *   ("chat-flow-completed").
+ * - pacing: typing dots before each displayed step for paceFor().
  */
-class NodeFlowEngine(
-    private val socketClient: SocketClient
+class NodeFlowEngine internal constructor(
+    private val socket: FlowSocket?,
+    private val config: Config
 ) : com.conferbot.sdk.core.livechat.HandoverFlow {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    /** How the engine runs: the SDK's defaults, or a test's clock, API and socket. */
+    class Config(
+        val dispatcher: CoroutineDispatcher = Dispatchers.Main,
+        val clock: ((CoroutineScope) -> FlowClock)? = null,
+        val api: FlowApi? = null,
+        /** The bot's customizations (redactSensitive, chatLeaveMessage...). */
+        val customizations: () -> Map<String, Any?> = { emptyMap() },
+        /** The page the chat runs on, when the host app has one (hidden-fields). */
+        val pageUrl: String? = null,
+        val pageReferrer: String? = null,
+        /** The visitor's IANA time zone (default: the device's). */
+        val visitorTimeZone: String? = null,
+        val random: (() -> Double)? = null,
+        /** A fixed typing delay (ms) before each displayed step; null is the web's pacing. */
+        val typingDelay: Long? = null,
+        /** How long an image or video step waits for its media at most (web: 4000). */
+        val mediaAdvanceMs: Long = 4000,
+        /** Steps run without the visitor before the engine stops (a runaway loop guard). */
+        val maxNodesPerCycle: Int = 500,
+        val nodeProcessingTimeoutMs: Long = 90_000,
+        /** Every step entered, port taken, step passed and the end. */
+        val onTrace: ((FlowTrace) -> Unit)? = null
+    )
+
+    /**
+     * The SDK's engine on [socketClient]; [apiOrigin] is the server the bot
+     * API calls go to (the socket server), [customizations] the bot's.
+     */
+    constructor(
+        socketClient: SocketClient,
+        apiOrigin: () -> String = { com.conferbot.sdk.utils.ConferBotEndpoints.socketUrl },
+        customizations: () -> Map<String, Any?> = { emptyMap() },
+        readFile: (String) -> ByteArray? = { null }
+    ) : this(SocketClientFlowSocket(socketClient), Config(api = HttpFlowApi(apiOrigin, readFile), customizations = customizations))
+
+    private val scope = CoroutineScope(config.dispatcher + SupervisorJob())
+    private val clock: FlowClock = config.clock?.invoke(scope) ?: CoroutineFlowClock(scope)
+    private val api: FlowApi = config.api ?: HttpFlowApi({ com.conferbot.sdk.utils.ConferBotEndpoints.socketUrl })
 
     // Current UI state to render
     private val _currentUIState = MutableStateFlow<NodeUIState?>(null)
@@ -39,22 +124,95 @@ class NodeFlowEngine(
     private val _isFlowComplete = MutableStateFlow(false)
     val isFlowComplete: StateFlow<Boolean> = _isFlowComplete.asStateFlow()
 
-    // Current node being processed
+    /**
+     * Bot lines besides a step's own card (a greeting, an answer, a refused
+     * answer's reason, the team's fallback): the chat draws each as a bubble.
+     */
+    private val _botMessages = MutableSharedFlow<NodeUIState>(extraBufferCapacity = 64)
+    val botMessages: SharedFlow<NodeUIState> = _botMessages.asSharedFlow()
+
+    // Flow definition
+    private val nodes = LinkedHashMap<String, FlowNode>()
+    private var nodeList: List<FlowNode> = emptyList()
+    private var edges: List<FlowEdge> = emptyList()
+    private var startNodeId: String? = null
+
+    // Engine state
     private var currentNodeId: String? = null
+    private var waiting = false
+    private var ended = false
+    private val steps = mutableListOf<FlowNode>()
+    /** Bumped whenever the flow moves: a stale timer or reply does nothing. */
+    private var moveToken = 0
+    /** The step whose "shown" was already reported. */
+    private var shownToken = -1
+    private val mediaWaiters = mutableMapOf<String, () -> Unit>()
+    private var flowControl = FlowControl.State()
+    private var nodesProcessedInCycle = 0
 
-    /** True while an interactive node is awaiting a visitor response. */
+    /** True while an interactive node is awaiting typed text. */
     val isAwaitingInput: Boolean
-        get() = currentNodeId != null && _currentUIState.value.let {
-            it is NodeUIState.TextInput
+        get() = currentNodeId != null && waiting && _currentUIState.value is NodeUIState.TextInput
+
+    /** Waiting for the visitor on the current step. */
+    val isWaitingForInput: Boolean get() = waiting
+
+    /** The step the flow is on. */
+    val currentNode: String? get() = currentNodeId
+
+    /** Whether the chat has ended (the flow reached its end). */
+    val isEnded: Boolean get() = ended
+
+    fun getNode(nodeId: String): FlowNode? = nodes[nodeId]
+
+    companion object {
+        private const val TAG = "NodeFlowEngine"
+
+        /** Steps that draw something, after the typing dots (web DISPLAY_NODE_TYPES). */
+        val DISPLAY_NODE_TYPES = setOf(
+            "two-choices-node", "three-choices-node", "select-option-node", "user-rating-node", "quiz-node", "user-input-node",
+            "user-range-node", "welcome-node", "message-node", "image-node", "video-node", "audio-node", "file-node",
+            "ask-name-node", "ask-email-node", "ask-phone-number-node", "ask-number-node", "ask-url-node", "ask-file-node",
+            "ask-location-node", "ask-custom-question-node", "ask-multiple-questions-node", "calendar-node",
+            "n-select-option-node", "n-check-options-node", "n-choices-node", "image-choice-node", "carousel-node",
+            "rating-choice-node", "yes-or-no-choice-node", "opinion-scale-choice-node", "user-redirect-node", "html-node",
+            "navigate-node", "dynamic-choices-node", "consent-node", "product-card-node", "slider-node", "datetime-node",
+            "ranking-node", "otp-node", "address-node", "matrix-node", "ai-extract-node", "ai-route-node", "kb-answer-node",
+            "signature-node", "payment-node"
+        )
+
+        /** Question steps that register data.answerVariable when shown (web _nodeCategorizeHelper). */
+        private val REGISTERS_ANSWER = setOf(
+            "ask-name-node", "ask-email-node", "ask-phone-number-node", "ask-number-node", "ask-url-node", "ask-location-node",
+            "ask-custom-question-node", "ask-file-node", "calendar-node", "n-select-option-node", "n-check-options-node",
+            "n-choices-node", "image-choice-node", "rating-choice-node", "yes-or-no-choice-node", "opinion-scale-choice-node",
+            "carousel-node", "dynamic-choices-node", "consent-node", "product-card-node", "slider-node", "datetime-node",
+            "ranking-node", "otp-node", "address-node", "matrix-node", "ai-extract-node", "ai-route-node", "kb-answer-node",
+            "signature-node", "payment-node"
+        )
+
+        /** Steps whose media decides when the flow moves on (load, or the cap). */
+        private val MEDIA_TYPES = setOf("image-node", "video-node")
+
+        /** A node as the builder saved it: its type from node.type first (data.type is a legacy input's kind). */
+        @Suppress("UNCHECKED_CAST")
+        fun nodeOf(raw: Map<String, Any?>): FlowNode? {
+            val id = raw["id"]?.let { Js.str(it) } ?: raw["_id"]?.let { Js.str(it) } ?: return null
+            val data = (raw["data"] as? Map<String, Any?>) ?: emptyMap()
+            val type = (raw["type"] as? String)?.takeIf { it.isNotEmpty() } ?: (data["type"] as? String) ?: ""
+            return FlowNode(id, type, data, raw)
         }
-    private var currentNodeData: Map<String, Any?>? = null
-    private var currentNodeType: String? = null
 
-    // Reference to steps from server
-    private var steps: List<Map<String, Any>> = emptyList()
+        fun edgeOf(raw: Map<String, Any?>, index: Int): FlowEdge? {
+            val source = raw["source"]?.let { Js.str(it) } ?: return null
+            val target = raw["target"]?.let { Js.str(it) } ?: ""
+            return FlowEdge(raw["id"]?.let { Js.str(it) } ?: "edge-$index", source, target, raw["sourceHandle"] as? String, raw)
+        }
+    }
 
-    // Edge mapping for port-based routing
-    private var edges: List<Map<String, Any>> = emptyList()
+    // ========================================
+    // FLOW SETUP
+    // ========================================
 
     /**
      * Initialize the flow engine with bot data from server
@@ -68,513 +226,537 @@ class NodeFlowEngine(
         edgesData: List<Map<String, Any>>
     ) {
         ChatState.initialize(chatSessionId, visitorId, botId, workspaceId)
-        steps = stepsData
-        edges = edgesData
         ChatState.setSteps(stepsData)
+        loadFlow(stepsData, edgesData)
+    }
+
+    /** Loads a flow (the saved nodes and edges). */
+    fun loadFlow(nodesData: List<Map<String, Any?>>, edgesData: List<Map<String, Any?>>) {
+        nodes.clear()
+        nodeList = nodesData.mapNotNull { nodeOf(it) }
+        nodeList.forEach { nodes[it.id] = it }
+        edges = edgesData.mapIndexedNotNull { i, e -> edgeOf(e, i) }
+        startNodeId = findStartNode()
     }
 
     /**
-     * Start processing from the first node
+     * The first welcome-node in nodes[] starts the chat (web index.ts
+     * _findAndDisplayNode). A flow without one starts at a node no edge leads
+     * to, else the first node.
+     */
+    private fun findStartNode(): String? {
+        nodeList.firstOrNull { it.type == "welcome-node" }?.let { return it.id }
+        val targets = edges.map { it.target }.toSet()
+        return nodeList.firstOrNull { it.id !in targets }?.id ?: nodeList.firstOrNull()?.id
+    }
+
+    // ========================================
+    // FLOW EXECUTION
+    // ========================================
+
+    /**
+     * Start processing from the start node
      */
     fun start() {
-        if (steps.isEmpty()) {
+        val start = startNodeId?.let { nodes[it] }
+        if (start == null) {
             _isFlowComplete.value = true
             return
         }
-
-        // Reset visited nodes tracking for new flow
-        visitedNodes.clear()
-
-        scope.launch {
-            processNodeAtIndex(0)
-        }
+        resetFlow()
+        scope.launch { enter(start, "start") }
     }
 
-    /**
-     * Process node at given index
-     */
-    private suspend fun processNodeAtIndex(index: Int) {
-        if (index < 0 || index >= steps.size) {
-            _isFlowComplete.value = true
+    private fun resetFlow() {
+        steps.clear()
+        ended = false
+        _isFlowComplete.value = false
+        nodesProcessedInCycle = 0
+        flowControl = FlowControl.State()
+        mediaWaiters.clear()
+    }
+
+    private fun applyCustomizations() {
+        ChatState.redactSensitive = config.customizations()["redactSensitive"] != false
+    }
+
+    private fun lookup(key: String) = ChatState.lookupVariable(key)
+
+    private fun now() = clock.now()
+
+    /** Enter a step: record it, pace it, run its handler. */
+    private suspend fun enter(node: FlowNode, via: String) {
+        if (ended) return
+        nodesProcessedInCycle++
+        if (nodesProcessedInCycle > config.maxNodesPerCycle) {
+            handleError("Max nodes per cycle exceeded (${config.maxNodesPerCycle})", node.id)
             return
         }
+        applyCustomizations()
 
-        ChatState.setCurrentIndex(index)
-        val node = steps[index]
-
-        @Suppress("UNCHECKED_CAST")
-        val nodeId = node["id"]?.toString() ?: return
-        val nodeType = (node["data"] as? Map<String, Any?>)?.get("type")?.toString()
-            ?: node["type"]?.toString()
-            ?: return
-
-        @Suppress("UNCHECKED_CAST")
-        val nodeData = node["data"] as? Map<String, Any?> ?: emptyMap()
-
-        currentNodeId = nodeId
-        currentNodeData = nodeData
-        currentNodeType = nodeType
-
-        android.util.Log.d(TAG, "processNode idx=$index id=$nodeId type=$nodeType")
-        processNode(nodeId, nodeType, nodeData)
-    }
-
-    companion object {
-        private const val TAG = "NodeFlowEngine"
-        private const val NODE_PROCESSING_TIMEOUT_MS = 30_000L
-        private const val MAX_NODE_VISITS = 100
-    }
-
-    // Visited nodes set for infinite loop protection (FIX 4)
-    private val visitedNodes = mutableSetOf<String>()
-
-    /**
-     * Process a specific node
-     */
-    private suspend fun processNode(
-        nodeId: String,
-        nodeType: String,
-        nodeData: Map<String, Any?>
-    ) {
-        // FIX 4: Infinite loop protection - detect cycles in jump-to nodes
-        if (nodeId in visitedNodes && visitedNodes.size > MAX_NODE_VISITS) {
-            android.util.Log.e(TAG, "Cycle detected: node $nodeId already visited, ${visitedNodes.size} total visits")
-            _errorMessage.value = "Flow cycle detected"
-            _isProcessing.value = false
-            return
-        }
-        visitedNodes.add(nodeId)
-
+        val token = ++moveToken
+        currentNodeId = node.id
+        waiting = false
         _isProcessing.value = true
         _errorMessage.value = null
+        val index = nodeList.indexOf(node)
+        if (index >= 0) ChatState.setCurrentIndex(index)
+        steps.add(node)
+        trace(FlowTrace.Enter(node.id, node.type, via))
+        ChatAnalytics.trackNodeEntry(node.id, node.type, node.data["label"]?.toString() ?: node.type)
 
-        // Track node entry for analytics
-        val nodeName = nodeData["label"]?.toString()
-            ?: nodeData["name"]?.toString()
-            ?: nodeType
-        ChatAnalytics.trackNodeEntry(nodeId, nodeType, nodeName)
+        // The step on the record, with its text as the visitor saw it (web _nodeRecord)
+        val rendered = FlowText.renderedTextFor(node.type, node.data, ::lookup)
+        val top = node.raw.filterKeys { it != "id" && it != "_id" && it != "type" && it != "data" } +
+            (if (rendered != null) mapOf("renderedText" to rendered) else emptyMap())
+        ChatState.appendRecord(RecordEntry(id = node.id, shape = "", type = node.type, time = FlowCalendar.iso(now()), data = node.data.toMutableMap(), fields = top))
 
-        val handler = NodeHandlerRegistry.getHandler(nodeType)
-
+        // A welcome reached again is not a display step there: passed.
+        if (node.type == "welcome-node" && via != "start") {
+            passUnknown(node, token)
+            return
+        }
+        if (node.type in FlowControl.FLOW_CONTROL_TYPES) {
+            runFlowControl(node, token)
+            return
+        }
+        val handler = NodeHandlerRegistry.getHandler(node.type)
         if (handler == null) {
-            // Unknown node type, skip to next
-            _isProcessing.value = false
-            ChatAnalytics.trackNodeExit(nodeId, "skipped")
-            proceedToNextNode(null)
+            passUnknown(node, token)
             return
         }
 
-        // FIX 3: Wrap node processing with a timeout to prevent hangs
-        val result = withTimeoutOrNull(NODE_PROCESSING_TIMEOUT_MS) {
-            try {
-                handler.process(nodeData, nodeId)
-            } catch (e: Exception) {
-                _errorMessage.value = "Error processing node: ${e.message}"
-                ChatAnalytics.trackNodeExit(nodeId, "error")
-                null
+        if (node.type in DISPLAY_NODE_TYPES) {
+            // A message with no text or an image with no picture: straight on.
+            if (FlowText.isEmptyContentStep(node.type, node.data)) {
+                next(node, token)
+                return
             }
+            registerAnswerVariables(node)
+            val previous = steps.getOrNull(steps.size - 2)
+            val pace = config.typingDelay ?: FlowText.paceFor(previous?.data, node.data, FlowText.followsAutoAdvanceStep(previous?.type))
+            if (pace > 0) {
+                _isProcessing.value = true
+                clock.delay(pace)
+                if (token != moveToken || ended) return
+            }
+            shownToken = token
+            trace(FlowTrace.Shown(node.id))
         }
 
-        if (result == null) {
-            android.util.Log.w(TAG, "Node processing timed out for node: $nodeId")
-            _errorMessage.value = "Node processing timed out"
-            _isProcessing.value = false
-            // Try to proceed anyway
-            proceedToNextNode(null)
+        val result = try {
+            runHandler(handler, node, via, token) { h -> h.process(node.data, node.id) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleError("Error processing node: ${e.message}", node.id)
             return
         }
-
-        handleNodeResult(result, nodeData)
+        if (token != moveToken || ended) return
+        handleNodeResult(result, node, token)
     }
 
-    /**
-     * Handle the result from a node handler
-     */
-    private suspend fun handleNodeResult(result: NodeResult, nodeData: Map<String, Any?>) {
+    /** A question step registers {nodeId, key, null} when shown. */
+    private fun registerAnswerVariables(node: FlowNode) {
+        val d = node.data
+        if (node.type == "ask-multiple-questions-node") {
+            Js.list(d["questions"]).forEachIndexed { i, q ->
+                val key = Js.map(q)?.get("answerVariable")?.let { Js.str(it) }
+                if (!key.isNullOrEmpty()) ChatState.registerAnswerVariable("${node.id}$i", key)
+            }
+            return
+        }
+        val key = d["answerVariable"]?.let { Js.str(it) }
+        if (node.type in REGISTERS_ANSWER && !key.isNullOrEmpty()) ChatState.registerAnswerVariable(node.id, key)
+    }
+
+    /** Runs a handler call with the step's context, under the step timeout. */
+    private suspend fun runHandler(handler: NodeHandler, node: FlowNode, via: String, token: Int, call: suspend (NodeHandler) -> NodeResult): NodeResult {
+        val ctx = StepContext(node, via, token)
+        val done = CompletableDeferred<NodeResult>()
+        val cancelTimer = clock.setTimeout(config.nodeProcessingTimeoutMs) {
+            done.complete(NodeResult.Error("Node processing timed out after ${config.nodeProcessingTimeoutMs}ms", shouldProceed = false))
+        }
+        val job = scope.launch(FlowContextElement(ctx)) {
+            try {
+                done.complete(call(handler))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                done.completeExceptionally(e)
+            }
+        }
+        try {
+            return done.await()
+        } finally {
+            cancelTimer()
+            if (!job.isCompleted && done.isCompleted && !done.isCancelled) job.cancel()
+        }
+    }
+
+    private suspend fun handleNodeResult(result: NodeResult, node: FlowNode, token: Int) {
         when (result) {
-            is NodeResult.DisplayUI -> {
-                _isProcessing.value = false
-                _currentUIState.value = result.uiState
-
-                // Push bot message to record (matching web widget format)
-                val nodeId = currentNodeId
-                val nodeType = nodeData["type"]?.toString()
-                if (nodeId != null && nodeType != null) {
-                    val uiText = when (val ui = result.uiState) {
-                        is NodeUIState.Message -> ui.text
-                        is NodeUIState.TextInput -> ui.questionText
-                        is NodeUIState.SingleChoice -> ui.questionText
-                        is NodeUIState.MultipleChoice -> ui.questionText
-                        else -> null
-                    }
-                    @Suppress("UNCHECKED_CAST")
-                    val nodeDataMap = (nodeData["data"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
-                    if (uiText != null) nodeDataMap["text"] = uiText
-                    ChatState.pushToRecord(RecordEntry(
-                        id = nodeId,
-                        shape = nodeType,
-                        type = nodeType,
-                        text = uiText,
-                        data = nodeDataMap
-                    ))
-                }
-
-                // For human handover waiting state, emit initiate-handover socket event
-                // matching the web widget's payload format
-                if (result.uiState is NodeUIState.HumanHandover &&
-                    (result.uiState as NodeUIState.HumanHandover).state == NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
-                ) {
-                    // Send response-record BEFORE initiate-handover so the server
-                    // has the Response document when creating the ticket/notification
-                    sendResponseToServer()
-                    // Re-join chat room to ensure socket is in the correct room
-                    val sessionId = ChatState.chatSessionId
-                    if (sessionId != null) {
-                        socketClient?.joinChatRoom(
-                            chatSessionId = sessionId,
-                            deviceInfo = mapOf(
-                                "os" to "Android",
-                                "osVersion" to (Build.VERSION.RELEASE ?: "unknown"),
-                                "sdkVersion" to Build.VERSION.SDK_INT.toString(),
-                                "deviceModel" to (Build.MODEL ?: "unknown")
-                            )
-                        )
-                    }
-                    emitInitiateHandover(nodeData)
-                }
-
-                // For message-only nodes, auto-proceed after delay
-                if (result.uiState is NodeUIState.Message ||
-                    result.uiState is NodeUIState.Image ||
-                    result.uiState is NodeUIState.Video ||
-                    result.uiState is NodeUIState.Audio ||
-                    result.uiState is NodeUIState.File ||
-                    result.uiState is NodeUIState.Html
-                ) {
-                    delay(1000)  // Show message for 1 second
-                    // Track node exit for auto-proceed nodes
-                    currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
-                    sendResponseToServer()
-                    proceedToNextNode(null)
-                }
-            }
-
-            is NodeResult.Proceed -> {
-                _isProcessing.value = false
-                // Track node exit
-                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
-                sendResponseToServer()
-                proceedToNextNode(result.targetPort)
-            }
-
+            is NodeResult.DisplayUI -> handleDisplayUI(result.uiState, node, token)
+            is NodeResult.Proceed -> handleProceed(result.targetPort, result.fallbackPort, node, token)
             is NodeResult.DelayedProceed -> {
-                _isProcessing.value = true
-                delay(result.delayMs)
-                _isProcessing.value = false
-                android.util.Log.d(TAG, "DelayedProceed: delay done, sending record")
-                // Track node exit after delay
-                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
-                sendResponseToServer()
-                proceedToNextNode(result.targetPort)
+                clock.delay(result.delayMs)
+                if (token != moveToken || ended) return
+                handleProceed(result.targetPort, result.fallbackPort, node, token)
             }
-
             is NodeResult.JumpTo -> {
                 _isProcessing.value = false
-                // Track node exit for jump
-                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "proceeded") }
+                ChatAnalytics.trackNodeExit(node.id, "proceeded")
                 sendResponseToServer()
-                jumpToNode(result.targetNodeId)
+                jump(result.targetNodeId, token)
             }
-
+            is NodeResult.Invalid -> handleInvalid(result.message, node, token, result.uiState, result.inCard)
+            is NodeResult.End -> end("completed")
             is NodeResult.Error -> {
                 _isProcessing.value = false
                 _errorMessage.value = result.message
-                // Track node exit with error
-                currentNodeId?.let { ChatAnalytics.trackNodeExit(it, "error") }
+                ChatAnalytics.trackNodeExit(node.id, "error")
                 if (result.shouldProceed) {
                     sendResponseToServer()
-                    proceedToNextNode(null)
+                    next(node, token)
                 }
-            }
-
-            is NodeResult.ExecuteIntegration -> {
-                // Execute integration via socket and wait for result
-                _isProcessing.value = true
-                executeIntegration(result, nodeData)
             }
         }
     }
 
-    /**
-     * Execute a native integration via socket
-     */
-    private fun executeIntegration(result: NodeResult.ExecuteIntegration, nodeData: Map<String, Any?>) {
-        val chatSessionId = ChatState.chatSessionId ?: return
-        val botId = ChatState.botId ?: return
-        val workspaceId = ChatState.workspaceId
-        val answerVariables = ChatState.getAnswerVariablesMap()
+    /** Whether the step waits for the visitor once drawn. */
+    private fun awaitsInput(node: FlowNode): Boolean = NodeTypes.requiresUserInteraction(node.type)
 
-        // email-node and zapier-node are NOT handled by the server's execute-integration
-        // dispatcher - they have dedicated socket events (web widget parity)
-        if (result.nodeType == "email-node" || result.nodeType == "zapier-node") {
-            executeTriggerIntegration(result, nodeData, chatSessionId, botId, workspaceId)
+    private suspend fun handleDisplayUI(ui: NodeUIState, node: FlowNode, token: Int) {
+        _currentUIState.value = ui
+        _isProcessing.value = false
+        if (shownToken != token && node.type in DISPLAY_NODE_TYPES) {
+            shownToken = token
+            trace(FlowTrace.Shown(node.id))
+        }
+        if (awaitsInput(node)) {
+            waiting = true
             return
         }
+        // Shown and moving on by itself
+        ChatAnalytics.trackNodeExit(node.id, "proceeded")
+        sendResponseToServer()
+        if (node.type in MEDIA_TYPES) {
+            waitForMedia(node.id, config.mediaAdvanceMs)
+            if (token != moveToken || ended) return
+        }
+        next(node, token)
+    }
 
-        socketClient.executeIntegration(
-            nodeType = result.nodeType,
-            nodeId = result.nodeId,
-            nodeData = result.nodeData,
-            chatSessionId = chatSessionId,
-            chatbotId = botId,
-            workspaceId = workspaceId,
-            answerVariables = answerVariables,
-            visitorData = buildVisitorData(),
-            callback = { integrationResult ->
-                // Convert to IntegrationResultData and call the handler's callback
-                val resultData = IntegrationResultData(
-                    success = integrationResult.success,
-                    error = integrationResult.error,
-                    data = integrationResult.data,
-                    message = integrationResult.message,
-                    answerVariable = integrationResult.answerVariable,
-                    answerValue = integrationResult.answerValue
-                )
+    /** Resolves when the media loads ([mediaSettled]) or after [capMs]. */
+    private suspend fun waitForMedia(nodeId: String, capMs: Long) {
+        val done = CompletableDeferred<Unit>()
+        var cancel: () -> Unit = {}
+        val finish = {
+            cancel()
+            mediaWaiters.remove(nodeId)
+            done.complete(Unit)
+            Unit
+        }
+        mediaWaiters[nodeId] = finish
+        cancel = clock.setTimeout(Math.max(0, capMs)) { finish() }
+        done.await()
+    }
 
-                // Store answer variable if provided
-                if (integrationResult.answerVariable != null && integrationResult.answerValue != null) {
-                    ChatState.setAnswerVariableByKey(
-                        integrationResult.answerVariable,
-                        integrationResult.answerValue
-                    )
-                }
+    /**
+     * An image or video step's media loaded (or failed): the flow moves on
+     * now instead of at the cap (web: load / loadedmetadata / error).
+     */
+    fun mediaSettled(nodeId: String) {
+        mediaWaiters[nodeId]?.invoke()
+    }
 
-                // Google Sheets reads map spreadsheet columns to variables (web parity)
-                integrationResult.columnMappedValues?.forEach { (key, value) ->
-                    if (value != null) ChatState.setAnswerVariableByKey(key, value)
-                }
+    private suspend fun handleProceed(port: String?, fallback: String?, node: FlowNode, token: Int) {
+        _isProcessing.value = false
+        ChatAnalytics.trackNodeExit(node.id, "proceeded")
+        sendResponseToServer()
+        if (port == null) next(node, token) else port(node, port, fallback, token)
+    }
 
-                // Call the handler's callback to get the next result
-                val nextResult = result.onResult(resultData)
+    // ========================================
+    // ROUTING
+    // ========================================
 
-                // Handle the next result on the main thread
-                scope.launch {
-                    handleNodeResult(nextResult, nodeData)
-                }
+    /** The FIRST edge from the step, whatever its handle; none ends the chat. */
+    private suspend fun next(node: FlowNode, token: Int) {
+        if (ended || token != moveToken) return
+        val edge = edges.firstOrNull { it.source == node.id }
+        if (edge != null) recordEdge(edge)
+        val target = edge?.let { nodes[it.target] }
+        if (edge != null && target != null) enter(target, if (edge.sourceHandle != null) "edge:${edge.sourceHandle}" else "edge")
+        else end("no_next_node")
+    }
+
+    private fun recordEdge(edge: FlowEdge) {
+        ChatState.appendRecord(
+            RecordEntry(
+                id = edge.id, shape = "", type = edge.raw["type"] as? String, time = FlowCalendar.iso(now()),
+                fields = edge.raw.filterKeys { it != "id" && it != "type" }
+            )
+        )
+    }
+
+    /** The edge from exactly this handle; none ends the chat. */
+    private suspend fun port(node: FlowNode, handle: String, fallback: String?, token: Int) {
+        if (ended || token != moveToken) return
+        fun wired(h: String) = edges.any { it.source == node.id && it.sourceHandle == h }
+        val h = if (fallback != null && !wired(handle) && wired(fallback)) fallback else handle
+        val edge = edges.firstOrNull { it.source == node.id && it.sourceHandle == h }
+        trace(FlowTrace.Port(node.id, h, edge != null))
+        if (edge == null) {
+            end("no_next_node")
+            return
+        }
+        recordEdge(edge)
+        val target = nodes[edge.target]
+        if (target == null) {
+            // The web throws on nextNode.type here: the chat stops where it is.
+            trace(FlowTrace.Crash(node.id, "edge target missing"))
+            waiting = false
+            handleError("Edge ${edge.id} leads to a missing node (${edge.target})", node.id)
+            return
+        }
+        enter(target, "port:$h")
+    }
+
+    /** To a node by id; a missing target ends the chat. */
+    private suspend fun jump(targetNodeId: String, token: Int) {
+        if (ended || token != moveToken) return
+        val target = if (targetNodeId.isNotEmpty()) nodes[targetNodeId] else null
+        if (target == null) {
+            end("jump_target_missing")
+            return
+        }
+        enter(target, "jump")
+    }
+
+    /** A step type this engine does not run: nothing shown, then its first edge. */
+    private suspend fun passUnknown(node: FlowNode, token: Int) {
+        android.util.Log.w(TAG, "step \"${node.type}\" is not supported here; continuing the flow")
+        trace(FlowTrace.Unsupported(node.id, node.type))
+        clock.delay(0)
+        if (token != moveToken || ended) return
+        next(node, token)
+    }
+
+    // ========================================
+    // LOOPS AND SUB-FLOWS (web flowControlRun.ts)
+    // ========================================
+
+    private fun setVars(vars: Map<String, Any?>) = vars.forEach { (k, v) -> ChatState.saveVariableByName(k, v) }
+
+    /** A trail entry on the step's latest record ("Loop 3 of 5"). */
+    private fun trail(node: FlowNode, extra: Map<String, Any?>) {
+        val record = ChatState.record.value
+        for (i in record.indices.reversed()) {
+            val r = record[i]
+            if (r.id == node.id && r.type == node.type && r.shape.isEmpty()) {
+                ChatState.addRecord(r.copy(fields = r.fields + extra))
+                return
             }
-        )
+        }
     }
 
-    /**
-     * Visitor metadata sent with execute-integration for server-side variable resolution
-     */
-    private fun buildVisitorData(): Map<String, Any?> {
-        val metadata = ChatState.userMetadata.value
-        return mapOf(
-            "name" to metadata.name,
-            "email" to metadata.email,
-            "phone" to metadata.phone
-        )
-    }
-
-    /**
-     * Execute email-node / zapier-node via their dedicated socket trigger events.
-     * Both are fire-and-forget on the web widget; the flow proceeds immediately.
-     */
-    private fun executeTriggerIntegration(
-        result: NodeResult.ExecuteIntegration,
-        nodeData: Map<String, Any?>,
-        chatSessionId: String,
-        botId: String,
-        workspaceId: String?
-    ) {
-        try {
-            if (result.nodeType == "email-node") {
-                // Web widget payload: nodeData, botName, transcript [{by, message}],
-                // visitorName/visitorEmail, flattened answer variables, answerVariables
-                // array, chatDate, workspaceId
-                val metadata = ChatState.userMetadata.value
-                val payload = JSONObject().apply {
-                    put("nodeData", JSONObject(result.nodeData.filterValues { it != null }))
-                    put("botName", ChatState.getVariable("_botName")?.toString() ?: "")
-                    put("transcript", JSONArray().apply {
-                        ChatState.transcript.value.forEach { entry ->
-                            put(JSONObject().apply {
-                                put("by", entry.by)
-                                put("message", entry.message)
-                            })
-                        }
-                    })
-                    put("visitorName", metadata.name ?: "")
-                    put("visitorEmail", metadata.email ?: "")
-                    ChatState.getAnswerVariablesMap().forEach { (key, value) ->
-                        if (value != null) put(key, value)
-                    }
-                    put("answerVariables", JSONArray().apply {
-                        ChatState.getAnswerVariablesList().forEach { variable ->
-                            put(JSONObject().apply {
-                                put("key", variable["key"])
-                                put("value", variable["value"] ?: JSONObject.NULL)
-                            })
-                        }
-                    })
-                    put("chatDate", java.text.SimpleDateFormat(
-                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US
-                    ).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
-                    workspaceId?.let { put("workspaceId", it) }
-                }
-                socketClient.sendEmailNodeTrigger(payload)
-            } else {
-                // Zapier: webhookURL comes from integrationWebhooks matched by nodeId;
-                // without an active match the web widget skips the trigger entirely
-                val webhook = ChatState.integrationWebhooks.find { entry ->
-                    entry["nodeId"] == result.nodeId &&
-                        entry["botId"] == botId &&
-                        entry["active"] == true
-                }
-                if (webhook != null) {
-                    val zapierNodeData = JSONObject(result.nodeData.filterValues { it != null })
-                    zapierNodeData.put("nodeId", result.nodeId)
-                    zapierNodeData.put("webhookURL", webhook["webhookURL"])
-                    val flattenedAnswers = JSONObject()
-                    ChatState.getAnswerVariablesMap().forEach { (key, value) ->
-                        if (value != null) flattenedAnswers.put(key, value)
-                    }
-                    socketClient.sendZapierNodeTrigger(JSONObject().apply {
-                        put("nodeData", zapierNodeData)
-                        put("payload", flattenedAnswers)
-                        put("chatSessionId", chatSessionId)
-                        workspaceId?.let { put("workspaceId", it) }
-                    })
-                }
+    private suspend fun runFlowControl(node: FlowNode, token: Int) {
+        val d = node.data
+        when (node.type) {
+            FlowControl.LOOP_TYPE -> {
+                val step = FlowControl.stepLoop(node.id, d, flowControl, ::lookup)
+                setVars(step.vars)
+                trail(node, mapOf("loop" to step.trail.toMap() + ("text" to FlowControl.loopTrailText(step.trail))))
+                sendResponseToServer()
+                clock.delay(0)
+                if (token != moveToken || ended) return
+                port(node, step.handle, null, token)
             }
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "Trigger integration failed for ${result.nodeType}", e)
-        }
-
-        // Fire-and-forget: proceed with whatever the handler's callback returns
-        val nextResult = result.onResult(
-            IntegrationResultData(success = true, error = null)
-        )
-        scope.launch {
-            handleNodeResult(nextResult, nodeData)
+            FlowControl.RUN_SUBFLOW_TYPE -> {
+                val call = FlowControl.callSubflow(node.id, d, nodeList.map { it.id to (it.type to it.data) }, flowControl, ::lookup)
+                if (!call.ok) {
+                    trail(node, mapOf("subflow" to mapOf("name" to (call.name ?: ""), "error" to call.error)))
+                    sendResponseToServer()
+                    clock.delay(0)
+                    if (token != moveToken || ended) return
+                    val wiredError = edges.any { it.source == node.id && it.sourceHandle == FlowControl.RUN_ERROR_HANDLE }
+                    port(node, if (wiredError) FlowControl.RUN_ERROR_HANDLE else "source", null, token)
+                    return
+                }
+                setVars(call.vars)
+                trail(node, mapOf("subflow" to mapOf("name" to call.name, "inputs" to call.vars, "depth" to call.frame?.depth, "text" to "Ran sub-flow ${call.name}")))
+                sendResponseToServer()
+                clock.delay(0)
+                if (token != moveToken || ended) return
+                jump(call.startId ?: "", token)
+            }
+            FlowControl.SUBFLOW_TYPE -> {
+                trail(node, mapOf("subflow" to mapOf("name" to FlowControl.subflowName(d), "entered" to true)))
+                clock.delay(0)
+                if (token != moveToken || ended) return
+                port(node, "source", null, token)
+            }
+            FlowControl.SUBFLOW_RETURN_TYPE -> {
+                if (returnFromSubflowPath(token)) return
+                clock.delay(0)
+                if (token != moveToken || ended) return
+                next(node, token)
+            }
         }
     }
 
     /**
-     * Send a calendar-node slot selection to the server so it is stored as a
-     * CalendarBooking (mirrors the web widget's calendar-slot-selection-record emit).
+     * The end of a path inside a sub-flow: copy the outputs back and carry on
+     * from Run sub-flow's "source" edge (or one with no handle). True when it
+     * carried on.
      */
-    private fun sendCalendarSlotSelection(
-        nodeId: String,
-        nodeData: Map<String, Any?>,
-        response: Map<*, *>
-    ) {
-        try {
-            val botId = ChatState.botId ?: return
-            val date = response["date"]?.toString() ?: return
-            val time = response["time"]?.toString()
-            socketClient.sendCalendarSlotSelectionRecord(JSONObject().apply {
-                put("visitorId", ChatState.visitorId ?: "")
-                put("chatbotId", botId)
-                put("nodeId", nodeId)
-                put("selectedDate", date)
-                put("botTimeZone", nodeData["botTimeZone"] ?: nodeData["timezone"] ?: JSONObject.NULL)
-                put("visitorTimeZone", java.util.TimeZone.getDefault().id)
-                put("timeSlotSelected", time ?: JSONObject.NULL)
-                put("visitorTime", time ?: JSONObject.NULL)
-            })
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to send calendar slot selection", e)
+    private suspend fun returnFromSubflowPath(token: Int): Boolean {
+        var ret = FlowControl.returnFromSubflow(flowControl, ::lookup)
+        while (ret != null) {
+            setVars(ret.vars)
+            val runNodeId = ret.frame.runNodeId
+            val edge = edges.firstOrNull { it.source == runNodeId && (it.sourceHandle == "source" || it.sourceHandle == null) }
+            if (edge != null && edge.target.isNotEmpty()) {
+                sendResponseToServer()
+                clock.delay(0)
+                if (token != moveToken || ended) return true
+                jump(edge.target, token)
+                return true
+            }
+            ret = FlowControl.returnFromSubflow(flowControl, ::lookup)
         }
+        return false
     }
+
+    // ========================================
+    // USER INPUT HANDLING
+    // ========================================
 
     /**
      * Handle user response for current interactive node
      */
     override fun submitResponse(response: Any) {
-        android.util.Log.d(TAG, "submitResponse node=$currentNodeId resp=${response.toString().take(30)}")
+        scope.launch { respond(response) }
+    }
+
+    /** The visitor's answer to the waiting step. */
+    suspend fun respond(response: Any) {
         val nodeId = currentNodeId ?: return
-        val nodeData = currentNodeData ?: return
+        if (!waiting) {
+            android.util.Log.d(TAG, "Not waiting for input, ignoring response")
+            return
+        }
+        // Typed text is trimmed; an empty send is ignored (web composer).
+        if (response is String && response.trim().isEmpty()) return
+        val node = nodes[nodeId] ?: return
+        val handler = NodeHandlerRegistry.getHandler(node.type)
+        if (handler == null) {
+            handleError("Handler not found for: ${node.type}", node.id)
+            return
+        }
+        if (response is String) ChatAnalytics.trackUserMessage(messageLength = response.length, messageText = response)
 
-        scope.launch {
+        waiting = false
+        _isProcessing.value = true
+        _errorMessage.value = null
+        nodesProcessedInCycle = 0
+        applyCustomizations()
+        val token = moveToken
+
+        // The handover survey's rating, as the web sends it (submit-chat-rating).
+        if (node.type == NodeTypes.HUMAN_HANDOVER && response is List<*>) sendSurveyRating(response)
+
+        try {
+            val result = runHandler(handler, node, "edge", token) { h -> h.handleResponse(response, node.data, node.id) }
+            if (token != moveToken || ended) return
+            sendResponseToServer()
+            handleNodeResult(result, node, token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _isProcessing.value = false
+            handleError(e.message ?: "Error", node.id)
+            ChatAnalytics.trackNodeExit(node.id, "error")
+        }
+    }
+
+    /**
+     * A refused answer: say why, keep waiting at the step. A typed answer's
+     * reason comes as a bot bubble after 700 ms of typing (web helpers
+     * _displayErrorMessage); a card shows its own at once.
+     */
+    private suspend fun handleInvalid(message: String, node: FlowNode, token: Int, ui: NodeUIState?, inCard: Boolean) {
+        trace(FlowTrace.Error(node.id, message))
+        _isProcessing.value = false
+        if (message.isNotEmpty() && !inCard) {
             _isProcessing.value = true
-            _errorMessage.value = null
+            clock.delay(700)
+            if (token != moveToken || ended) return
+            val text = FlowText.bubbleText(message)
+            ChatState.addToTranscript("bot", text)
+            _botMessages.tryEmit(NodeUIState.Message(text, node.id))
+            _isProcessing.value = false
+        } else if (message.isNotEmpty()) {
+            _errorMessage.value = FlowText.plainText(message)
+        }
+        val shown = ui ?: _currentUIState.value
+        _currentUIState.value = when (shown) {
+            is NodeUIState.TextInput -> shown.copy(errorMessage = FlowText.plainText(message))
+            else -> shown
+        }
+        waiting = true
+    }
 
-            // Track user message for analytics if it's a text response
-            if (response is String) {
-                ChatAnalytics.trackUserMessage(
-                    messageLength = response.length,
-                    messageText = response
-                )
-            }
+    // ========================================
+    // SERVER COMMUNICATION
+    // ========================================
 
-            // The node type lives on the step object, not inside its data
-            // map; a silent bail here left isProcessing stuck forever.
-            val nodeType = currentNodeType ?: nodeData["type"]?.toString()
-            if (nodeType == null) {
-                android.util.Log.w(TAG, "submitResponse: no node type for $nodeId")
-                _isProcessing.value = false
-                return@launch
-            }
+    /**
+     * Send current state to server via socket (the web's response-record)
+     */
+    private fun sendResponseToServer() {
+        val responseData = ChatState.buildResponseData()
+        // Never emit without a session id - the server would file the record
+        // under a shared no-session document.
+        if (responseData["chatSessionId"] == null) return
+        socket?.sendResponseRecord(responseData)
+    }
 
-            val handler = NodeHandlerRegistry.getHandler(nodeType)
-            if (handler == null) {
-                _isProcessing.value = false
-                ChatAnalytics.trackNodeExit(nodeId, "skipped")
-                proceedToNextNode(null)
-                return@launch
-            }
+    // ========================================
+    // ERROR HANDLING AND THE END
+    // ========================================
 
-            // The handover step's own answers (leave the queue, carry on):
-            // no visitor text to record.
-            val action = (response as? Map<*, *>)?.get("action")?.toString()
-            if (nodeType == NodeTypes.HUMAN_HANDOVER && action == "cancel" && (response as Map<*, *>)["queueLeft"] != true) {
-                // Out of the queue: the team must stop seeing the visitor
-                // waiting (web special.ts). Conferbot.leaveQueue sends it
-                // itself and waits for the answer; a headless caller gets it here.
-                ChatState.chatSessionId?.let {
-                    socketClient.emit("queue-self-resolve", JSONObject(com.conferbot.sdk.core.livechat.HandoverState.queueSelfResolvePayload(it)))
-                }
-            }
-            // The handover survey's rating, as the web sends it (submit-chat-rating).
-            if (nodeType == NodeTypes.HUMAN_HANDOVER && response is List<*>) sendSurveyRating(response)
+    private fun handleError(message: String, nodeId: String?) {
+        android.util.Log.e(TAG, "Error: $message (node $nodeId)")
+        _errorMessage.value = message
+        _isProcessing.value = false
+    }
 
-            try {
-                // Push user response to record (matching web widget format)
-                val responseText = when (response) {
-                    is String -> response
-                    is Map<*, *> -> response["text"]?.toString()
-                        ?: response["label"]?.toString()
-                        ?: response["selectedChoice"]?.toString()
-                        ?: response.toString()
-                    else -> response.toString()
-                }
-                if (action == null) ChatState.pushToRecord(RecordEntry(
-                    id = nodeId,
-                    shape = "user-input-response",
-                    type = nodeData["type"]?.toString(),
-                    text = responseText,
-                ))
+    /**
+     * The end of a path: a sub-flow returns to its caller; otherwise the chat
+     * is over (web index.ts: hasChatEnded, record sent, chat-flow-completed).
+     */
+    private suspend fun end(reason: String) {
+        if (ended) return
+        if (flowControl.stack.isNotEmpty() && returnFromSubflowPath(moveToken)) return
+        if (ended) return
+        ended = true
+        waiting = false
+        _isProcessing.value = false
+        ChatState.setVariable("_flowComplete", true)
+        ChatState.setVariable("_flowCompletionReason", reason)
+        sendResponseToServer()
+        ChatState.chatSessionId?.let { socket?.emit("chat-flow-completed", mapOf("chatSessionId" to it)) }
+        trace(FlowTrace.End)
+        _isFlowComplete.value = true
+    }
 
-                // Calendar selections are also recorded server-side as bookings (web parity)
-                if (nodeType == "calendar-node" && response is Map<*, *>) {
-                    sendCalendarSlotSelection(nodeId, nodeData, response)
-                }
-
-                android.util.Log.d(TAG, "submitResponse: calling handler")
-                val result = handler.handleResponse(response, nodeData, nodeId)
-                android.util.Log.d(TAG, "submitResponse: handler returned ${result.javaClass.simpleName}")
-                // Track node exit with user input
-                val userInput = if (response is String) response else response.toString()
-                ChatAnalytics.trackNodeExit(nodeId, "proceeded", userInput = userInput)
-                handleNodeResult(result, nodeData)
-                android.util.Log.d(TAG, "submitResponse: handleNodeResult done")
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-                _isProcessing.value = false
-                ChatAnalytics.trackNodeExit(nodeId, "error")
-            }
+    private fun trace(event: FlowTrace) {
+        try {
+            config.onTrace?.invoke(event)
+        } catch (e: Exception) {
+            // a listener's error never stops the flow
         }
     }
 
@@ -585,114 +767,101 @@ class NodeFlowEngine(
         _errorMessage.value = null
     }
 
-    /**
-     * Proceed to the next node in the flow
-     */
-    private suspend fun proceedToNextNode(targetPort: String?) {
-        val currentId = currentNodeId ?: return
+    // ========================================
+    // THE STEP'S CONTEXT
+    // ========================================
 
-        // Find next node based on edges
-        val nextNodeId = if (targetPort != null) {
-            findNextNodeByPort(currentId, targetPort)
-        } else {
-            findNextNodeByDefaultEdge(currentId)
+    private inner class StepContext(private val node: FlowNode, override val via: String, private val token: Int) : FlowContext {
+        override val nodeId: String = node.id
+        override val stepIndex: Int = Math.max(0, steps.lastIndexOf(node))
+        override val customizations: Map<String, Any?> get() = config.customizations()
+        override val visitorTimeZone: String = config.visitorTimeZone ?: FlowCalendar.visitorTimeZone()
+        override val pageUrl: String? = config.pageUrl
+        override val pageReferrer: String? = config.pageReferrer
+
+        override suspend fun api(path: String, body: Map<String, Any?>, timeoutMs: Long?): ApiReply =
+            api.post(ChatState.botId ?: "", path, body, timeoutMs)
+
+        override suspend fun upload(file: UploadFile): UploadResult {
+            val session = ChatState.chatSessionId ?: ""
+            return api.upload(ChatState.botId ?: "", session, ChatState.visitorId ?: session, file)
         }
 
-        android.util.Log.d(TAG, "proceedToNextNode from=$currentId port=$targetPort next=$nextNodeId")
-        if (nextNodeId != null) {
-            val nextIndex = steps.indexOfFirst { it["id"] == nextNodeId }
-            if (nextIndex >= 0) {
-                processNodeAtIndex(nextIndex)
-                return
+        override suspend fun fetch(url: String, method: String, headers: Map<String, String>, body: String?, timeoutMs: Long?): ApiReply =
+            api.fetch(url, method, headers, body, timeoutMs)
+
+        override fun emit(event: String, payload: Map<String, Any?>): Boolean = socket?.emit(event, payload) ?: false
+
+        override fun on(event: String, listener: suspend (Map<String, Any?>?) -> Unit): () -> Unit {
+            val s = socket ?: return {}
+            return s.on(event) { payload -> scope.launch(FlowContextElement(this)) { listener(payload) } }
+        }
+
+        override suspend fun typing(ms: Long) {
+            if (ms > 0) {
+                _isProcessing.value = true
+                clock.delay(ms)
             }
         }
 
-        // Try sequential fallback
-        val currentIndex = ChatState.currentIndex.value
-        if (currentIndex + 1 < steps.size) {
-            processNodeAtIndex(currentIndex + 1)
-        } else {
-            _isFlowComplete.value = true
+        override suspend fun delay(ms: Long) = clock.delay(ms)
+        override fun setTimeout(ms: Long, fn: () -> Unit) = clock.setTimeout(ms, fn)
+        override fun setInterval(ms: Long, fn: () -> Unit) = clock.setInterval(ms, fn)
+        override fun edges(): List<FlowEdge> = edges.filter { it.source == node.id }
+        override fun edgesOf(nodeId: String): List<FlowEdge> = edges.filter { it.source == nodeId }
+        override fun wired(handle: String) = edges.any { it.source == node.id && it.sourceHandle == handle }
+        override fun random(): Double = config.random?.invoke() ?: Math.random()
+        override fun now(): Long = clock.now()
+
+        override fun respond(response: Any) {
+            scope.launch { if (currentNodeId == node.id && waiting) this@NodeFlowEngine.respond(response) }
+        }
+
+        override fun shown() {
+            if (shownToken != token && token == moveToken) {
+                shownToken = token
+                trace(FlowTrace.Shown(node.id))
+            }
+        }
+
+        override fun isStale(): Boolean = token != moveToken && currentNodeId != node.id
+        override fun node(id: String): FlowNode? = nodes[id]
+
+        override fun say(text: String) {
+            if (text.isEmpty()) return
+            _isProcessing.value = false
+            _botMessages.tryEmit(NodeUIState.Message(text, node.id))
+        }
+
+        override fun sendRecord() = sendResponseToServer()
+
+        override fun joinChatRoom() {
+            ChatState.chatSessionId?.let { socket?.joinChatRoom(it) }
+        }
+
+        override fun background(block: suspend () -> Unit) {
+            scope.launch {
+                try {
+                    block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Background step work failed: ${e.message}")
+                }
+            }
         }
     }
 
-    /**
-     * Jump to a specific node by ID
-     */
-    private suspend fun jumpToNode(targetNodeId: String) {
-        val targetIndex = steps.indexOfFirst { it["id"] == targetNodeId }
-        if (targetIndex >= 0) {
-            processNodeAtIndex(targetIndex)
-        } else {
-            // Node not found, proceed sequentially
-            proceedToNextNode(null)
-        }
-    }
+    // ========================================
+    // SERVER MESSAGES AND THE HANDOVER STEP
+    // ========================================
 
     /**
-     * Find next node using edge with specific source port
-     */
-    private fun findNextNodeByPort(sourceId: String, sourcePort: String): String? {
-        // Look for edge from this node's specific port
-        val edge = edges.find { edge ->
-            edge["source"] == sourceId &&
-                    (edge["sourceHandle"] == sourcePort || edge["sourceHandle"] == sourcePort.removePrefix("source-"))
-        }
-        // FIX 7: Validate edge exists for the given port
-        if (edge == null) {
-            android.util.Log.w(TAG, "No edge found for port: $sourcePort on node: $sourceId")
-        }
-        return edge?.get("target")?.toString()
-    }
-
-    /**
-     * Find next node using default edge (any edge from source)
-     */
-    private fun findNextNodeByDefaultEdge(sourceId: String): String? {
-        val edge = edges.find { it["source"] == sourceId }
-        return edge?.get("target")?.toString()
-    }
-
-    /**
-     * Send current state to server via socket
-     */
-    private fun sendResponseToServer() {
-        val responseData = ChatState.buildResponseData()
-        socketClient.sendResponseRecord(responseData)
-    }
-
-    /**
-     * Handle incoming bot message from server
+     * A plain message from the server outside the flow.
      */
     fun handleServerMessage(message: Map<String, Any?>) {
-        scope.launch {
-            val nodeData = message["nodeData"] as? Map<String, Any?>
-            val nodeType = nodeData?.get("type")?.toString()
-                ?: message["type"]?.toString()
-
-            if (nodeType != null && nodeData != null) {
-                val nodeId = message["_id"]?.toString() ?: message["id"]?.toString() ?: ""
-                currentNodeId = nodeId
-                currentNodeData = nodeData
-                processNode(nodeId, nodeType, nodeData)
-            } else {
-                // Plain text message
-                val text = message["text"]?.toString() ?: return@launch
-                _currentUIState.value = NodeUIState.Message(
-                    text = text,
-                    nodeId = message["_id"]?.toString() ?: ""
-                )
-            }
-        }
-    }
-
-    /**
-     * Emit initiate-handover socket event matching web widget payload format.
-     * Called when handover handler returns WAITING_FOR_AGENT UI state.
-     */
-    private fun emitInitiateHandover(nodeData: Map<String, Any?>) {
-        val payload = com.conferbot.sdk.core.agent.HandoverPayload.build(nodeData) ?: return
-        socketClient.emit("initiate-handover", org.json.JSONObject(payload))
+        val text = message["text"]?.toString() ?: return
+        _currentUIState.value = NodeUIState.Message(text = text, nodeId = message["_id"]?.toString() ?: "")
     }
 
     /**
@@ -712,7 +881,7 @@ class NodeFlowEngine(
             survey.questions.any { it.id == a.questionId && it.type == NodeUIState.PostChatSurvey.SurveyQuestionType.TEXT } && a.value is String
         }?.value as? String
         val payload = com.conferbot.sdk.core.livechat.LiveChat.surveyRatingPayload(sessionId, ratingQ?.maxRating, rating, feedback) ?: return
-        socketClient.emit("submit-chat-rating", JSONObject(payload))
+        socket?.emit("submit-chat-rating", payload)
     }
 
     /**
@@ -723,25 +892,21 @@ class NodeFlowEngine(
      * submitResponse as usual. False when the step is not in the flow.
      */
     override fun waitAt(nodeId: String, ui: NodeUIState): Boolean {
-        val index = steps.indexOfFirst { it["id"]?.toString() == nodeId }
-        if (index < 0) return false
-        val node = steps[index]
-        @Suppress("UNCHECKED_CAST")
-        val data = node["data"] as? Map<String, Any?> ?: emptyMap()
+        if (!nodes.containsKey(nodeId)) return false
         currentNodeId = nodeId
-        currentNodeData = data
-        currentNodeType = data["type"]?.toString() ?: node["type"]?.toString()
-        ChatState.setCurrentIndex(index)
+        nodeList.indexOfFirst { it.id == nodeId }.takeIf { it >= 0 }?.let { ChatState.setCurrentIndex(it) }
         _isProcessing.value = false
+        waiting = true
         _currentUIState.value = ui
         return true
     }
 
     /** Run a step again (a restored handover whose request never went out). */
     override fun resumeFrom(nodeId: String) {
-        val index = steps.indexOfFirst { it["id"]?.toString() == nodeId }
-        if (index < 0) return
-        scope.launch { processNodeAtIndex(index) }
+        val node = nodes[nodeId] ?: return
+        nodesProcessedInCycle = 0
+        ended = false
+        scope.launch { enter(node, "edge") }
     }
 
     /**
@@ -749,20 +914,14 @@ class NodeFlowEngine(
      */
     override fun handleAgentAccepted(agentName: String) {
         val nodeId = currentNodeId ?: return
-        val nodeData = currentNodeData ?: return
-
-        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
-            val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
-                    as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
-
-            handler?.onAgentAccepted(nodeId, agentName)
-
-            _currentUIState.value = NodeUIState.HumanHandover(
-                state = NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED,
-                agentName = agentName,
-                nodeId = nodeId
-            )
-        }
+        if (!isAtHandover) return
+        val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER) as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
+        handler?.onAgentAccepted(nodeId, agentName)
+        _currentUIState.value = NodeUIState.HumanHandover(
+            state = NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED,
+            agentName = agentName,
+            nodeId = nodeId
+        )
     }
 
     /**
@@ -770,24 +929,18 @@ class NodeFlowEngine(
      */
     fun handleNoAgentsAvailable() {
         val nodeId = currentNodeId ?: return
-        val nodeData = currentNodeData ?: return
-
-        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
-            val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
-                    as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
-
-            scope.launch {
-                val result = handler?.onNoAgentsAvailable(nodeId, nodeData)
-                if (result != null) {
-                    handleNodeResult(result, nodeData)
-                }
-            }
+        val node = nodes[nodeId] ?: return
+        if (!isAtHandover) return
+        val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER) as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
+        scope.launch {
+            val result = handler?.onNoAgentsAvailable(nodeId, node.data)
+            if (result != null) handleNodeResult(result, node, moveToken)
         }
     }
 
     /** The handover step's data while the flow is on it (its fallbackMessage...). */
     val handoverNodeData: Map<String, Any?>?
-        get() = if (isAtHandover) currentNodeData?.let { (it["data"] as? Map<String, Any?>) ?: it } else null
+        get() = if (isAtHandover) currentNodeId?.let { nodes[it]?.data } else null
 
     /** The handover step's card goes (a person joined, or nobody could). */
     fun clearHandoverUI() {
@@ -796,7 +949,7 @@ class NodeFlowEngine(
 
     /** Waiting on its handover step (for a person, or after nobody came). */
     override val isAtHandover: Boolean
-        get() = (currentNodeType ?: currentNodeData?.get("type")?.toString()) == NodeTypes.HUMAN_HANDOVER
+        get() = currentNodeId?.let { nodes[it]?.type } == NodeTypes.HUMAN_HANDOVER
 
     /**
      * Nobody came and the visitor left a message or skipped it: the flow
@@ -805,7 +958,10 @@ class NodeFlowEngine(
     fun continueAfterHandover() {
         if (!isAtHandover) return
         _currentUIState.value = null
-        scope.launch { proceedToNextNode(null) }
+        val node = currentNodeId?.let { nodes[it] } ?: return
+        val token = ++moveToken
+        waiting = false
+        scope.launch { next(node, token) }
     }
 
     /**
@@ -814,49 +970,22 @@ class NodeFlowEngine(
      */
     fun handleChatEnded() {
         val nodeId = currentNodeId ?: return
-        val nodeData = currentNodeData ?: return
-
-        if ((currentNodeType ?: nodeData["type"]?.toString()) == NodeTypes.HUMAN_HANDOVER) {
-            val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
-                    as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
-
-            scope.launch {
-                val result = handler?.onChatEnded(nodeId, nodeData)
-                if (result != null) {
-                    // Track survey display for analytics
-                    if (result is NodeResult.DisplayUI && result.uiState is NodeUIState.PostChatSurvey) {
-                        ChatAnalytics.trackNodeEntry(
-                            nodeId = "${nodeId}_survey",
-                            nodeType = "post-chat-survey",
-                            nodeName = "Post Chat Survey"
-                        )
-                    }
-                    handleNodeResult(result, nodeData)
-                }
+        val node = nodes[nodeId] ?: return
+        if (!isAtHandover) return
+        val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER) as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
+        scope.launch {
+            val result = handler?.onChatEnded(nodeId, node.data) ?: return@launch
+            if (result is NodeResult.DisplayUI && result.uiState is NodeUIState.PostChatSurvey) {
+                ChatAnalytics.trackNodeEntry(nodeId = "${nodeId}_survey", nodeType = "post-chat-survey", nodeName = "Post Chat Survey")
             }
+            handleNodeResult(result, node, moveToken)
         }
     }
 
     /**
      * Handle post-chat survey response submission
-     * Sends survey responses to server via socket
      */
     fun handleSurveySubmission(nodeId: String, responses: List<NodeUIState.SurveyResponse>) {
-        val handler = NodeHandlerRegistry.getHandler(NodeTypes.HUMAN_HANDOVER)
-                as? com.conferbot.sdk.core.nodes.handlers.HumanHandoverNodeHandler
-
-        // Get survey responses map for socket
-        val surveyData = handler?.getSurveyResponsesForSocket(nodeId)
-
-        // Send survey responses to server
-        if (surveyData != null && surveyData.isNotEmpty()) {
-            socketClient.sendPostChatSurveyResponse(
-                chatSessionId = ChatState.chatSessionId ?: "",
-                surveyResponses = surveyData
-            )
-        }
-
-        // Track survey completion for analytics
         ChatAnalytics.trackNodeExit(
             nodeId = "${nodeId}_survey",
             exitType = "proceeded",
@@ -864,14 +993,53 @@ class NodeFlowEngine(
         )
     }
 
+    /** Stops the flow where it is: its timers and pending replies do nothing. */
+    fun stop() {
+        moveToken++
+        waiting = false
+        scope.coroutineContext[Job]?.cancelChildren()
+    }
+
     /**
      * Clean up resources
      */
     fun destroy() {
-        // Finalize analytics before cleanup
         ChatAnalytics.finalizeChatAnalytics()
-        visitedNodes.clear()
+        moveToken++
         scope.cancel()
         ChatState.reset()
     }
+}
+
+/** The SDK's socket as the flow uses it. */
+internal class SocketClientFlowSocket(private val client: SocketClient) : FlowSocket {
+    override fun emit(event: String, payload: Map<String, Any?>): Boolean {
+        if (!client.isConnected) return false
+        return try {
+            client.emit(event, JSONObject(payload))
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun on(event: String, listener: (Map<String, Any?>?) -> Unit): () -> Unit {
+        val l = Emitter.Listener { args ->
+            listener(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(args.firstOrNull() as? JSONObject))
+        }
+        client.on(event, l)
+        return { client.off(event, l) }
+    }
+
+    override fun sendResponseRecord(data: Map<String, Any?>) = client.sendResponseRecord(data)
+
+    override fun joinChatRoom(chatSessionId: String) = client.joinChatRoom(
+        chatSessionId = chatSessionId,
+        deviceInfo = mapOf(
+            "os" to "Android",
+            "osVersion" to (Build.VERSION.RELEASE ?: "unknown"),
+            "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+            "deviceModel" to (Build.MODEL ?: "unknown")
+        )
+    )
 }
