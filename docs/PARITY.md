@@ -22,6 +22,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #21 | User as `visitorContext` + identity hash | `models/Configuration.kt` (`toVisitorContext`), `core/state/ChatState.kt`, `core/Conferbot.kt` |
 | #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
 | #24-#28, #37, #59-#62 | Handover lifecycle: Connecting line and 4 outcomes, 20s waiting signal, leave the queue, live chat back after a restart, header keeps the bot with Online and the reply time, "Talk to a person" only when allowed (Compose + XML) | `core/livechat/HandoverState.kt`, `HandoverWaiting.kt`, `ReplyTime.kt`, `HandoverLifecycle.kt`, `core/agent/HandoverPayload.kt`, `core/NodeFlowEngine.kt` (`waitAt`, `resumeFrom`), `core/Conferbot.kt`, `ui/compose/chat/LiveChatCards.kt`, `ChatHeader.kt`, `messages/MessageBubble.kt`, `ui/views/ChatActivity.kt`, `MessageAdapter.kt` |
+| #29-#34, #48, #54, #64-#67 | Flow nodes: the engine and every node handler run the shared flow-node spec. **156 of 156 fixtures pass** (`FlowFixturesTest`); none pending. See "Flow nodes" below. | `core/NodeFlowEngine.kt`, `core/flow/*` (FlowText, FlowLogic, FlowControl, FlowRich, FlowInputs, FlowCalendar, FlowRuntime), `core/privacy/Redact.kt`, `core/nodes/handlers/*` |
 | #53, #36, #45 | Help centre: loads from `fetched-chatbot-data`, bodies on open, follows `enableKnowledgeBase` / `hideRecentArticles`, Chat / Articles tabs, AI sources and article cards open by id (Compose) | `core/helpcentre/HelpCentre.kt`, `services/KnowledgeBaseService.kt`, `ui/compose/ChatScreen.kt`, `ui/compose/knowledgebase/KnowledgeBaseScreen.kt`, `ui/compose/messages/AgentReply.kt` |
 
 ## Left in this SDK
@@ -48,17 +49,45 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - Tests: `HandoverStateTest` 16, `HandoverWaitingTest` 5, `HandoverLifecycleTest` 12, `ReplyTimeTest` 7, `HandoverPayloadTest` 3, `LiveChatTest` +1.
    - Checked on the emulator against the local embed-server with a node script playing the agent (temp bot, handover email off, deleted after): wait card and Cancel (the ticket closed `self_service`, `handoverData.enableHandoverEmail: false`), header reply time, agent joined with the header still the bot, the Connecting line, its settled outcome with the note, and a restart while live (live again, one ticket, agent messages arrive).
    - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. No requeued / transferred lines (#44). #63: Clear History draws flow messages twice (found during the check).
-4. The rest of the list below.
-5. **XML gaps:** initials avatar and the wave typing style.
-6. **Test debt:**
+4. **Flow nodes (#29-#34, #48, #54, #64-#67): done, ported from RN.** See "Flow nodes" below.
+5. The rest of the list below.
+6. **XML gaps:** initials avatar and the wave typing style.
+7. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
-7. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+   - `SessionPersistenceManagerTest` (27) and 2 of `MemoryManagerTest` already failed before the flow work: their setup touches `ChatState` without `Dispatchers.setMain`.
+8. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+
+## Flow nodes
+
+The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`) follow the shared flow-node spec in conferbot-react-native `scripts/parity/flows/` (`nodes.spec.json`, 156 fixtures made by running the web widget's own code). The ports are of RN's `src/core/NodeFlowEngine.ts`, `src/core/flow/*` and `src/core/nodes/handlers/*`.
+
+- **The test:** `FlowFixturesTest` runs each fixture (one JUnit case each) through the real engine and handlers with `FlowDriver`:
+  - The clock is virtual (`FlowDriver.VirtualClock`, the engine's `FlowClock`). A settle runs every timeout in time order and stops when only repeating timers are left; a `wait` input runs those too.
+  - The bot API answers from `server.http` (`ScriptedApi`). A fake socket answers `execute-integration` and `initiate-handover` from `server.integration` / `server.handover`; `response-record` and `join-chat-room-visitor` are transport, not counted.
+  - The engine runs on `Dispatchers.Unconfined`, so everything happens on the test thread.
+  - It compares what the README says to match: path (node, type, via), ports, variables (key and value; `*_at` times as timestamps), end, errors (count and node), answers (shape and value fields), rendered plain text, emits, unsupported, http (path and body keys), flowVariables and the typing pace (±50 ms). Objects compare by keys and values, whatever the key order.
+  - `TIMING_SKIP` is RN's: 7 cases where the web card's own UI timers (focus, debounce, animation) move the web clock before the next action. Everything else in them is compared.
+  - `PENDING_TYPES` is empty.
+- **The fixtures** are a copy in `conferbot/src/test/resources/flows/`. After they are regenerated in RN (`node gen.js`), run `scripts/sync-flow-fixtures.sh` and commit the copy (`CONFERBOT_DEV` overrides the folder holding `sdk/`).
+- **One case:** `FLOW_CASE=<id prefix> sh ./gradlew :conferbot:testDebugUnitTest --tests '*FlowFixturesTest' --rerun --no-daemon`. `FLOW_DUMP=1` prints each outcome.
+- **The rules, briefly:**
+  - Start at the first welcome-node. A step that does not branch takes its first edge, whatever the handle. A missing exact handle, a jump to a missing node or no edge ends the chat; an edge to a missing node stops it where it is. Unknown types show nothing and continue on their first edge.
+  - The node type is `node.type` (a legacy user-input's `data.type` is its kind).
+  - Questions register `{nodeId, answerVariable, null}` when shown and fill it by node; no `answerVariable`, nothing stored. Logic and integrations save by name. Text fills `{x}`, `${x}`, `{{x}}`, `${ANSWERS.x}`, `$${x}`; unknown shows nothing.
+  - Typing pace is the web's `paceFor`; images and videos move on at load or after 4000 ms (`mediaSettled`).
+  - Masking (`core/privacy/Redact.kt`) applies to answers and the visitor's record entries unless `redactSensitive` is false; the transcript keeps what was typed.
+  - GPT is `POST /api/v1/bot/:id/gpt` `{nodeId, transcript}`; AI route / extract and KB answer are `ai/route`, `ai/extract`, `kb/answer`; OTP `otp/send|verify`; payment `pay/start|status`; address `geo/search`; uploads `media`. The origin is the socket server (`Conferbot.serverOrigin`).
+  - stripe-node shows the link and moves on after 500 ms; payment-node is the gate.
+  - The handover step asks its pre-chat questions in the composer, then sends the record and `initiate-handover`; on `no-agents-available` it says the fallback and, with `chatLeaveMessage` off, carries on.
+- **Native UI still missing (#48):** the rich steps draw through the existing cards: consent, dynamic choices, product card, payment and navigate as choices; slider as the range; date/time as the calendar; ranking as multiple choice; OTP, AI, KB, signature and address as the text box; matrix as the multiple-questions card. A drawn signature, the address results list, opening a link or Checkout from a choice, and a real matrix grid need native cards.
+- **Left:** webhook-node still runs from the device, in the background (the spec says webOnly); hidden-fields has no page in an app unless `NodeFlowEngine.Config.pageUrl` is set; the google-calendar "book" picker waits for the server.
 
 ## How to test
 
 - **Unit tests:**
   - Run one class at a time: `sh ./gradlew :conferbot:testDebugUnitTest --tests 'com.conferbot.sdk.core.customization.*' --no-daemon -q`.
   - Results are in `conferbot/build/test-results/testDebugUnitTest/`.
+  - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes").
 - **Example app:**
   - To point it at a local server, add `baseUrl = "http://10.0.2.2:8001/api/v1/mobile/", socketUrl = "http://10.0.2.2:8001"` to `ExampleApplication.kt`.
   - Build with `sh ./gradlew :example:assembleDebug`. Package `com.conferbot.example`.
@@ -91,6 +120,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | Message sounds | todo | todo | todo | todo |
 | Celebrations / reactions | todo | todo | todo | todo |
 | Reply-time wording (header) | done | done (#28) | todo | todo |
+| Flow nodes: shared spec, 156 fixtures | 156/156 | 156/156 | todo | todo |
 | Handover lifecycle (Connecting line, outcomes, waiting signals, leave queue, restore) | done | done (#24-#27, #37) | todo | todo |
 
 Live chat / agent features (handover, queue card, receipts, rating, files, prefill, max-wait timeout, agent bot replies, suggestion chips) are done in all 4.
