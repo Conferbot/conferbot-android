@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -130,6 +131,18 @@ private fun ConferBotChatScreenContent(
         ?: look.title.takeIf { hasLook }
         ?: "Support Chat"
 
+    // The help centre (core/helpcentre): the web's Chat / Articles switch
+    // under the header while the owner has it on (enableKnowledgeBase).
+    val knowledgeBase by Conferbot.knowledgeBase.collectAsState()
+    val helpOn = com.conferbot.sdk.core.helpcentre.HelpCentre.visible(customizationMap, knowledgeBase)
+    val showRecentArticles = com.conferbot.sdk.core.helpcentre.HelpCentre.showsRecent(customizationMap, knowledgeBase)
+    val articleRequest by Conferbot.helpArticleRequest.collectAsState()
+    val sessionId by Conferbot.chatSessionId.collectAsState()
+    var showArticles by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(helpOn) { if (!helpOn) showArticles = false }
+    // An AI source or an article card asked for an article: the help pane shows it.
+    LaunchedEffect(articleRequest, helpOn) { if (articleRequest != null && helpOn) showArticles = true }
+
     // A theme set to "auto" follows the phone's light / dark setting.
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
     LaunchedEffect(systemDark) { Conferbot.setSystemDarkMode(systemDark) }
@@ -202,6 +215,30 @@ private fun ConferBotChatScreenContent(
                     )
                 }
 
+                if (helpOn) {
+                    HelpCentreTabs(articles = showArticles, onSelect = { showArticles = it })
+                }
+
+                if (helpOn && showArticles) {
+                    val kbService = remember(sessionId) { if (sessionId != null) Conferbot.initKnowledgeBaseService() else null }
+                    if (kbService == null) {
+                        androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            CircularProgressIndicator(color = colors.primary)
+                        }
+                    } else {
+                        com.conferbot.sdk.ui.compose.knowledgebase.KnowledgeBaseScreen(
+                            knowledgeBaseService = kbService,
+                            onDismiss = { showArticles = false },
+                            primaryColor = colors.primary,
+                            embedded = true,
+                            showRecent = showRecentArticles,
+                            openRequest = articleRequest,
+                            onOpenRequestHandled = { Conferbot.consumeHelpArticleRequest(it) },
+                            onBackToChat = { showArticles = false },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                } else {
                 // Messages + inline node interaction
                 PaginatedMessageList(
                     messages = messages,
@@ -229,8 +266,42 @@ private fun ConferBotChatScreenContent(
                     placeholder = if (repliesOff) "Replies are turned off for now" else "Type a message...",
                     onAttach = if (canAttach) ({ pickFile.launch("*/*") }) else null
                 )
+                }
             }
         }
+        }
+    }
+}
+
+/**
+ * The web's Chat / Articles switch (ts/layout/viewTabs.ts): the selected tab
+ * in the header's colours, the other light grey.
+ */
+@Composable
+private fun HelpCentreTabs(articles: Boolean, onSelect: (Boolean) -> Unit) {
+    val colors = ConferbotThemeAmbient.current.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        listOf(false to "Chat", true to "Articles").forEach { (isArticles, label) ->
+            val selected = isArticles == articles
+            Surface(
+                onClick = { onSelect(isArticles) },
+                shape = RoundedCornerShape(9.dp),
+                color = if (selected) colors.headerBackground else Color(0xFFF0F0F0),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) colors.headerText else Color(0xFF333333),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
         }
     }
 }
