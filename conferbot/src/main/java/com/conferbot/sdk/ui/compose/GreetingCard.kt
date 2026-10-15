@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,7 +70,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -105,10 +105,22 @@ private val paths = mutableMapOf<String, Path>()
 private fun svgPath(d: String): Path = paths.getOrPut(d) { PathParser().parsePathString(d).toPath() }
 
 private object GreetFonts {
-    val note = FontFamily.Cursive
-    val sticky = FontFamily.Cursive
+    // "casual" (Coming Soon) is the nearest system hand to Patrick Hand and
+    // Permanent Marker; the generic cursive is a script that reads as neither.
+    private val casual = FontFamily(android.graphics.Typeface.create("casual", android.graphics.Typeface.NORMAL))
+    val note = casual
+    val sticky = casual
     val serif = FontFamily.Serif
     val mono = FontFamily.Monospace
+}
+
+/** The bubble tail (a 16-unit path) scaled to its 16dp box. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTail(color: Color) {
+    val k = size.width / 16f
+    drawContext.canvas.save()
+    drawContext.canvas.scale(k, k)
+    drawPath(svgPath(TAIL_D), color)
+    drawContext.canvas.restore()
 }
 
 private fun hexColor(v: String, fallback: Color = Color.Black): Color = lookColor(v) ?: fallback
@@ -256,7 +268,9 @@ internal fun GreetingCard(
         statusText: String? = null,
         dot: Boolean = true,
         row: Boolean = false,
+        upper: Boolean = false,
     ) {
+        val shownName = if (upper) data.head.name.uppercase() else data.head.name
         val baseName = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), fontFamily = cardFont).merge(name)
         val baseStatus = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B), fontFamily = cardFont).merge(status)
         Row(
@@ -278,7 +292,7 @@ internal fun GreetingCard(
             val showStatus = statusText != null || data.head.online
             if (row) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Text(data.head.name, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(shownName, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (showStatus) {
                         Box(Modifier.weight(1f))
                         Text(statusText ?: "Online", style = baseStatus, modifier = Modifier.padding(end = 18.dp))
@@ -286,7 +300,7 @@ internal fun GreetingCard(
                 }
             } else {
                 Column(Modifier.weight(1f)) {
-                    Text(data.head.name, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(shownName, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (showStatus) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             if (dot && statusText == null) Box(Modifier.size(7.dp).background(Color(0xFF22C55E), CircleShape))
@@ -316,7 +330,7 @@ internal fun GreetingCard(
     }
 
     @Composable
-    fun Chips(chip: Modifier, shape: Shape, text: TextStyle, end: Boolean = false, alpha: Float = 1f) {
+    fun Chips(chip: Modifier, shape: Shape, text: TextStyle, end: Boolean = false, alpha: Float = 1f, pad: PaddingValues = PaddingValues(vertical = 6.dp, horizontal = 12.dp)) {
         if (data.starters.isEmpty()) return
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp, if (end) Alignment.End else Alignment.Start),
@@ -329,7 +343,7 @@ internal fun GreetingCard(
                         .then(chip)
                         .clip(shape)
                         .clickable { onStarter(s) }
-                        .padding(vertical = 6.dp, horizontal = 12.dp),
+                        .padding(pad),
                 ) {
                     Text(
                         s,
@@ -395,7 +409,6 @@ internal fun GreetingCard(
                                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)
                                     },
                             ) {
-                                Canvas(Modifier.size(16.dp).align(Alignment.BottomEnd).offset(x = 5.dp)) { drawPath(svgPath(TAIL_D), tail) }
                                 Box(
                                     Modifier
                                         .shadow(6.dp, bubbleShape, clip = false, ambientColor = Color(0x4D0F172A), spotColor = Color(0x4D0F172A))
@@ -404,6 +417,8 @@ internal fun GreetingCard(
                                 ) {
                                     Text(data.text, color = fg, fontSize = 15.sp, lineHeight = 20.sp, fontFamily = cardFont, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                 }
+                                // The tail, over the bubble's corner, 5 past its edge.
+                                Canvas(Modifier.size(16.dp).align(Alignment.BottomEnd).offset(x = 5.dp)) { drawTail(tail) }
                             }
                             if (reveal && dotsIn.value < 1f) {
                                 val t = dotsIn.value
@@ -415,7 +430,6 @@ internal fun GreetingCard(
                                         scaleY = s
                                     },
                                 ) {
-                                    Canvas(Modifier.size(16.dp).align(Alignment.BottomEnd).offset(x = 5.dp)) { drawPath(svgPath(TAIL_D), Color(0xFFE9E9EB)) }
                                     Row(
                                         Modifier.background(Color(0xFFE9E9EB), bubbleShape).padding(vertical = 12.dp, horizontal = 14.dp),
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -427,6 +441,7 @@ internal fun GreetingCard(
                                             Box(Modifier.offset(y = y.dp).size(7.dp).graphicsLayer { alpha = o }.background(Color(0xFF8E8E93), CircleShape))
                                         }
                                     }
+                                    Canvas(Modifier.size(16.dp).align(Alignment.BottomEnd).offset(x = 5.dp)) { drawTail(Color(0xFFE9E9EB)) }
                                 }
                             }
                         }
@@ -476,10 +491,25 @@ internal fun GreetingCard(
                                 status = TextStyle(fontFamily = GreetFonts.note, color = Color(0xFF475569)),
                             )
                             Message(TextStyle(fontFamily = GreetFonts.note, fontSize = 20.sp, fontWeight = FontWeight.Normal, lineHeight = 26.sp, color = Color(0xFF1F2A44)))
+                            // Plain words with a wavy accent underline (amplitude 1.5, wavelength 6, 4 below the text).
                             Chips(
-                                Modifier,
+                                Modifier.drawBehind {
+                                    val u = 1.dp.toPx()
+                                    val y = size.height
+                                    val wave = Path().apply {
+                                        moveTo(4 * u, y)
+                                        var x = 4 * u
+                                        while (x < size.width - 4 * u) {
+                                            quadraticBezierTo(x + 1.5f * u, y - 1.5f * u, x + 3 * u, y)
+                                            quadraticBezierTo(x + 4.5f * u, y + 1.5f * u, x + 6 * u, y)
+                                            x += 6 * u
+                                        }
+                                    }
+                                    drawPath(wave, accent.copy(alpha = 0.5f), style = Stroke(1.dp.toPx()))
+                                },
                                 RoundedCornerShape(4.dp),
-                                TextStyle(color = accent, fontFamily = GreetFonts.note, fontSize = 16.sp, fontWeight = FontWeight.Normal, textDecoration = TextDecoration.Underline),
+                                TextStyle(color = accent, fontFamily = GreetFonts.note, fontSize = 16.sp, fontWeight = FontWeight.Normal),
+                                pad = PaddingValues(vertical = 2.dp, horizontal = 4.dp),
                             )
                         }
                         Close(top = 10f, right = 10f, color = Color(0xFF94A3B8))
@@ -518,6 +548,7 @@ internal fun GreetingCard(
                         Parts {
                             Head(
                                 showAvatar = false,
+                                upper = true,
                                 name = TextStyle(fontFamily = GreetFonts.serif, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.44.sp, color = Color(0xFF8A6D4B)),
                                 status = TextStyle(fontFamily = GreetFonts.serif, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic, color = Color(0xFF2B2118), lineHeight = 21.sp),
                                 statusText = "Greetings from ${data.head.name}",
@@ -532,9 +563,9 @@ internal fun GreetingCard(
                         // Stamp and postmark
                         Box(
                             Modifier.align(Alignment.TopEnd).offset(x = (-14).dp, y = 12.dp).size(40.dp, 48.dp)
-                                .background(accent).border(2.dp, Color.White),
+                                .background(Brush.verticalGradient(listOf(accent, accent.copy(alpha = 0.7f)))).border(2.dp, Color.White),
                             contentAlignment = Alignment.Center,
-                        ) { Text("♥", color = Color.White.copy(alpha = 0.92f), fontSize = 20.sp, fontFamily = GreetFonts.serif) }
+                        ) { Text("\u2665\uFE0E", color = Color.White.copy(alpha = 0.92f), fontSize = 20.sp, fontFamily = GreetFonts.serif) }
                         Canvas(Modifier.align(Alignment.TopEnd).offset(x = (-34).dp, y = 34.dp).size(44.dp).rotate(-14f)) {
                             val u = size.width / 44f
                             val circle = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(22 * u, 22 * u), 21 * u)) }
@@ -599,7 +630,7 @@ internal fun GreetingCard(
                         .drawBehind { drawRect(accent, size = Size(size.width, 3.dp.toPx())) }
                         .then(tap),
                 ) {
-                    Parts(top = 17.dp) {
+                    Parts {
                         Head(
                             name = TextStyle(fontFamily = GreetFonts.mono, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.27.sp),
                             status = TextStyle(fontFamily = GreetFonts.mono),
@@ -651,6 +682,7 @@ internal fun GreetingCard(
                             avatar = 22f,
                             avatarRadius = 6f,
                             row = true,
+                            upper = true,
                             name = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.24.sp, color = Color(0xFF555555)),
                             status = TextStyle(color = Color(0xFF8E8E93)),
                             statusText = "now",
