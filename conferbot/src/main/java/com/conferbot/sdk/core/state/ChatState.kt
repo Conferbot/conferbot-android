@@ -936,7 +936,7 @@ object ChatState {
             "chatDate" to java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
                 .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
                 .format(java.util.Date()),
-            "deviceInfo" to android.os.Build.MODEL,
+            "deviceInfo" to (android.os.Build.MODEL ?: "Android"),
             "location" to java.util.TimeZone.getDefault().id,
             "record" to getRecordForServer(),
             "answerVariables" to _answerVariables.value.map {
