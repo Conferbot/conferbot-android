@@ -19,6 +19,9 @@ data class KnowledgeBaseCategory(
     @SerializedName("icon")
     val icon: String? = null,
 
+    @SerializedName("color")
+    val color: String? = null,
+
     @SerializedName("articles")
     val articles: List<KnowledgeBaseArticle> = emptyList(),
 
@@ -86,8 +89,20 @@ data class KnowledgeBaseData(
     val categories: List<KnowledgeBaseCategory> = emptyList(),
 
     @SerializedName("enableKnowledgeBase")
-    val isEnabled: Boolean = false
+    val isEnabled: Boolean = false,
+
+    /** The newest articles, for the recent list (`recentArticles`). */
+    @SerializedName("recentArticles")
+    val recentArticles: List<KnowledgeBaseArticle> = emptyList(),
+
+    /** False when the bodies were left out and are fetched on open. */
+    @SerializedName("contentIncluded")
+    val contentIncluded: Boolean = false
 ) {
+    /** Anything published to show? A help centre without it counts as off. */
+    val hasArticles: Boolean
+        get() = recentArticles.isNotEmpty() || categories.any { it.articles.isNotEmpty() }
+
     /**
      * Get all articles from all categories
      */
@@ -132,7 +147,7 @@ data class KnowledgeBaseData(
             }
 
             // Content match
-            val contentText = article.content.replace(Regex("<[^>]*>"), "").lowercase()
+            val contentText = (article.content ?: article.snippet ?: "").replace(Regex("<[^>]*>"), "").lowercase()
             if (contentText.contains(queryLower)) {
                 matchedFields.add("content")
                 score += 1f
@@ -190,7 +205,7 @@ data class KnowledgeBaseData(
      * Get article by ID
      */
     fun getArticleById(articleId: String): KnowledgeBaseArticle? {
-        return getAllArticles().find { it.id == articleId }
+        return getAllArticles().find { it.id == articleId } ?: recentArticles.find { it.id == articleId }
     }
 
     /**
