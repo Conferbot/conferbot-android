@@ -286,6 +286,20 @@ off() // stop listening
 
 `HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
 
+### How bot flows run
+
+The flow engine runs a bot the way the web widget does. It passes the shared flow-node spec: all 156 of its cases, each produced by running the widget's own code.
+
+- The chat starts at the flow's first welcome step. A step that doesn't branch moves on along its first line. A branch with no line, a jump to a step that is gone, or the end of a path ends the chat. A step type the SDK doesn't know shows nothing and carries on.
+- Questions save their answer under the step's own variable (`answerVariable`). Text fills `{name}`, `${name}` and `{{name}}` from the answers; an unknown one shows nothing.
+- Phone numbers are saved normalised, numbers as numbers, bare links with `https://`. A refused answer says why and the step waits.
+- The rich steps are supported: consent, OTP, payment, address, date/time, slider, ranking, matrix, product card, dynamic choices, hidden fields, AI extract, AI route, knowledge-base answer and signature. So are loops and sub-flows. Payment, OTP and required consent stay gates: the flow goes on only when the server says paid or verified, or the box is ticked.
+- The GPT, AI and knowledge-base steps ask Conferbot's server, which holds the owner's AI key. The app never needs one.
+- Card numbers, IDs and passwords a visitor types are masked in the answers and the record, unless the bot's `redactSensitive` setting is off.
+- Typing dots last as long as on the web: longer for longer messages.
+
+A step without a native card yet (the matrix, a drawn signature, the address search list) uses the closest existing card: choices, a slider, the calendar or a text box.
+
 ## Configuration
 
 ### ConferBotConfig
