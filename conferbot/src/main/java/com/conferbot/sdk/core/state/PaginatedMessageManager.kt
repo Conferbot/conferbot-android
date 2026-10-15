@@ -89,7 +89,9 @@ class PaginatedMessageManager(
                 repository.addMessage(message)
 
                 val currentMessages = _messages.value.toMutableList()
-                currentMessages.add(message)
+                // Saved again (a vote, a settled handover line): replaced in place.
+                val at = currentMessages.indexOfFirst { it.id == message.id }
+                if (at >= 0) currentMessages[at] = message else currentMessages.add(message)
 
                 // Trim if needed
                 if (currentMessages.size > config.maxMemoryMessages) {
