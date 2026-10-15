@@ -3,7 +3,11 @@ package com.conferbot.sdk.core.state
 import com.conferbot.sdk.testutils.TestChatState
 import com.conferbot.sdk.testutils.TestFixtures
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -24,12 +28,15 @@ class ChatStateTest {
 
     @Before
     fun setUp() {
+        // ChatState launches on Dispatchers.Main, which a JVM test has no looper for.
+        Dispatchers.setMain(UnconfinedTestDispatcher())
         ChatState.reset()
     }
 
     @After
     fun tearDown() {
         ChatState.reset()
+        Dispatchers.resetMain()
     }
 
     // ==================== INITIALIZATION TESTS ====================
@@ -701,6 +708,50 @@ class ChatStateTest {
         assertThat(responseData["location"]).isNotNull()
         assertThat(responseData["record"]).isNotNull()
         assertThat(responseData["answerVariables"]).isNotNull()
+    }
+
+    @Test
+    fun `buildResponseData carries the signed-in user as visitorContext`() {
+        ChatState.initialize(
+            TestFixtures.TEST_CHAT_SESSION_ID,
+            TestFixtures.TEST_VISITOR_ID,
+            TestFixtures.TEST_BOT_ID
+        )
+        val user = com.conferbot.sdk.models.ConferBotUser(
+            id = "u-42",
+            name = "Ada",
+            email = "ada@example.com",
+            metadata = mapOf("plan" to "pro"),
+            hash = "abc123"
+        )
+        ChatState.visitorContext = user.toVisitorContext()
+        try {
+            val responseData = ChatState.buildResponseData()
+
+            assertThat(responseData["visitorContext"]).isEqualTo(
+                mapOf("plan" to "pro", "id" to "u-42", "name" to "Ada", "email" to "ada@example.com", "hash" to "abc123")
+            )
+            assertThat(responseData["visitorName"]).isEqualTo("Ada")
+            assertThat(responseData["visitorEmail"]).isEqualTo("ada@example.com")
+            assertThat(responseData["botId"]).isEqualTo(TestFixtures.TEST_BOT_ID)
+        } finally {
+            ChatState.visitorContext = null
+        }
+    }
+
+    @Test
+    fun `buildResponseData leaves visitor fields out without a user`() {
+        ChatState.visitorContext = null
+        ChatState.initialize(
+            TestFixtures.TEST_CHAT_SESSION_ID,
+            TestFixtures.TEST_VISITOR_ID,
+            TestFixtures.TEST_BOT_ID
+        )
+
+        val responseData = ChatState.buildResponseData()
+
+        assertThat(responseData).doesNotContainKey("visitorContext")
+        assertThat(responseData).doesNotContainKey("visitorName")
     }
 
     @Test
