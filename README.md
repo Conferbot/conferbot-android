@@ -486,24 +486,36 @@ Conferbot.initialize(
 
 In headless UIs call `Conferbot.loadMoreMessages()` when the user scrolls near the top and check `Conferbot.hasMoreMessages()`. The built-in `ConferBotChatScreen` does this for you.
 
-### Knowledge base
+### Knowledge base (help centre)
 
-If your bot has a knowledge base, show the built-in help center:
+The help centre follows the bot's settings in the dashboard, as on the web widget:
+
+- It shows only while **Help articles** (`enableKnowledgeBase`) is on and at least one article is published. `ConferBotChatScreen` then shows a **Chat / Articles** switch under the header.
+- Recent articles head the list unless the owner hid them (`hideRecentArticles`).
+- An AI reply that cites a help article, and an agent's article card without a public link, open that article in the Articles tab. Back returns to the conversation.
+
+The categories and articles come with the bot's data. An article's body is fetched when it opens, and search adds matches found inside article text.
+
+To show the help centre on its own screen:
 
 ```kotlin
 import com.conferbot.sdk.ui.compose.knowledgebase.KnowledgeBaseScreen
 
-val kbService = Conferbot.initKnowledgeBaseService() ?: return
-Conferbot.fetchKnowledgeBase()
-
-KnowledgeBaseScreen(
-    knowledgeBaseService = kbService,
-    onDismiss = { /* close */ },
-    title = "Help Center"
-)
+if (Conferbot.isHelpCentreOn) {
+    val kbService = Conferbot.initKnowledgeBaseService() ?: return
+    KnowledgeBaseScreen(
+        knowledgeBaseService = kbService,
+        onDismiss = { /* close */ },
+        title = "Help Center"
+    )
+}
 ```
 
-Headless access: `Conferbot.searchKnowledgeBase(query)`, `trackKnowledgeBaseArticleView(article)`, `startKnowledgeBaseArticleEngagement(articleId)`, `updateKnowledgeBaseScrollDepth(depth)`, `rateKnowledgeBaseArticle(articleId, helpful)`, `hasRatedKnowledgeBaseArticle(articleId)`.
+To open one article by id: `Conferbot.openHelpArticle(articleId, title)`. It returns false while the help centre is off. The data is at `Conferbot.knowledgeBase` (a `StateFlow`).
+
+Headless access: `Conferbot.searchKnowledgeBase(query)`, `trackKnowledgeBaseArticleView(article)`, `startKnowledgeBaseArticleEngagement(articleId)`, `updateKnowledgeBaseScrollDepth(depth)`, `rateKnowledgeBaseArticle(articleId, helpful)`, `hasRatedKnowledgeBaseArticle(articleId)`. On the service: `loadArticleBody(articleId)`, `articleBodies`.
+
+The XML Views chat has no help centre yet.
 
 ### Analytics
 
@@ -612,7 +624,9 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `handleNotificationTap` | `handleNotificationTap(data: Map<String, String>)` | Handle a notification tap intent |
 | `updateNotificationSettings` | `updateNotificationSettings(settings: NotificationSettings)` | Configure notification behavior |
 | `initKnowledgeBaseService` | `initKnowledgeBaseService(): KnowledgeBaseService?` | Get/create the KB service |
-| `fetchKnowledgeBase` | `fetchKnowledgeBase()` | Request KB data over the socket |
+| `fetchKnowledgeBase` | `fetchKnowledgeBase()` | No-op kept for old callers: KB data comes with the bot's data |
+| `openHelpArticle` | `openHelpArticle(articleId: String, title: String? = null, fromChat: Boolean = true): Boolean` | Open an article in the chat's help centre |
+| `isHelpCentreOn` | `val isHelpCentreOn: Boolean` | Help centre on, with published articles |
 | `searchKnowledgeBase` | `searchKnowledgeBase(query: String)` | Full-text article search |
 | `setUtmParameters` | `setUtmParameters(utmSource: String? = null, utmMedium: String? = null, utmCampaign: String? = null, utmTerm: String? = null, utmContent: String? = null, referrer: String? = null, landingPage: String? = null)` | Attribution parameters |
 | `trackGoalCompletion` | `trackGoalCompletion(goalId: String, conversionEvent: String? = null, conversionValue: Double? = null)` | Report a goal conversion |
@@ -628,7 +642,7 @@ UI entry points:
 | `ConferBotChatScreen` | `@Composable ConferBotChatScreen(onDismiss: () -> Unit = {}, modifier: Modifier = Modifier)` | Full chat screen (server-themed) |
 | `ConferBotChatView` | `@Composable ConferBotChatView(modifier, lightTheme: ConferbotTheme = LightTheme, darkTheme: ConferbotTheme = DarkTheme, useDarkTheme: Boolean? = null, ...)` | Chat screen with local light/dark theming |
 | `ConferBotThemedChatScreen` | `@Composable ConferBotThemedChatScreen(onDismiss: () -> Unit, lightTheme, darkTheme, useDarkTheme, modifier)` | Themed modal chat with dismiss |
-| `KnowledgeBaseScreen` | `@Composable KnowledgeBaseScreen(knowledgeBaseService: KnowledgeBaseService, onDismiss: () -> Unit, modifier: Modifier = Modifier, primaryColor: Color = Color(0xFF0100EC), title: String = "Help Center")` | Built-in help center |
+| `KnowledgeBaseScreen` | `@Composable KnowledgeBaseScreen(knowledgeBaseService: KnowledgeBaseService, onDismiss: () -> Unit, modifier: Modifier = Modifier, primaryColor: Color = Color(0xFF0100EC), title: String = "Help Center", embedded: Boolean = false, showRecent: Boolean = true, openRequest: Conferbot.HelpArticleRequest? = null, ...)` | Built-in help center |
 | `ChatActivity` | `com.conferbot.sdk.ui.views.ChatActivity` | XML full-screen chat (launched by `openChat`) |
 
 More detail in the [docs/](docs/) directory: [USAGE.md](docs/USAGE.md) (step-by-step tutorial), [API.md](docs/API.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md), [COMPONENTS.md](docs/COMPONENTS.md), [EXAMPLES.md](docs/EXAMPLES.md), [CHANGELOG.md](docs/CHANGELOG.md).
