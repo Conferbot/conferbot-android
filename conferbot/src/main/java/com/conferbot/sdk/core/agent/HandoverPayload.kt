@@ -4,8 +4,9 @@ import com.conferbot.sdk.core.state.ChatState
 
 /**
  * The initiate-handover payload, as the web widget sends it
- * (conferbot-widget buildAllMetaData + _handleHumanHandoverNode): used by
- * the human-handover node and by an AI agent bot's silent start.
+ * (conferbot-widget buildAllMetaData + _handleHumanHandoverNode, and
+ * src/ts/chat/handlers/special.ts startHandover): used by the
+ * human-handover node and by an AI agent bot's silent start.
  */
 object HandoverPayload {
 
@@ -60,6 +61,22 @@ object HandoverPayload {
             "assignmentStrategy" to (nodeData["agentAssignmentStrategy"]?.toString() ?: ""),
             "assignedAgents" to (nodeData["assignedAgents"] ?: emptyList<String>()),
             "assignedAIAgents" to (nodeData["assignedAIAgents"] ?: emptyList<String>())
-        ) + extra
+        ) + stepSettings(nodeData) + extra
+    }
+
+    /**
+     * The step's notification and assignment settings, as the web sends them
+     * (ts/chat/handlers/special.ts startHandover). An explicit
+     * enableHandoverEmail false is what keeps the team's email off. The
+     * assignment overrides go only when the step sets them (a step that
+     * follows the workspace sends what it always did).
+     */
+    fun stepSettings(nodeData: Map<String, Any?>): Map<String, Any?> = buildMap {
+        listOf("enableHandoverEmail", "enableHandoverSound", "checkedSoundTab", "selectedSound", "customHandoverSoundUrl")
+            .forEach { k -> if (nodeData.containsKey(k)) put(k, nodeData[k]) }
+        val method = nodeData["assignmentMethod"]?.toString()
+        if (!method.isNullOrEmpty() && method != "workspace") put("assignmentMethod", method)
+        val skills = nodeData["requiredSkills"] as? List<*>
+        if (!skills.isNullOrEmpty()) put("requiredSkills", skills)
     }
 }
