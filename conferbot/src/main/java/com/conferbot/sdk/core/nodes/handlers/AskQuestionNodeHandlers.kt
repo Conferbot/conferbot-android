@@ -1,834 +1,473 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.flow.FlowCalendar
+import com.conferbot.sdk.core.flow.FlowInputs
+import com.conferbot.sdk.core.flow.FlowInputs.EN
+import com.conferbot.sdk.core.flow.FlowText
+import com.conferbot.sdk.core.flow.Js
+import com.conferbot.sdk.core.flow.UploadFile
+import com.conferbot.sdk.core.flow.flowContext
 import com.conferbot.sdk.core.nodes.*
+import com.conferbot.sdk.core.state.ChatState
+import com.conferbot.sdk.core.state.RecordEntry
 
 /**
- * Handler for ask-name-node
- * Asks user for their name
- */
-class AskNameNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_NAME
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your name?"))
-        val answerKey = getString(nodeData, "answerVariable", "name")
-
-        // Add question to transcript
-        state.addToTranscript("bot", questionText)
-
-        // Initialize answer variable
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.NAME,
-                placeholder = "Enter your name",
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val name = response.toString().trim()
-
-        if (name.isEmpty()) {
-            return NodeResult.Error("Please enter your name", shouldProceed = false)
-        }
-
-        // Update answer variable
-        state.setAnswerVariable(nodeId, name)
-
-        // Set user metadata
-        state.setUserMetadata("name", name)
-
-        // Add to transcript
-        state.addToTranscript("user", name)
-
-        // Record the response
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-name-response",
-            text = name,
-            type = nodeType
-        )
-
-        // Display greeting if configured
-        val greetResponse = nodeData["nameGreetResponse"]?.toString()
-            ?: nodeData["nameGreet"]?.toString()
-
-        if (!greetResponse.isNullOrEmpty()) {
-            // Replace placeholders with name
-            val greeting = greetResponse
-                .replace("{name}", name)
-                .replace("\${name}", name)
-                .replace("{{name}}", name)
-
-            state.addToTranscript("bot", greeting)
-        }
-
-        return NodeResult.DelayedProceed(delayMs = 500)
-    }
-}
-
-/**
- * Handler for ask-email-node
- * Asks user for their email
- */
-class AskEmailNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_EMAIL
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your email?"))
-        val answerKey = getString(nodeData, "answerVariable", "email")
-        val errorMessage = getString(nodeData, "incorrectEmailResponse", "Please enter a valid email address")
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.EMAIL,
-                placeholder = "Enter your email",
-                errorMessage = errorMessage,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val email = response.toString().trim()
-        val errorMessage = getString(nodeData, "incorrectEmailResponse", "Please enter a valid email address")
-
-        if (!isValidEmail(email)) {
-            return NodeResult.Error(errorMessage, shouldProceed = false)
-        }
-
-        state.setAnswerVariable(nodeId, email)
-        state.setUserMetadata("email", email)
-        state.addToTranscript("user", email)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-email-response",
-            text = email,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-phone-number-node
- * Asks user for their phone number
- */
-class AskPhoneNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_PHONE
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your phone number?"))
-        val answerKey = getString(nodeData, "answerVariable", "phone")
-        val errorMessage = getString(nodeData, "incorrectPhoneNumberResponse", "Please enter a valid phone number")
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.PHONE,
-                placeholder = "Enter your phone number",
-                errorMessage = errorMessage,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val phone = response.toString().trim()
-        val errorMessage = getString(nodeData, "incorrectPhoneNumberResponse", "Please enter a valid phone number")
-
-        if (!isValidPhone(phone)) {
-            return NodeResult.Error(errorMessage, shouldProceed = false)
-        }
-
-        state.setAnswerVariable(nodeId, phone)
-        state.setUserMetadata("phone", phone)
-        state.addToTranscript("user", phone)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-phone-response",
-            text = phone,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-number-node
- * Asks user for a number
- */
-class AskNumberNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_NUMBER
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please enter a number"))
-        val answerKey = getString(nodeData, "answerVariable", "number")
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.NUMBER,
-                placeholder = "Enter a number",
-                errorMessage = "Please enter a valid number",
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val value = response.toString().trim()
-
-        if (!isValidNumber(value)) {
-            return NodeResult.Error("Please enter a valid number", shouldProceed = false)
-        }
-
-        val number = value.toDoubleOrNull() ?: 0.0
-
-        state.setAnswerVariable(nodeId, number)
-        state.addToTranscript("user", value)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-number-response",
-            text = value,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-url-node
- * Asks user for a URL
- */
-class AskUrlNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_URL
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please enter a URL"))
-        val answerKey = getString(nodeData, "answerVariable", "url")
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.URL,
-                placeholder = "Enter a URL",
-                errorMessage = "Please enter a valid URL",
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val url = response.toString().trim()
-
-        if (!isValidUrl(url)) {
-            return NodeResult.Error("Please enter a valid URL", shouldProceed = false)
-        }
-
-        state.setAnswerVariable(nodeId, url)
-        state.addToTranscript("user", url)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-url-response",
-            text = url,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-location-node
- * Asks user for a location
- */
-class AskLocationNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_LOCATION
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "What is your location?"))
-        val answerKey = getString(nodeData, "answerVariable", "location")
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.LOCATION,
-                placeholder = "Enter your location",
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val location = response.toString().trim()
-
-        if (location.isEmpty()) {
-            return NodeResult.Error("Please enter a location", shouldProceed = false)
-        }
-
-        state.setAnswerVariable(nodeId, location)
-        state.addToTranscript("user", location)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-location-response",
-            text = location,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-custom-question-node
- * Asks a custom question
- */
-class AskCustomNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_CUSTOM
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please answer the question"))
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.TextInput(
-                questionText = questionText,
-                inputType = NodeUIState.TextInput.InputType.TEXT,
-                placeholder = "Type your answer",
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val answer = response.toString().trim()
-
-        if (answer.isEmpty()) {
-            return NodeResult.Error("Please enter an answer", shouldProceed = false)
-        }
-
-        state.setAnswerVariable(nodeId, answer)
-        state.addToTranscript("user", answer)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-custom-response",
-            text = answer,
-            type = nodeType
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for ask-file-node
- * Asks user to upload a file
+ * The question steps answered in the composer (ask-name, ask-email,
+ * ask-phone-number, ask-number, ask-url, ask-location, ask-custom-question),
+ * the file step (ask-file), calendar-node and ask-multiple-questions-node.
+ * Field names, checks, records and saved values follow the flow-node spec
+ * and the web widget's ts/chat/handlers/askQuestions.ts; ported from RN
+ * AskNodeHandlers.ts and AdvancedInputHandlers.ts:
  *
- * Supports:
- * - Single or multiple file uploads
- * - File type restrictions (MIME types)
- * - File size validation
- * - Direct upload or S3 signed URL upload
- * - Upload progress tracking
+ * - the prompt is data.questionText;
+ * - the answer fills the variable the step registered when it was shown
+ *   (data.answerVariable) - a step without one stores nothing;
+ * - phone numbers are saved normalised, numbers as numbers, bare links as https;
+ * - a refused answer says why and the step keeps waiting.
+ */
+abstract class BaseAskHandler : BaseNodeHandler() {
+    protected abstract val inputType: NodeUIState.TextInput.InputType
+    protected abstract val shape: String
+    protected open val placeholder: String = "Type your answer..."
+
+    protected fun ui(nodeData: Map<String, Any?>, nodeId: String) = NodeUIState.TextInput(
+        questionText = FlowKit.shownText(nodeData["questionText"]),
+        inputType = inputType,
+        placeholder = placeholder,
+        nodeId = nodeId,
+        answerKey = Js.str(nodeData["answerVariable"])
+    )
+
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText)
+        return NodeResult.DisplayUI(ui)
+    }
+
+    /** The refusal message, or null when the answer is fine. */
+    protected open fun problem(value: String, nodeData: Map<String, Any?>): String? = null
+
+    /** What is saved (variable) and recorded (text) for the answer. */
+    protected open fun saved(value: String): Pair<Any?, String> = value to value
+
+    /** After the answer is saved: by default, on along the first edge. */
+    protected open suspend fun after(value: String, nodeData: Map<String, Any?>, nodeId: String): NodeResult = NodeResult.Proceed()
+
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val value = FlowKit.typedText(response)
+        if (value.isEmpty()) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        problem(value, nodeData)?.let { return NodeResult.Invalid(it, ui(nodeData, nodeId)) }
+        val (variable, text) = saved(value)
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to shape, "text" to text))
+        FlowKit.userSay(text)
+        ChatState.fillAnswerVariable(nodeId, variable)
+        return after(value, nodeData, nodeId)
+    }
+}
+
+/**
+ * ask-name-node: any text. The full answer is saved; nameGreetResponse
+ * greets by the first name after 2000 ms of typing (none set: the default
+ * greeting; cleared in the builder: no greeting).
+ */
+class AskNameNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_NAME
+    override val inputType = NodeUIState.TextInput.InputType.NAME
+    override val shape = "user-ask-name-response"
+    override val placeholder = "Your name"
+
+    override suspend fun after(value: String, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        ChatState.setUserMetadata("name", value)
+        val greeting = FlowText.nameGreetingHtml(if (nodeData.containsKey("nameGreetResponse")) nodeData["nameGreetResponse"] else null, value)
+        if (greeting.isEmpty()) return NodeResult.Proceed()
+        flowContext().typing(2000)
+        ChatState.addRecord(
+            RecordEntry(
+                id = nodeId, shape = "ask-name-response-greet", type = "ask-name-response-greet", text = greeting, time = FlowKit.nowIso(),
+                fields = mapOf("renderedText" to FlowText.fillVariables(greeting, { ChatState.lookupVariable(it) }))
+            )
+        )
+        FlowKit.botSay(FlowKit.shownText(greeting), side = true)
+        return NodeResult.Proceed()
+    }
+}
+
+/**
+ * ask-email-node: the widget's e-mail check (incorrectEmailResponse, else
+ * the default). A likely domain typo is refused once with the fix offered;
+ * the same address sent again is kept as typed.
+ */
+class AskEmailNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_EMAIL
+    override val inputType = NodeUIState.TextInput.InputType.EMAIL
+    override val shape = "user-ask-email-response"
+    override val placeholder = "name@company.com"
+
+    override fun problem(value: String, nodeData: Map<String, Any?>): String? {
+        if (!FlowInputs.isValidEmail(value)) {
+            return FlowInputs.ownerTextOr(nodeData["incorrectEmailResponse"], EN.emailInvalid, listOf("Please enter a valid email"))
+        }
+        val fix = FlowInputs.suggestEmailFix(value)
+        val typed = value.trim().lowercase()
+        if (fix != null && ChatState.getVariable("_lastEmailTypo") != typed) {
+            ChatState.setVariable("_lastEmailTypo", typed)
+            return EN.emailTypo(fix)
+        }
+        ChatState.setVariable("_lastEmailTypo", "")
+        return null
+    }
+
+    override suspend fun after(value: String, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        ChatState.setUserMetadata("email", value)
+        return NodeResult.Proceed()
+    }
+}
+
+/** ask-phone-number-node: 6-15 digits once normalised; saved normalised. */
+class AskPhoneNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_PHONE
+    override val inputType = NodeUIState.TextInput.InputType.PHONE
+    override val shape = "user-ask-phone-number-response"
+    override val placeholder = "Phone number"
+
+    override fun problem(value: String, nodeData: Map<String, Any?>): String? =
+        if (FlowInputs.isValidPhone(value)) null else FlowInputs.phoneErrorText(nodeData)
+
+    override fun saved(value: String): Pair<Any?, String> = FlowInputs.normalizePhone(value).let { it to it }
+
+    override suspend fun after(value: String, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        ChatState.setUserMetadata("phone", FlowInputs.normalizePhone(value))
+        return NodeResult.Proceed()
+    }
+}
+
+/**
+ * ask-number-node: "1,200" is 1200, "3,5" is 3.5; enableConditions bounds
+ * (minVal / maxVal); invalidNumberResponse ({min}/{max} filled). Saved as a NUMBER.
+ */
+class AskNumberNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_NUMBER
+    override val inputType = NodeUIState.TextInput.InputType.NUMBER
+    override val shape = "user-ask-number-response"
+    override val placeholder = "Enter a number"
+
+    override fun problem(value: String, nodeData: Map<String, Any?>): String? = FlowInputs.numberProblem(value, nodeData)
+
+    override fun saved(value: String): Pair<Any?, String> {
+        val n = FlowInputs.parseNumberInput(value) ?: return value to value
+        return Js.tidy(n) to Js.num(n)
+    }
+}
+
+/** ask-url-node: a link people would type; a bare host is saved with https://. */
+class AskUrlNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_URL
+    override val inputType = NodeUIState.TextInput.InputType.URL
+    override val shape = "user-ask-url-response"
+
+    override fun problem(value: String, nodeData: Map<String, Any?>): String? = if (FlowInputs.isValidLink(value)) null else EN.link
+
+    override fun saved(value: String): Pair<Any?, String> = FlowInputs.linkHref(value).ifEmpty { value.trim() }.let { it to it }
+}
+
+/** ask-location-node: any text. */
+class AskLocationNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_LOCATION
+    override val inputType = NodeUIState.TextInput.InputType.LOCATION
+    override val shape = "user-ask-location-response"
+    override val placeholder = "City or address"
+}
+
+/** ask-custom-question-node: any text. */
+class AskCustomNodeHandler : BaseAskHandler() {
+    override val nodeType = NodeTypes.ASK_CUSTOM
+    override val inputType = NodeUIState.TextInput.InputType.TEXT
+    override val shape = "user-ask-custom-question-response"
+}
+
+/** A picked file from an answer: the SDK card's {action: "upload", files: [...]} or {file: {...}}. */
+internal fun pickedFileOf(response: Map<String, Any?>): UploadFile? {
+    val f = Js.map(response["file"]) ?: Js.map(Js.list(response["files"]).firstOrNull()) ?: return null
+    return UploadFile(
+        uri = f["uri"]?.let { Js.str(it) },
+        name = f["name"]?.let { Js.str(it) },
+        type = (f["type"] ?: f["mimeType"])?.let { Js.str(it) },
+        size = (f["size"] as? Number)?.toDouble()
+    )
+}
+
+/**
+ * ask-file-node: an upload card. A file over maxFileSizeMB (default 5) or not
+ * in allowedFileTypes is refused on the card; the picked file is uploaded to
+ * POST /api/v1/bot/:id/media and its URL saved. A failed upload keeps the step
+ * waiting. Optional ("(optional)" in the question, or data.optional) offers
+ * Skip: recorded as skipped, no variable.
+ *
+ * Answers: {file: {uri, name, type, size}} or the card's {action: "upload",
+ * files: [...]} (uploaded here), {url, fileName} (uploaded already), or
+ * {skip: true} / {action: "skip"}.
  */
 class AskFileNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.ASK_FILE
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = state.resolveVariables(getString(nodeData, "questionText", "Please upload a file"))
-        val answerKey = getString(nodeData, "answerVariable", "file")
-        val maxSizeMb = getInt(nodeData, "maxSize", 5)
-
-        // Parse allowed file types from node configuration
-        val allowedTypes = parseAllowedTypes(nodeData)
-
-        // Check if multiple file upload is enabled
-        val allowMultiple = getBoolean(nodeData, "allowMultiple", false)
-        val maxFiles = getInt(nodeData, "maxFiles", 5)
-
-        // Upload configuration
-        val useSignedUrl = getBoolean(nodeData, "useSignedUrl", true)
-
-        // Get chat session ID from state
-        val chatSessionId = state.chatSessionId
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.FileUpload(
-                questionText = questionText,
-                maxSizeMb = maxSizeMb,
-                allowedTypes = allowedTypes,
-                allowMultiple = allowMultiple,
-                maxFiles = maxFiles,
-                useSignedUrl = useSignedUrl,
-                nodeId = nodeId,
-                answerKey = answerKey,
-                chatSessionId = chatSessionId
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> @Suppress("UNCHECKED_CAST") (response as Map<String, Any?>)
-            else -> mapOf("url" to response.toString())
-        }
-
-        // Handle different response actions
-        val action = responseMap["action"]?.toString()
-
-        when (action) {
-            "upload" -> {
-                // Files are being uploaded - this is handled by the UI layer
-                // The actual upload completion will trigger another handleResponse
-                return NodeResult.DisplayUI(
-                    NodeUIState.FileUpload(
-                        questionText = "",
-                        maxSizeMb = getInt(nodeData, "maxSize", 5),
-                        nodeId = nodeId,
-                        answerKey = getString(nodeData, "answerVariable", "file"),
-                        chatSessionId = state.chatSessionId
-                    )
-                )
-            }
-
-            "cancel" -> {
-                // Upload was cancelled - show picker again
-                return process(nodeData, nodeId)
-            }
-
-            "complete" -> {
-                // Upload completed successfully
-                return handleUploadComplete(responseMap, nodeData, nodeId)
-            }
-
-            else -> {
-                // Direct response with URL (legacy or simple case)
-                return handleUploadComplete(responseMap, nodeData, nodeId)
-            }
-        }
-    }
-
-    /**
-     * Handle completed file upload(s)
-     */
-    private fun handleUploadComplete(
-        responseMap: Map<String, Any?>,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // Check for multiple files
-        val uploadedFiles = responseMap["uploadedFiles"]
-        if (uploadedFiles != null && uploadedFiles is List<*>) {
-            return handleMultipleFilesComplete(
-                @Suppress("UNCHECKED_CAST")
-                uploadedFiles as List<Map<String, Any?>>,
-                nodeData,
-                nodeId
-            )
-        }
-
-        // Single file upload
-        val fileUrl = responseMap["url"]?.toString()
-            ?: return NodeResult.Error("Invalid file upload - no URL received", shouldProceed = false)
-        val fileName = responseMap["fileName"]?.toString() ?: "uploaded_file"
-        val fileSize = (responseMap["fileSize"] as? Number)?.toLong() ?: 0L
-        val mimeType = responseMap["mimeType"]?.toString() ?: "application/octet-stream"
-
-        // Store the file URL as the answer
-        state.setAnswerVariable(nodeId, fileUrl)
-        state.addToTranscript("user", "[File: $fileName]")
-
-        // Record the response with full file metadata
-        recordResponse(
+    private fun ui(nodeData: Map<String, Any?>, nodeId: String): NodeUIState.FileUpload {
+        val types = Js.list(nodeData["allowedFileTypes"]).map { Js.str(it) }.filter { it.isNotEmpty() }
+        val mb = Js.number(nodeData["maxFileSizeMB"])
+        return NodeUIState.FileUpload(
+            questionText = FlowKit.shownText(nodeData["questionText"]),
+            maxSizeMb = if (mb > 0) Math.ceil(mb).toInt() else FlowInputs.DEFAULT_MAX_FILE_MB.toInt(),
+            allowedTypes = types.ifEmpty { null },
+            useSignedUrl = false,
             nodeId = nodeId,
-            shape = "user-ask-file-response",
-            text = fileName,
-            type = nodeType,
-            additionalData = mapOf(
-                "url" to fileUrl,
-                "fileName" to fileName,
-                "fileSize" to fileSize,
-                "mimeType" to mimeType
-            )
+            answerKey = Js.str(nodeData["answerVariable"]),
+            chatSessionId = ChatState.chatSessionId
         )
-
-        return NodeResult.Proceed()
     }
-
-    /**
-     * Handle multiple files upload completion
-     */
-    private fun handleMultipleFilesComplete(
-        uploadedFiles: List<Map<String, Any?>>,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        if (uploadedFiles.isEmpty()) {
-            return NodeResult.Error("No files were uploaded", shouldProceed = false)
-        }
-
-        // Extract URLs and file info
-        val fileUrls = uploadedFiles.mapNotNull { it["url"]?.toString() }
-        val fileNames = uploadedFiles.map { it["fileName"]?.toString() ?: "unknown" }
-
-        if (fileUrls.isEmpty()) {
-            return NodeResult.Error("File upload failed - no URLs received", shouldProceed = false)
-        }
-
-        // Store all URLs as the answer (comma-separated or as list based on configuration)
-        val storeAsList = getBoolean(nodeData, "storeAsList", false)
-        val answerValue: Any = if (storeAsList) {
-            fileUrls
-        } else {
-            fileUrls.joinToString(",")
-        }
-
-        state.setAnswerVariable(nodeId, answerValue)
-
-        // Add file summary to transcript
-        val filesSummary = if (fileNames.size == 1) {
-            "[File: ${fileNames.first()}]"
-        } else {
-            "[Files: ${fileNames.joinToString(", ")}]"
-        }
-        state.addToTranscript("user", filesSummary)
-
-        // Record the response with all file metadata
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-ask-file-response",
-            text = filesSummary,
-            type = nodeType,
-            additionalData = mapOf(
-                "urls" to fileUrls,
-                "files" to uploadedFiles,
-                "fileCount" to uploadedFiles.size
-            )
-        )
-
-        return NodeResult.Proceed()
-    }
-
-    /**
-     * Parse allowed file types from node configuration
-     * Supports both array format and comma-separated string
-     */
-    private fun parseAllowedTypes(nodeData: Map<String, Any?>): List<String>? {
-        // Try to get as list first
-        val typesList = nodeData["allowedTypes"] ?: nodeData["acceptedFileTypes"]
-
-        return when (typesList) {
-            is List<*> -> typesList.mapNotNull { it?.toString() }.takeIf { it.isNotEmpty() }
-            is String -> {
-                if (typesList.isBlank()) null
-                else typesList.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            }
-            else -> {
-                // Check for legacy format with specific type flags
-                val types = mutableListOf<String>()
-                if (getBoolean(nodeData, "acceptImages", false)) types.add("image/*")
-                if (getBoolean(nodeData, "acceptDocuments", false)) {
-                    types.addAll(listOf(
-                        "application/pdf",
-                        "application/msword",
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    ))
-                }
-                if (getBoolean(nodeData, "acceptVideos", false)) types.add("video/*")
-                if (getBoolean(nodeData, "acceptAudio", false)) types.add("audio/*")
-
-                types.takeIf { it.isNotEmpty() }
-            }
-        }
-    }
-}
-
-/**
- * Handler for ask-multiple-questions-node
- * Asks multiple questions in sequence
- */
-class AskMultipleQuestionsNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.ASK_MULTIPLE
-
-    // Track current question index per node
-    private val questionIndices = mutableMapOf<String, Int>()
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questions = getList<Map<String, Any?>>(nodeData, "questions")
-
-        if (questions.isEmpty()) {
-            return NodeResult.Proceed()
-        }
-
-        // Initialize question index for this node
-        if (!questionIndices.containsKey(nodeId)) {
-            questionIndices[nodeId] = 0
-        }
-
-        return displayCurrentQuestion(nodeData, nodeId, questions)
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText)
+        return NodeResult.DisplayUI(ui)
     }
 
-    private fun displayCurrentQuestion(
-        nodeData: Map<String, Any?>,
-        nodeId: String,
-        questions: List<Map<String, Any?>>
-    ): NodeResult {
-        val currentIndex = questionIndices[nodeId] ?: 0
-
-        if (currentIndex >= questions.size) {
-            questionIndices.remove(nodeId)
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val r = FlowKit.asMap(response)
+        if (r["skip"] == true || r["action"] == "skip") {
+            if (!FlowInputs.isOptionalUpload(nodeData)) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+            FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-ask-file-response", "skipped" to true))
+            FlowKit.userSay(EN.skipped)
             return NodeResult.Proceed()
         }
+        if (r["action"] == "cancel") return NodeResult.DisplayUI(ui(nodeData, nodeId))
 
-        val question = questions[currentIndex]
-        val questionText = state.resolveVariables(question["questionText"]?.toString() ?: "Please answer")
-        val answerType = question["answerVariable"]?.toString() ?: "text"
+        var url: String? = (r["url"] as? String)?.takeIf { it.isNotBlank() }
+            ?: Js.map(Js.list(r["files"]).firstOrNull())?.get("url")?.let { Js.str(it) }?.takeIf { it.isNotBlank() }
+        var fileName = Js.str(r["fileName"] ?: Js.map(r["file"])?.get("name") ?: Js.map(Js.list(r["files"]).firstOrNull())?.get("name") ?: "file")
 
-        state.addToTranscript("bot", questionText)
-
-        val answerKey = "${nodeId}_q${currentIndex}"
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val inputType = when (answerType.lowercase()) {
-            "name" -> NodeUIState.TextInput.InputType.NAME
-            "email" -> NodeUIState.TextInput.InputType.EMAIL
-            "phone", "mobile" -> NodeUIState.TextInput.InputType.PHONE
-            else -> NodeUIState.TextInput.InputType.TEXT
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.MultipleQuestions(
-                questions = questions.mapIndexed { i, q ->
-                    NodeUIState.MultipleQuestions.Question(
-                        questionText = q["questionText"]?.toString() ?: "",
-                        answerType = q["answerVariable"]?.toString() ?: "text",
-                        answerKey = "${nodeId}_q${i}"
-                    )
-                },
-                currentIndex = currentIndex,
-                nodeId = nodeId
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val questions = getList<Map<String, Any?>>(nodeData, "questions")
-        val currentIndex = questionIndices[nodeId] ?: 0
-
-        if (currentIndex >= questions.size) {
-            questionIndices.remove(nodeId)
-            return NodeResult.Proceed()
-        }
-
-        val question = questions[currentIndex]
-        val answerType = question["answerVariable"]?.toString() ?: "text"
-        val value = response.toString().trim()
-
-        // Validate based on answer type
-        when (answerType.lowercase()) {
-            "email" -> {
-                if (!isValidEmail(value)) {
-                    val errorMsg = question["incorrectEmailResponse"]?.toString()
-                        ?: nodeData["incorrectEmailResponse"]?.toString()
-                        ?: "Please enter a valid email"
-                    return NodeResult.Error(errorMsg, shouldProceed = false)
-                }
-                state.setUserMetadata("email", value)
+        if (url == null) {
+            val file = pickedFileOf(r) ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+            FlowInputs.fileUploadProblem(FlowInputs.PickedFile(file.name, file.type, file.size), nodeData)?.let {
+                return NodeResult.Invalid(it, ui(nodeData, nodeId), inCard = true)
             }
-            "phone", "mobile" -> {
-                if (!isValidPhone(value)) {
-                    val errorMsg = question["incorrectPhoneNumberResponse"]?.toString()
-                        ?: nodeData["incorrectPhoneNumberResponse"]?.toString()
-                        ?: "Please enter a valid phone number"
-                    return NodeResult.Error(errorMsg, shouldProceed = false)
-                }
-                state.setUserMetadata("phone", value)
-            }
-            "name" -> {
-                if (value.isEmpty()) {
-                    return NodeResult.Error("Please enter your name", shouldProceed = false)
-                }
-                state.setUserMetadata("name", value)
-            }
+            val uploaded = flowContext().upload(file)
+            if (!uploaded.ok || uploaded.url.isNullOrEmpty()) return NodeResult.Invalid(EN.uploadRetry, ui(nodeData, nodeId), inCard = true)
+            url = uploaded.url
+            fileName = file.name ?: fileName
         }
 
-        // Store answer
-        val answerKey = "${nodeId}_q${currentIndex}"
-        state.setAnswerVariable(nodeId, value)
-        state.setAnswerVariableByKey(answerKey, value)
-        state.addToTranscript("user", value)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-multiple-questions-response",
-            text = value,
-            type = nodeType,
-            additionalData = mapOf(
-                "questionIndex" to currentIndex,
-                "answerType" to answerType
-            )
-        )
-
-        // Move to next question
-        questionIndices[nodeId] = currentIndex + 1
-
-        // Check if more questions
-        if (currentIndex + 1 < questions.size) {
-            return displayCurrentQuestion(nodeData, nodeId, questions)
-        }
-
-        // All questions answered
-        questionIndices.remove(nodeId)
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-ask-file-response", "fileName" to fileName, "url" to url))
+        FlowKit.userSay(url)
+        ChatState.fillAnswerVariable(nodeId, url)
         return NodeResult.Proceed()
     }
 }
 
 /**
- * Handler for calendar-node
- * Displays date/time picker
+ * calendar-node: a month calendar on the bot's clock (data.timeZone, default
+ * UTC). Without time selection the picked day is saved as the visitor's long
+ * date ("Tuesday, October 20, 2026"); with it, the day's weeklyHours cut into
+ * slotDuration slots, and the saved value names both clocks. Moves on 400 ms
+ * after the pick. Answer: {date: "YYYY-MM-DD", slot?: "HH:MM"} (slot start on
+ * the bot's clock; `time` is read the same).
  */
 class CalendarNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.CALENDAR
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val questionText = nodeData["questionText"]?.toString()?.let { state.resolveVariables(it) }
-        val showTimeSelection = getBoolean(nodeData, "showTimeSelection", false)
-        val timezone = nodeData["botTimeZone"]?.toString()
-            ?: nodeData["timezone"]?.toString()
-        val answerKey = getString(nodeData, "answerVariable", "calendar_selection")
+    private val calendarDays = 90
 
-        if (questionText != null) {
-            state.addToTranscript("bot", questionText)
+    private fun zone(data: Map<String, Any?>) = Js.str(data["timeZone"]).ifEmpty { "UTC" }
+
+    private fun slotsFor(data: Map<String, Any?>, dayKey: String, nowMs: Long): List<FlowCalendar.Slot> {
+        val zone = zone(data)
+        val dayName = FlowCalendar.dayNameInZone(FlowCalendar.noonInZone(dayKey, zone), zone)
+        val schedule = Js.list(data["weeklyHours"]).mapNotNull { Js.map(it) }.firstOrNull { it["dayName"] == dayName }
+        if (schedule == null || !Js.truthy(schedule["available"])) return emptyList()
+        return FlowCalendar.futureSlots(FlowCalendar.expandSlots(schedule["slots"], data["slotDuration"], data["bufferMinutes"]), dayKey, zone, nowMs)
+    }
+
+    private fun dayOpen(data: Map<String, Any?>, dayKey: String): Boolean {
+        val zone = zone(data)
+        val dayName = FlowCalendar.dayNameInZone(FlowCalendar.noonInZone(dayKey, zone), zone)
+        val excludedDays = Js.list(data["excludeDays"]).map { Js.str(it).lowercase() }
+        val excludedDates = Js.list(data["excludeDates"]).map { Js.str(it) }
+        return dayName.lowercase() !in excludedDays && dayKey !in excludedDates
+    }
+
+    private suspend fun ui(data: Map<String, Any?>, nodeId: String): NodeUIState.Calendar {
+        val zone = zone(data)
+        val now = flowContext().now()
+        val today = FlowCalendar.dayKeyInZone(now, zone)
+        val showTime = Js.truthy(data["showTimeSelection"])
+        val slots = mutableListOf<NodeUIState.Calendar.TimeSlot>()
+        if (showTime) {
+            for (i in 0 until calendarDays) {
+                val key = FlowCalendar.dayKeyInZone(FlowCalendar.noonInZone(today, zone) + i * 86_400_000L, zone)
+                if (!dayOpen(data, key)) continue
+                slotsFor(data, key, now).forEach { slots.add(NodeUIState.Calendar.TimeSlot(date = key, time = it.start)) }
+            }
         }
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Calendar(
-                questionText = questionText,
-                showTimeSelection = showTimeSelection,
-                timezone = timezone,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
+        return NodeUIState.Calendar(
+            questionText = FlowKit.shownText(data["calendarPrompt"]),
+            showTimeSelection = showTime,
+            timezone = zone,
+            availableSlots = if (showTime) slots else null,
+            nodeId = nodeId,
+            answerKey = Js.str(data["answerVariable"])
         )
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // Response should be a map with date/time info
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("date" to response.toString())
-        }
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
 
-        val date = responseMap["date"]?.toString() ?: ""
-        val time = responseMap["time"]?.toString()
-        val showTimeSelection = getBoolean(nodeData, "showTimeSelection", false)
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ctx = flowContext()
+        val r = FlowKit.asMap(response)
+        val botZone = zone(nodeData)
+        val visitorZone = ctx.visitorTimeZone
+        val dateString = Js.str(r["date"] ?: r["selectedDate"]).take(10)
+        if (!Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(dateString)) return NodeResult.DisplayUI(ui(nodeData, nodeId))
 
-        val displayText = if (showTimeSelection && time != null) {
-            "$date at $time"
+        val showTime = Js.truthy(nodeData["showTimeSelection"])
+        val slotStart = Js.str(r["slot"] ?: r["time"]).trim()
+
+        val value: String
+        val record: Map<String, Any?>
+        if (!showTime) {
+            val date = FlowCalendar.longDate(FlowCalendar.noonInZone(dateString, botZone), botZone)
+            val localDate = FlowCalendar.longDate(FlowCalendar.noonInZone(dateString, visitorZone), visitorZone)
+            value = localDate.ifEmpty { date }
+            record = linkedMapOf("date" to value, "selectedDate" to dateString, "botTimeZone" to botZone, "visitorTimeZone" to visitorZone, "showTimeSelection" to false)
+            FlowKit.userSay(value)
         } else {
-            date
+            val slot = slotsFor(nodeData, dateString, ctx.now()).firstOrNull { it.start == slotStart }
+                ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+            val botDate = FlowCalendar.noonInZone(dateString, botZone)
+            val visitorDate = FlowCalendar.noonInZone(FlowCalendar.dayKeyInZone(botDate, botZone), visitorZone)
+            val date = FlowCalendar.longDate(botDate, botZone)
+            val localDate = FlowCalendar.longDate(visitorDate, visitorZone)
+            val visitorStart = FlowCalendar.hhmmInZone(FlowCalendar.wallTimeInZone(dateString, slot.start, botZone), visitorZone)
+            val visitorEnd = FlowCalendar.hhmmInZone(FlowCalendar.wallTimeInZone(dateString, slot.end, botZone), visitorZone)
+            val timeSlotSelected = FlowCalendar.slotLabel(slot)
+            val visitorTime = "$visitorStart - $visitorEnd"
+            record = linkedMapOf(
+                "date" to localDate.ifEmpty { date },
+                "selectedDate" to FlowCalendar.iso(botDate),
+                "botTimeZone" to botZone,
+                "visitorTimeZone" to visitorZone,
+                "showTimeSelection" to true,
+                "timeSlotSelected" to timeSlotSelected,
+                "visitorTime" to visitorTime
+            )
+            value = "${localDate.ifEmpty { date }} $visitorTime (Visitor's local time) / $timeSlotSelected (Bot's time)"
+            FlowKit.userSay("$localDate, $visitorTime (Your local time)")
+            ctx.emit(
+                "calendar-slot-selection-record",
+                mapOf(
+                    "visitorId" to (ChatState.visitorId ?: ChatState.chatSessionId),
+                    "chatbotId" to ChatState.botId,
+                    "nodeId" to nodeId,
+                    "selectedDate" to record["selectedDate"],
+                    "botTimeZone" to botZone,
+                    "visitorTimeZone" to visitorZone,
+                    "timeSlotSelected" to timeSlotSelected,
+                    "visitorTime" to visitorTime
+                )
+            )
         }
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-calendar-selection", "data" to record))
+        ChatState.fillAnswerVariable(nodeId, value)
+        return NodeResult.DelayedProceed(400)
+    }
+}
 
-        state.setAnswerVariable(nodeId, displayText)
-        state.addToTranscript("user", displayText)
+/**
+ * ask-multiple-questions-node: data.message, then each of data.questions in
+ * turn after 2000 ms of typing. An "email" answer is checked as an e-mail,
+ * "phone" / "mobile" as a phone (saved normalised). Each answer fills the
+ * variable registered as nodeId + index and is recorded as
+ * "<nodeId>:<questionId>". After the last one, the first edge.
+ */
+class AskMultipleQuestionsNodeHandler : BaseNodeHandler() {
+    override val nodeType = NodeTypes.ASK_MULTIPLE
 
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-calendar-selection",
-            text = displayText,
-            type = nodeType,
-            additionalData = mapOf(
-                "date" to date,
-                "time" to time,
-                "botTimeZone" to (nodeData["botTimeZone"] ?: nodeData["timezone"]),
-                "visitorTimeZone" to java.util.TimeZone.getDefault().id
+    private fun questions(data: Map<String, Any?>) = Js.list(data["questions"]).map { Js.map(it) ?: emptyMap() }
+    private fun indexKey(nodeId: String) = "_mq_$nodeId"
+
+    private fun ui(data: Map<String, Any?>, nodeId: String, index: Int): NodeUIState.TextInput {
+        val q = questions(data).getOrNull(index) ?: emptyMap()
+        val variable = Js.str(q["answerVariable"]).lowercase()
+        val type = when (variable) {
+            "email" -> NodeUIState.TextInput.InputType.EMAIL
+            "phone", "mobile" -> NodeUIState.TextInput.InputType.PHONE
+            "name" -> NodeUIState.TextInput.InputType.NAME
+            else -> NodeUIState.TextInput.InputType.TEXT
+        }
+        return NodeUIState.TextInput(questionText = FlowKit.shownText(q["questionText"]), inputType = type, nodeId = nodeId, answerKey = Js.str(q["answerVariable"]))
+    }
+
+    /** Ask question `index` (2000 ms of typing first). */
+    private suspend fun ask(data: Map<String, Any?>, nodeId: String, index: Int): NodeResult {
+        val qs = questions(data)
+        val q = qs.getOrNull(index) ?: emptyMap()
+        flowContext().typing(2000)
+        ChatState.setVariable(indexKey(nodeId), index)
+        val label = if (qs.size > 1) "Question ${index + 1} of ${qs.size}\n" else ""
+        FlowKit.botSay("$label${FlowKit.shownText(q["questionText"])}")
+        val qid = Js.str(q["id"] ?: index)
+        ChatState.addRecord(
+            RecordEntry(
+                id = "$nodeId:$qid", shape = "ask-multiple-questions-question", type = "ask-multiple-questions-question",
+                time = FlowKit.nowIso(),
+                fields = mapOf(
+                    "nodeId" to nodeId, "questionId" to (q["id"] ?: index.toString()), "answerVariable" to q["answerVariable"],
+                    "questionText" to q["questionText"], "renderedText" to FlowText.fillVariables(q["questionText"], { ChatState.lookupVariable(it) })
+                )
             )
         )
+        return NodeResult.DisplayUI(ui(data, nodeId, index))
+    }
 
-        return NodeResult.DelayedProceed(delayMs = 400)
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val message = FlowKit.shownText(nodeData["message"])
+        if (message.isNotEmpty()) FlowKit.botSay(message, side = true)
+        flowContext().shown()
+        if (questions(nodeData).isEmpty()) return NodeResult.Proceed()
+        return ask(nodeData, nodeId, 0)
+    }
+
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val qs = questions(nodeData)
+        val index = (ChatState.getVariable(indexKey(nodeId)) as? Number)?.toInt() ?: 0
+        val q = qs.getOrNull(index) ?: emptyMap()
+        var value = FlowKit.typedText(response)
+        if (value.isEmpty()) return NodeResult.DisplayUI(ui(nodeData, nodeId, index))
+        val variable = Js.str(q["answerVariable"])
+        if (variable == "email" && !FlowInputs.isValidEmail(value)) {
+            return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectEmailResponse"], EN.emailInvalid, listOf("Please enter a valid email")), ui(nodeData, nodeId, index))
+        }
+        if (variable == "mobile" || variable == "phone") {
+            if (!FlowInputs.isValidPhone(value)) return NodeResult.Invalid(FlowInputs.phoneErrorText(nodeData), ui(nodeData, nodeId, index))
+            value = FlowInputs.normalizePhone(value)
+        }
+        if (variable == "name") ChatState.setUserMetadata("name", value)
+        if (variable == "email") ChatState.setUserMetadata("email", value)
+        if (variable == "phone" || variable == "mobile") ChatState.setUserMetadata("phone", value)
+
+        val qid = Js.str(q["id"] ?: index)
+        FlowKit.pushAnswer(
+            mapOf(
+                "id" to "$nodeId:$qid", "nodeId" to nodeId, "questionId" to (q["id"] ?: index.toString()), "answerVariable" to q["answerVariable"],
+                "shape" to "user-ask-multiple-questions-question-response", "type" to "user-ask-multiple-questions-question-response", "text" to value
+            )
+        )
+        ChatState.fillAnswerVariable("$nodeId$index", value)
+        FlowKit.userSay(value)
+
+        if (index + 1 < qs.size) return ask(nodeData, nodeId, index + 1)
+        ChatState.setVariable(indexKey(nodeId), null)
+        return NodeResult.Proceed()
     }
 }
