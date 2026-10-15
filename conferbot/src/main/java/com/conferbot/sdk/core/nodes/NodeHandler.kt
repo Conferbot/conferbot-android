@@ -16,10 +16,14 @@ sealed class NodeResult {
     ) : NodeResult()
 
     /**
-     * Node processed successfully, proceed to next node
+     * Move on. [targetPort] null: along the step's FIRST edge, whatever its
+     * handle. A handle ("source-1", "source-<id>"): the edge from exactly that
+     * handle; none ends the chat - except [fallbackPort], taken when only it is
+     * wired (web goPort).
      */
     data class Proceed(
-        val targetPort: String? = null  // null = default "source", "source-0", "source-1", etc.
+        val targetPort: String? = null,
+        val fallbackPort: String? = null
     ) : NodeResult()
 
     /**
@@ -27,15 +31,30 @@ sealed class NodeResult {
      */
     data class DelayedProceed(
         val delayMs: Long,
-        val targetPort: String? = null
+        val targetPort: String? = null,
+        val fallbackPort: String? = null
     ) : NodeResult()
 
     /**
-     * Jump to specific node by ID
+     * Jump to specific node by ID (a missing node ends the chat)
      */
     data class JumpTo(
         val targetNodeId: String
     ) : NodeResult()
+
+    /**
+     * The visitor's answer was refused: [message] is said and the step keeps
+     * waiting. [uiState] redraws the step; [inCard] says it inside the step's
+     * own card (no bot bubble), as the rich steps do.
+     */
+    data class Invalid(
+        val message: String,
+        val uiState: NodeUIState? = null,
+        val inCard: Boolean = false
+    ) : NodeResult()
+
+    /** The chat ends here. */
+    object End : NodeResult()
 
     /**
      * Error occurred during processing
@@ -43,17 +62,6 @@ sealed class NodeResult {
     data class Error(
         val message: String,
         val shouldProceed: Boolean = true
-    ) : NodeResult()
-
-    /**
-     * Execute a native integration via socket and wait for the result
-     * Used for Stripe, Google integrations, etc. that require server-side processing
-     */
-    data class ExecuteIntegration(
-        val nodeType: String,
-        val nodeId: String,
-        val nodeData: Map<String, Any?>,
-        val onResult: (IntegrationResultData) -> NodeResult
     ) : NodeResult()
 }
 
@@ -504,38 +512,15 @@ abstract class BaseNodeHandler : NodeHandler {
             .trim()
     }
 
-    /**
-     * Validate email format
-     */
-    protected fun isValidEmail(email: String): Boolean {
-        val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-        return emailRegex.matches(email.trim())
-    }
+    /** Validate email format (web nodeKit). */
+    protected fun isValidEmail(email: String): Boolean = com.conferbot.sdk.core.flow.FlowInputs.isValidEmail(email)
 
-    /**
-     * Validate phone number format
-     */
-    protected fun isValidPhone(phone: String): Boolean {
-        val phoneRegex = Regex("^[+]?[0-9]{7,15}$")
-        return phoneRegex.matches(phone.replace(Regex("[\\s-()]"), ""))
-    }
+    /** Validate phone number format: 6-15 digits once normalised (web nodeKit). */
+    protected fun isValidPhone(phone: String): Boolean = com.conferbot.sdk.core.flow.FlowInputs.isValidPhone(phone)
 
-    /**
-     * Validate URL format
-     */
-    protected fun isValidUrl(url: String): Boolean {
-        return try {
-            val uri = java.net.URI(url.trim())
-            uri.scheme != null && uri.host != null
-        } catch (e: Exception) {
-            false
-        }
-    }
+    /** A link people would type (web nodeKit). */
+    protected fun isValidUrl(url: String): Boolean = com.conferbot.sdk.core.flow.FlowInputs.isValidLink(url)
 
-    /**
-     * Validate number format
-     */
-    protected fun isValidNumber(value: String): Boolean {
-        return value.trim().toDoubleOrNull() != null
-    }
+    /** "1,200", "3,5", "42" (web nodeKit parseNumberInput). */
+    protected fun isValidNumber(value: String): Boolean = com.conferbot.sdk.core.flow.FlowInputs.parseNumberInput(value) != null
 }
