@@ -24,6 +24,7 @@ import com.conferbot.sdk.core.customization.IconGradient
 import com.conferbot.sdk.core.customization.IconPaint
 import com.conferbot.sdk.core.customization.LauncherIcon
 import com.conferbot.sdk.core.customization.LauncherIcons
+import com.conferbot.sdk.core.customization.LauncherMotion
 
 private val pathCache = HashMap<String, Path>()
 
@@ -57,11 +58,29 @@ private fun gradientBrush(g: IconGradient, paint: IconPaint, path: Path, color: 
  * of [sizePx], in [ink] with its cut-outs in [bg], at rest: parts that only
  * show while animating stay hidden.
  */
-fun DrawScope.drawLauncherIcon(id: String?, ink: Color, bg: Color, sizePx: Float) {
-    drawLauncherIcon(LauncherIcons.byId(id), ink, bg, sizePx)
+fun DrawScope.drawLauncherIcon(id: String?, ink: Color, bg: Color, sizePx: Float, frame: List<LauncherMotion.OpFrame?>? = null) {
+    drawLauncherIcon(LauncherIcons.byId(id), ink, bg, sizePx, frame)
 }
 
-fun DrawScope.drawLauncherIcon(icon: LauncherIcon, ink: Color, bg: Color, sizePx: Float) {
+private fun composeMatrix(m: List<Double>) = Matrix().apply {
+    // [a b c d e f] -> column-major 4x4.
+    values[Matrix.ScaleX] = m[0].toFloat(); values[Matrix.SkewY] = m[1].toFloat()
+    values[Matrix.SkewX] = m[2].toFloat(); values[Matrix.ScaleY] = m[3].toFloat()
+    values[Matrix.TranslateX] = m[4].toFloat(); values[Matrix.TranslateY] = m[5].toFloat()
+}
+
+private fun invert(m: List<Double>): List<Double> {
+    val det = m[0] * m[3] - m[1] * m[2]
+    if (det == 0.0) return listOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    return listOf(m[3] / det, -m[1] / det, -m[2] / det, m[0] / det, (m[2] * m[5] - m[3] * m[4]) / det, (m[1] * m[4] - m[0] * m[5]) / det)
+}
+
+/**
+ * The icon, at rest or mid-moment ([frame] from LauncherMotion.iconFrame):
+ * moving parts in place, a clip with its own transform, and an animated
+ * opacity fading its whole group as one layer, as CSS opacity does.
+ */
+fun DrawScope.drawLauncherIcon(icon: LauncherIcon, ink: Color, bg: Color, sizePx: Float, frame: List<LauncherMotion.OpFrame?>? = null) {
     val color = { c: String ->
         when (c) {
             "ink" -> ink
@@ -70,19 +89,36 @@ fun DrawScope.drawLauncherIcon(icon: LauncherIcon, ink: Color, bg: Color, sizePx
         }
     }
     val scale = sizePx / 24f
+    val canvas = drawContext.canvas
     withTransform({ scale(scale, scale, pivot = androidx.compose.ui.geometry.Offset.Zero) }) {
-        for (o in icon.ops) {
-            if (o.op == 0.0) continue
+        val open = ArrayList<Int>()
+        icon.ops.forEachIndexed { i, o ->
+            val f = frame?.getOrNull(i)
+            val layers = f?.layers.orEmpty()
+            // A layer that is the shape's own element replaces its own opacity.
+            val ownGroup = if (o.self == 1) o.parts?.lastOrNull()?.g else null
+            val ownLayer = layers.lastOrNull()?.takeIf { it.first == ownGroup }
+            val groupLayers = if (ownLayer != null) layers.dropLast(1) else layers
+            var keep = 0
+            while (keep < open.size && keep < groupLayers.size && open[keep] == groupLayers[keep].first) keep++
+            while (open.size > keep) { canvas.restore(); open.removeAt(open.size - 1) }
+            for (k in keep until groupLayers.size) {
+                canvas.saveLayer(androidx.compose.ui.geometry.Rect(-24f, -24f, 48f, 48f), androidx.compose.ui.graphics.Paint().apply { alpha = groupLayers[k].second.toFloat() })
+                open.add(groupLayers[k].first)
+            }
+            // At rest op; moving, an animated part's opacity replaces its own.
+            var opacity = o.op ?: 1.0
+            if (layers.isNotEmpty()) {
+                val animated = layers.map { it.first }.toSet()
+                opacity = o.opRest ?: if (o.parts.orEmpty().any { it.o != null }) 1.0 else (o.op ?: 1.0)
+                for (p in o.parts.orEmpty()) if (p.g !in animated && p.o != null) opacity *= p.o
+                if (ownLayer != null) opacity *= ownLayer.second
+            }
+            if (opacity == 0.0) return@forEachIndexed
             val path = pathOf(o.d)
             if (o.rule == "evenodd") path.fillType = PathFillType.EvenOdd
-            val alpha = (o.op ?: 1.0).toFloat()
-            val m = o.m
-            val matrix = if (m != null && m.size == 6) Matrix().apply {
-                // [a b c d e f] -> column-major 4x4.
-                values[Matrix.ScaleX] = m[0].toFloat(); values[Matrix.SkewY] = m[1].toFloat()
-                values[Matrix.SkewX] = m[2].toFloat(); values[Matrix.ScaleY] = m[3].toFloat()
-                values[Matrix.TranslateX] = m[4].toFloat(); values[Matrix.TranslateY] = m[5].toFloat()
-            } else null
+            val alpha = opacity.toFloat()
+            val m = f?.m ?: o.m
             fun brushOf(p: IconPaint): Brush =
                 if (p.g != null) gradientBrush(icon.grads[p.g], p, path, color)
                 else SolidColor(color(p.c ?: "#000000").let { it.copy(alpha = (it.alpha * p.a).toFloat()) })
@@ -102,10 +138,21 @@ fun DrawScope.drawLauncherIcon(icon: LauncherIcon, ink: Color, bg: Color, sizePx
             val paintShape = {
                 if (o.strokeFirst == true) { drawStroke(); drawFill() } else { drawFill(); drawStroke() }
             }
-            withTransform({ if (matrix != null) transform(matrix) }) {
-                val clip = o.clip
-                if (clip != null) clipPath(pathOf(clip)) { paintShape() } else paintShape()
+            val clip = o.clip
+            val clipM = f?.clipM
+            if (clip != null && clipM != null && m != null) {
+                // The clip in its own space, then the shape's transform.
+                withTransform({ transform(composeMatrix(clipM)) }) {
+                    clipPath(pathOf(clip)) {
+                        withTransform({ transform(composeMatrix(LauncherMotion.mul(invert(clipM), m))) }) { paintShape() }
+                    }
+                }
+            } else {
+                withTransform({ if (m != null && m.size == 6) transform(composeMatrix(m)) }) {
+                    if (clip != null) clipPath(pathOf(clip)) { paintShape() } else paintShape()
+                }
             }
         }
+        while (open.isNotEmpty()) { canvas.restore(); open.removeAt(open.size - 1) }
     }
 }
