@@ -150,14 +150,21 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
         modifier = modifier.fillMaxWidth().padding(start = theme.spacing.avatarSize + 10.dp).widthIn(max = theme.spacing.maxBubbleWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        // A help centre article opens in the chat's help centre by its id
+        // (agentSources.ts openArticle); a page opens in the browser.
+        val knowledgeBase by Conferbot.knowledgeBase.collectAsState()
         extras?.sources?.forEach { source ->
+            val inApp = source.articleId != null &&
+                com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(customizations, knowledgeBase, source.articleId)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .background(colors.surface)
                     .border(BorderStroke(1.dp, colors.divider), RoundedCornerShape(8.dp))
-                    .clickable(enabled = source.url != null) { openUrl(context, source.url) }
+                    .clickable(enabled = inApp || source.url != null) {
+                        if (!(inApp && Conferbot.openHelpArticle(source.articleId!!, source.title))) openUrl(context, source.url)
+                    }
                     .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -169,7 +176,10 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
                     style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.Medium),
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (source.url != null) {
+                if (inApp) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("Help article ›", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
+                } else if (source.url != null) {
                     Spacer(Modifier.width(6.dp))
                     Text("${AgentBotParser.sourceHost(source.url)} ↗", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
                 }
@@ -305,6 +315,8 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
     val context = LocalContext.current
+    val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
+    val knowledgeBase by Conferbot.knowledgeBase.collectAsState()
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         BotAvatar()
         Spacer(Modifier.width(10.dp))
@@ -337,9 +349,17 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
                     Text(rich.title, color = colors.onSurface, style = TextStyle(fontSize = theme.typography.messageSize, fontWeight = FontWeight.SemiBold))
                     if (rich.snippet.isNotBlank()) Text(rich.snippet, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis,
                         style = TextStyle(fontSize = theme.typography.captionSize))
-                    rich.url?.let { url ->
-                        Text("Read article ↗", color = colors.primary, style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
-                            modifier = Modifier.padding(top = 8.dp).clickable { openUrl(context, url) })
+                    // agentRich.ts: a public link opens it; otherwise the article
+                    // opens in the chat's help centre by its id.
+                    val url = rich.url
+                    val inApp = url == null && rich.articleId.isNotBlank() &&
+                        com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(customizationMap, knowledgeBase, rich.articleId)
+                    if (url != null || inApp) {
+                        Text(if (url != null) "Read article ↗" else "Read article ›", color = colors.primary,
+                            style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.padding(top = 8.dp).clickable {
+                                if (url != null) openUrl(context, url) else Conferbot.openHelpArticle(rich.articleId, rich.title)
+                            })
                     }
                 }
                 is RichEntry.Card -> CardSurface {
