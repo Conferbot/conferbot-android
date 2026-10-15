@@ -60,13 +60,12 @@ object SocketEvents {
     const val SUBMIT_CHAT_RATING = "submit-chat-rating"
     const val FINALIZE_ANALYTICS = "finalize-analytics"
 
-    // Knowledge Base events
-    const val GET_KNOWLEDGE_BASE_DATA = "get-knowledge-base-data"
-    const val KNOWLEDGE_BASE_DATA = "knowledge-base-data"
+    // Knowledge Base events. The categories and articles come with
+    // fetched-chatbot-data (knowledgeBaseData); a body with get-kb-article.
+    const val GET_KB_ARTICLE = "get-kb-article"
+    const val SEARCH_KB_ARTICLES = "search-kb-articles"
     const val TRACK_ARTICLE_VIEW = "track-article-view"
     const val TRACK_ARTICLE_ENGAGEMENT = "track-article-engagement"
     const val RATE_ARTICLE = "rate-article"
     const val ARTICLE_RATED = "article-rated"
-    const val SEARCH_ARTICLES = "search-articles"
-    const val SEARCH_RESULTS = "search-results"
 }
