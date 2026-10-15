@@ -127,9 +127,27 @@ private fun ConferBotChatScreenContent(
     // The bot's settings as the web applies them (core/customization).
     val look by Conferbot.customizations.collectAsState()
     val hasLook = customizationMap.isNotEmpty()
-    val headerTitle = currentAgent?.name
-        ?: look.title.takeIf { hasLook }
-        ?: "Support Chat"
+    // The header keeps the bot (never the agent), as the web widget does.
+    val headerTitle = look.title.takeIf { hasLook } ?: "Support Chat"
+    // "Online", the team's reply time, or plain "Online" once a person is in
+    // the chat (core/livechat/ReplyTime.kt, the web's replyTime.ts / headerPresence.ts).
+    val agentBot by Conferbot.agentBot.collectAsState()
+    val statusText = remember(messages, currentAgent, customizationMap, agentBot) {
+        val personInChat = com.conferbot.sdk.core.livechat.HandoverState.phase(
+            com.conferbot.sdk.core.livechat.HandoverState.entriesOfItems(messages)
+        ) == com.conferbot.sdk.core.livechat.HandoverPhase.JOINED ||
+            (currentAgent != null && currentAgent?.id?.startsWith("ai-agent-") != true && agentBot == null)
+        com.conferbot.sdk.core.livechat.ReplyTime.headerStatus(
+            com.conferbot.sdk.core.livechat.ReplyTime.of(customizationMap["replyTime"]),
+            personInChat = personInChat,
+            agentBot = agentBot != null
+        ) ?: com.conferbot.sdk.core.livechat.ReplyTime.ONLINE
+    }
+    // On screen: the waiting signal and receipts count it as open.
+    DisposableEffect(Unit) {
+        Conferbot.setChatVisible(true)
+        onDispose { Conferbot.setChatVisible(false) }
+    }
 
     // The help centre (core/helpcentre): the web's Chat / Articles switch
     // under the header while the owner has it on (enableKnowledgeBase).
@@ -165,8 +183,7 @@ private fun ConferBotChatScreenContent(
                 isSyncing = isSyncingQueue,
                 serverCustomization = serverCustomization,
                 look = look.takeIf { hasLook },
-                agentName = currentAgent?.name,
-                agentAvatar = currentAgent?.avatar
+                statusText = statusText
             )
         },
         modifier = modifier
