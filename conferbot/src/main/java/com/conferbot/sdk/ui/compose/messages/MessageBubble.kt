@@ -117,6 +117,7 @@ fun UserMessageBubble(
                     .widthIn(max = spacing.maxBubbleWidth)
                     .shadow(1.dp, bubbleShape, clip = false)
                     .background(colors.userBubble, bubbleShape)
+                    .then(bubbleOutline(bubbleShape))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 horizontalAlignment = Alignment.End
             ) {
@@ -180,6 +181,7 @@ fun BotMessageBubble(
                             .widthIn(max = spacing.maxBubbleWidth)
                             .shadow(1.dp, bubbleShape, clip = false)
                             .background(colors.botBubble, bubbleShape)
+                            .then(bubbleOutline(bubbleShape))
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         Text(
@@ -300,6 +302,7 @@ fun AgentMessageBubble(
                     .widthIn(max = spacing.maxBubbleWidth)
                     .shadow(1.dp, bubbleShape, clip = false)
                     .background(colors.agentBubble, bubbleShape)
+                    .then(bubbleOutline(bubbleShape))
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Text(
