@@ -155,6 +155,20 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
         nodeData: Map<String, Any?>,
         nodeId: String
     ): NodeResult {
+        // The visitor left the queue (the wait card's Cancel), or a restored
+        // wait is over: the flow carries on from this step, as on the web.
+        when ((response as? Map<*, *>)?.get("action")) {
+            "cancel" -> {
+                state.addToTranscript("bot", "You left the queue")
+                recordResponse(nodeId = nodeId, shape = "handover-cancelled", text = "You left the queue", type = nodeType)
+                cleanup(nodeId)
+                return NodeResult.Proceed()
+            }
+            "continue" -> {
+                cleanup(nodeId)
+                return NodeResult.Proceed()
+            }
+        }
         return when (handoverState[nodeId]) {
             NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS -> {
                 handlePreChatResponse(response, nodeData, nodeId)
