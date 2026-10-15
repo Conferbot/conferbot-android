@@ -219,6 +219,10 @@ Server values always win. Per attribute the resolution order is:
 | Attribute | Resolution order |
 |-----------|------------------|
 | FAB color | `widgetIconBgColor` > `headerBgColor` > `config.backgroundColor` > default brand blue |
+| Shape, size, offsets | As the web draws it on a phone: `launcherShape` (speech bubble by default, circle, squircle, tab, peek), `mobileWidgetSize` else `widgetSize`, `mobileOffsetBottom` / `mobileOffsetSide` else 16dp |
+| Style | `launcherStyle`: icon, the bot's avatar with an online dot, or the label pill on tablets (phones show the round button, as the web does); an uploaded `widgetIconImage` always wins |
+| Colour | Solid or left-to-right gradient; icon ink turns dark on a light launcher; a soft glow in the header colour |
+| Greeting | `chatIconCtaText` beside the launcher, only when `chatIconCta` is on |
 | Size | `widgetSize` > `config.size` |
 | Position | `widgetPosition` ("left"/"right") > `config.position` |
 | Horizontal offset | `widgetOffsetLeft`/`widgetOffsetRight` > `config.offsetX` |
