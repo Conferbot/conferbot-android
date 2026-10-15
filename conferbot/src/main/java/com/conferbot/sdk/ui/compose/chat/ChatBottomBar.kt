@@ -71,8 +71,23 @@ fun ChatBottomBar(
     var text by remember { mutableStateOf("") }
     val canSend = text.isNotBlank() && enabled
 
+    // The widget theme's surfaces (white, as before, for classic in light),
+    // its field radius, and the palette's send colours.
+    val look by com.conferbot.sdk.core.Conferbot.customizations.collectAsState()
+    val tokens = look.theme.tokens
+    val barColor = com.conferbot.sdk.ui.compose.lookColor(tokens?.bg) ?: Color.White
+    val fieldColor = com.conferbot.sdk.ui.compose.lookColor(tokens?.field) ?: Color.White
+    val fieldBorder = com.conferbot.sdk.ui.compose.lookColor(tokens?.line2) ?: Color(0xFFE0E0E0)
+    val placeholderColor = com.conferbot.sdk.ui.compose.lookColor(tokens?.muted) ?: Color(0xFF4D4D4D)
+    val inkColor = com.conferbot.sdk.ui.compose.lookColor(tokens?.ink) ?: Color.Black
+    val footerColor = com.conferbot.sdk.ui.compose.lookColor(tokens?.muted) ?: Color(0xFF56595B)
+    val fieldShape = RoundedCornerShape(minOf(look.fieldRadius, 25f).dp)
+    val sendColor = look.accentInk?.let { com.conferbot.sdk.ui.compose.lookColor(look.accent) } ?: colors.headerBackground
+    val sendInk = com.conferbot.sdk.ui.compose.lookColor(look.accentInk)
+        ?: if (sendColor.luminance() > 0.5f) Color.Black else Color.White
+
     val sendBgColor by animateColorAsState(
-        targetValue = if (canSend) colors.headerBackground else colors.headerBackground.copy(alpha = 0.35f),
+        targetValue = if (canSend) sendColor else sendColor.copy(alpha = 0.35f),
         animationSpec = tween(200),
         label = "send_bg"
     )
@@ -88,7 +103,7 @@ fun ChatBottomBar(
                 ambientColor = Color(0x33636363),   // rgba(99,99,99,0.2)
                 spotColor = Color(0x33636363)
             )
-            .background(Color.White)
+            .background(barColor)
     ) {
         // ── Input row ──
         Row(
@@ -114,10 +129,10 @@ fun ChatBottomBar(
                     .heightIn(min = 44.dp, max = 130.dp)
                     .border(
                         width = 1.dp,
-                        color = Color(0xFFE0E0E0),
-                        shape = RoundedCornerShape(25.dp)   // border-radius: 25px
+                        color = fieldBorder,
+                        shape = fieldShape   // border-radius: 25px, or the theme's
                     )
-                    .background(Color.White, RoundedCornerShape(25.dp))
+                    .background(fieldColor, fieldShape)
                     .padding(horizontal = 18.dp, vertical = 12.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -126,7 +141,7 @@ fun ChatBottomBar(
                         placeholder,
                         style = TextStyle(
                             fontSize = 16.sp,           // font-size: 16px
-                            color = Color(0xFF4D4D4D)   // color: #4d4d4d
+                            color = placeholderColor   // color: #4d4d4d
                         )
                     )
                 }
@@ -138,10 +153,10 @@ fun ChatBottomBar(
                     },
                     textStyle = TextStyle(
                         fontSize = 16.sp,
-                        color = Color.Black,
+                        color = inkColor,
                         lineHeight = 22.sp
                     ),
-                    cursorBrush = SolidColor(colors.primary),
+                    cursorBrush = SolidColor(inkColor),
                     maxLines = 4,
                     enabled = enabled,
                     modifier = Modifier.fillMaxWidth()
@@ -171,7 +186,7 @@ fun ChatBottomBar(
                         imageVector = Icons.Filled.Send,
                         contentDescription = "Send",
                         // Readable on whatever the header colour is.
-                        tint = if (colors.headerBackground.luminance() > 0.5f) Color.Black else Color.White,
+                        tint = sendInk,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -200,7 +215,7 @@ fun ChatBottomBar(
                         style = TextStyle(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF56595B)
+                            color = footerColor
                         )
                     )
                 } else {
@@ -213,7 +228,7 @@ fun ChatBottomBar(
                             style = TextStyle(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF56595B)
+                                color = footerColor
                             )
                         )
                         AsyncImage(
