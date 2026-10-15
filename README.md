@@ -169,7 +169,7 @@ fun SupportScreen() {
 
 ### Pattern 3: Floating Widget (FAB)
 
-The closest equivalent to the Conferbot web widget: a floating bubble in the bottom corner of the screen. Tapping it opens an animated bottom-sheet chat with a scrim; tapping again (or the scrim) closes it. The bubble shows an unread badge and an optional CTA tooltip, and reads server customizations automatically (color, icon, size, position, offsets, CTA text).
+The closest equivalent to the Conferbot web widget: a floating bubble in the bottom corner of the screen. Tapping it opens an animated bottom-sheet chat with a scrim; tapping again (or the scrim) closes it. The bubble shows an unread badge and the bot's greeting card, and reads server customizations automatically (color, icon, size, position, offsets, greeting).
 
 ```kotlin
 import com.conferbot.sdk.ui.compose.ConferBotWidget
@@ -222,7 +222,7 @@ Server values always win. Per attribute the resolution order is:
 | Shape, size, offsets | As the web draws it on a phone: `launcherShape` (speech bubble by default, circle, squircle, tab, peek), `mobileWidgetSize` else `widgetSize`, `mobileOffsetBottom` / `mobileOffsetSide` else 16dp |
 | Style | `launcherStyle`: icon, the bot's avatar with an online dot, or the label pill on tablets (phones show the round button, as the web does); an uploaded `widgetIconImage` always wins |
 | Colour | Solid or left-to-right gradient; icon ink turns dark on a light launcher; a soft glow in the header colour |
-| Greeting | `chatIconCtaText` beside the launcher, only when `chatIconCta` is on |
+| Greeting card | The web's greeting card, 12dp above the launcher: `chatIconCta` / `chatIconCtaText`, `greetingRules` (the ones that fit an app: audience, signed in, schedule, visits, chatted, limits; the smart greetings included), `greetingDelay`, `greetingFrequency` (page = rests 5 min after a close, session, visitor every N days), `greetingClickAction` (open, send, link) and `greetingStyle` (card, note, imessage by default, postcard, sticky, typewriter, glass, notification, neon, voice, aurora). Suggested questions come from the rule or the AI agent. A signed-in visitor (`identify` / `user`) gets no sales greeting, as on the web |
 | Icons and motion | All 56 dashboard launcher icons, drawn as on the web, moving as on the web: an idle moment about 2s after the launcher shows and a few more after (`launcherAnimation` subtle / lively; off stops it), a reaction when a message arrives while the chat is closed, and the ripple rings. Nothing moves while the chat is open, after it was opened, or with the phone's animations turned off |
 | Size | `widgetSize` > `config.size` |
 | Position | `widgetPosition` ("left"/"right") > `config.position` |
@@ -230,7 +230,6 @@ Server values always win. Per attribute the resolution order is:
 | Vertical offset | `widgetOffsetBottom` > `config.offsetY` |
 | Corner radius | `widgetBorderRadius` > `config.borderRadius` > size / 2 |
 | Icon | `widgetIconSVG` (WidgetBubbleIcon1..15) > default bubble |
-| CTA tooltip | `chatIconCtaText` (shown 2 s after mount, dismissed on tap or open) |
 
 There is no XML-Views version of the floating bubble. In an XML app, host it in a `ComposeView`, or use `Conferbot.openChat()` from your own FAB.
 
