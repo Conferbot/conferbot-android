@@ -132,4 +132,30 @@ class GreetingTest {
         assertThat(Greeting.font(mapOf("font" to "Arial, sans-serif"))).isNull()
         assertThat(Greeting.font(mapOf("font" to "Inter"))).isEqualTo("Inter")
     }
+
+    /** The smart rules as embed-server serves them after the owner's (smartGreetings.js), the payload the emulator got. */
+    private val smart = listOf(
+        rule("id" to "sgchko", "priority" to 95, "pattern" to "", "patterns" to listOf("checkout", "/cart/"), "text" to "", "action" to mapOf("type" to "none")),
+        rule("id" to "sgcust", "priority" to 95, "text" to "", "signedIn" to "yes", "action" to mapOf("type" to "none")),
+        rule("id" to "sgpric", "priority" to 30, "pattern" to "", "patterns" to listOf("pricing"), "text" to "Comparing plans?", "action" to mapOf("type" to "open")),
+        rule("id" to "sgads0", "priority" to 28, "text" to "Looking at our offer?", "source" to mapOf("ads" to "yes"), "action" to mapOf("type" to "open")),
+        rule("id" to "sgretn", "priority" to 24, "text" to "Welcome back!", "behavior" to mapOf("minVisits" to 2), "action" to mapOf("type" to "open"), "limits" to mapOf("maxShows" to 1, "windowDays" to 3, "quietDaysAfterDismiss" to 14)),
+        rule("id" to "sgengd", "priority" to 22, "text" to "Finding what you need?", "behavior" to mapOf("minPagesThisVisit" to 3), "action" to mapOf("type" to "open")),
+    )
+
+    @Test
+    fun `with the served smart rules - the default, welcome back once, nothing for a signed-in visitor`() {
+        val c = mapOf("chatIconCta" to true, "chatIconCtaText" to "Hi, how can I help?", "greetingRules" to smart)
+        assertThat(Greeting.decide(c, new)!!.text).isEqualTo("Hi, how can I help?")
+        val back = Greeting.Facts(returning = true, signedIn = false, visits = 2, now = now)
+        assertThat(Greeting.decide(c, back)!!.key).isEqualTo("sgretn")
+        // Its limit (once in 3 days) spent: the default message again.
+        assertThat(Greeting.decide(c, back.copy(shows = mapOf("sgretn" to listOf(now - day))))!!.text).isEqualTo("Hi, how can I help?")
+        // Signed in (Conferbot.identify, or a user at initialize): the customers rule says nothing,
+        // the default message included - why the emulator showed no card after "Identify Test User".
+        assertThat(Greeting.decide(c, Greeting.Facts(returning = false, signedIn = true))).isNull()
+        // The owner's own talking rule for the same visitor wins over it.
+        val own = c + ("greetingRules" to listOf(rule("id" to "own001", "text" to "Hello again")) + smart)
+        assertThat(Greeting.decide(own, Greeting.Facts(returning = false, signedIn = true))!!.text).isEqualTo("Hello again")
+    }
 }
