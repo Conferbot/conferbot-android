@@ -223,6 +223,7 @@ Server values always win. Per attribute the resolution order is:
 | Style | `launcherStyle`: icon, the bot's avatar with an online dot, or the label pill on tablets (phones show the round button, as the web does); an uploaded `widgetIconImage` always wins |
 | Colour | Solid or left-to-right gradient; icon ink turns dark on a light launcher; a soft glow in the header colour |
 | Greeting | `chatIconCtaText` beside the launcher, only when `chatIconCta` is on |
+| Icons and motion | All 56 dashboard launcher icons, drawn as on the web, moving as on the web: an idle moment about 2s after the launcher shows and a few more after (`launcherAnimation` subtle / lively; off stops it), a reaction when a message arrives while the chat is closed, and the ripple rings. Nothing moves while the chat is open, after it was opened, or with the phone's animations turned off |
 | Size | `widgetSize` > `config.size` |
 | Position | `widgetPosition` ("left"/"right") > `config.position` |
 | Horizontal offset | `widgetOffsetLeft`/`widgetOffsetRight` > `config.offsetX` |
