@@ -1,708 +1,395 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.flow.FlowInputs
+import com.conferbot.sdk.core.flow.FlowText
+import com.conferbot.sdk.core.flow.Js
 import com.conferbot.sdk.core.nodes.*
+import com.conferbot.sdk.core.state.ChatState
 
 /**
- * Handler for two-choices-node
- * Displays two choice buttons
+ * The choice steps: n-choices, image-choice, yes-or-no, rating-choice,
+ * opinion-scale, n-select-option, n-check-options and carousel. Fields,
+ * ports, saved values and records follow the flow-node spec and the web
+ * widget (ts/chat/displayStep.ts, handlers/flowOperations.ts,
+ * handlers/askQuestions.ts); ported from RN ChoiceNodeHandlers.ts:
+ *
+ * - n-choices / image-choice / yes-or-no / carousel leave by "source-" + the
+ *   picked item's id; rating by source-<value-1>; opinion scale by
+ *   source-<value-from>. No edge there ends the chat.
+ * - n-select-option and n-check-options have no ports: the first edge,
+ *   600 ms after the pick.
+ * - Labels are shown with the answers filled in; what is saved is the
+ *   option's own text, HTML stripped.
  */
-class TwoChoicesNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.TWO_CHOICES
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val choice1 = getString(nodeData, "choice1", "Option 1")
-        val choice2 = getString(nodeData, "choice2", "Option 2")
-        val disableSecond = getBoolean(nodeData, "disableSecondChoice", false)
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val choices = mutableListOf(
-            NodeUIState.SingleChoice.Choice(
-                id = "0",
-                text = stripHtml(choice1),
-                targetPort = "source-1"
-            )
-        )
-
-        if (!disableSecond) {
-            choices.add(
-                NodeUIState.SingleChoice.Choice(
-                    id = "1",
-                    text = stripHtml(choice2),
-                    targetPort = "source-2"
-                )
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.SingleChoice(
-                questionText = choicePrompt,
-                choices = choices,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("id" to response.toString())
-        }
-
-        val choiceId = responseMap["id"]?.toString() ?: "0"
-        val choiceText = responseMap["text"]?.toString()
-            ?: when (choiceId) {
-                "0" -> getString(nodeData, "choice1", "Option 1")
-                "1" -> getString(nodeData, "choice2", "Option 2")
-                else -> "Unknown"
-            }
-
-        val cleanText = stripHtml(choiceText)
-
-        state.setAnswerVariable(nodeId, cleanText)
-        state.addToTranscript("user", cleanText)
-        state.setVariable("_lastUserChoice", cleanText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-selected-choice",
-            text = cleanText,
-            type = nodeType,
-            additionalData = mapOf(
-                "choiceId" to choiceId,
-                "choices" to mapOf(
-                    "choice1" to nodeData["choice1"],
-                    "choice2" to nodeData["choice2"]
-                )
-            )
-        )
-
-        val targetPort = "source-${choiceId.toIntOrNull()?.plus(1) ?: 1}"
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = targetPort)
-    }
+/** The picked option by id, or by the label the SDK's cards send as {text}. */
+private fun pick(response: Any, list: List<Map<String, Any?>>, idOf: (Map<String, Any?>) -> String, labelOf: (Map<String, Any?>) -> Any?): Map<String, Any?>? {
+    val id = FlowKit.pickedId(response)
+    list.firstOrNull { idOf(it) == id }?.let { return it }
+    val text = (response as? Map<*, *>)?.get("text") ?: (response as? Map<*, *>)?.get("label") ?: (response as? String)
+    if (text != null) return list.firstOrNull { FlowKit.savedText(labelOf(it)) == Js.str(text) || FlowKit.shownLabel(labelOf(it)) == Js.str(text) }
+    return null
 }
 
-/**
- * Handler for three-choices-node
- * Displays three choice buttons
- */
-class ThreeChoicesNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.THREE_CHOICES
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val choice1 = getString(nodeData, "choice1", "Option 1")
-        val choice2 = getString(nodeData, "choice2", "Option 2")
-        val choice3 = getString(nodeData, "choice3", "Option 3")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val choices = listOf(
-            NodeUIState.SingleChoice.Choice("0", stripHtml(choice1), targetPort = "source-1"),
-            NodeUIState.SingleChoice.Choice("1", stripHtml(choice2), targetPort = "source-2"),
-            NodeUIState.SingleChoice.Choice("2", stripHtml(choice3), targetPort = "source-3")
-        )
-
-        return NodeResult.DisplayUI(
-            NodeUIState.SingleChoice(
-                questionText = choicePrompt,
-                choices = choices,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("id" to response.toString())
-        }
-
-        val choiceId = responseMap["id"]?.toString() ?: "0"
-        val choiceText = responseMap["text"]?.toString()
-            ?: when (choiceId) {
-                "0" -> getString(nodeData, "choice1")
-                "1" -> getString(nodeData, "choice2")
-                "2" -> getString(nodeData, "choice3")
-                else -> "Unknown"
-            }
-
-        val cleanText = stripHtml(choiceText)
-
-        state.setAnswerVariable(nodeId, cleanText)
-        state.addToTranscript("user", cleanText)
-        state.setVariable("_lastUserChoice", cleanText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-selected-choice",
-            text = cleanText,
-            type = nodeType
-        )
-
-        val targetPort = "source-${choiceId.toIntOrNull()?.plus(1) ?: 1}"
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = targetPort)
-    }
-}
-
-/**
- * Handler for n-choices-node
- * Displays N choice buttons dynamically
- */
+/** n-choices-node: choicePrompt, choices [{id, choiceText}] (blank ones hidden). */
 class NChoicesNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.N_CHOICES
 
+    private fun choices(data: Map<String, Any?>) = Js.list(data["choices"]).mapNotNull { Js.map(it) }.filter { Js.str(it["choiceText"]).trim().isNotEmpty() }
+
+    private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.SingleChoice(
+        questionText = FlowKit.shownText(data["choicePrompt"]),
+        choices = choices(data).map { NodeUIState.SingleChoice.Choice(id = Js.str(it["id"]), text = FlowKit.shownLabel(it["choiceText"]), targetPort = "source-${Js.str(it["id"])}") },
+        nodeId = nodeId,
+        answerKey = Js.str(data["answerVariable"])
+    )
+
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val choicesData = getList<Map<String, Any?>>(nodeData, "choices")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val choices = choicesData.map { choice ->
-            val id = choice["id"]?.toString() ?: ""
-            val text = choice["choiceText"]?.toString() ?: choice["text"]?.toString() ?: ""
-            NodeUIState.SingleChoice.Choice(
-                id = id,
-                text = stripHtml(text),
-                targetPort = "source-$id"
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.SingleChoice(
-                questionText = choicePrompt,
-                choices = choices,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("id" to response.toString())
-        }
-
-        val choiceId = responseMap["id"]?.toString() ?: ""
-        val choiceText = responseMap["text"]?.toString() ?: choiceId
-
-        val cleanText = stripHtml(choiceText)
-
-        state.setAnswerVariable(nodeId, cleanText)
-        state.addToTranscript("user", cleanText)
-        state.setVariable("_lastUserChoice", cleanText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-selected-choice",
-            text = cleanText,
-            type = nodeType,
-            additionalData = mapOf("choiceId" to choiceId)
-        )
-
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = "source-$choiceId")
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val choice = pick(response, choices(nodeData), { Js.str(it["id"]) }, { it["choiceText"] }) ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val text = FlowKit.savedText(choice["choiceText"])
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-choice", "choices" to nodeData, "selectedChoice" to text))
+        FlowKit.userSay(text)
+        ChatState.fillAnswerVariable(nodeId, text)
+        return NodeResult.Proceed("source-${Js.str(choice["id"])}")
     }
 }
 
-/**
- * Handler for select-option-node (legacy)
- * Displays dropdown/option selection
- */
-class SelectOptionNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.SELECT_OPTION
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-        state.addAnswerVariable(nodeId, answerKey)
-
-        // Build options from option1, option2, etc.
-        val options = mutableListOf<NodeUIState.Dropdown.Option>()
-
-        for (i in 1..5) {
-            val optionKey = "option$i"
-            val disableKey = "disableOption$i"
-
-            if (getBoolean(nodeData, disableKey, false)) continue
-
-            val optionText = nodeData[optionKey]?.toString()
-            if (!optionText.isNullOrEmpty()) {
-                options.add(NodeUIState.Dropdown.Option(
-                    id = (i - 1).toString(),
-                    text = stripHtml(optionText)
-                ))
-            }
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Dropdown(
-                questionText = choicePrompt,
-                options = options,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("text" to response.toString())
-        }
-
-        val optionText = responseMap["text"]?.toString() ?: ""
-        val cleanText = stripHtml(optionText)
-
-        state.setAnswerVariable(nodeId, cleanText)
-        state.addToTranscript("user", cleanText)
-        state.setVariable("_lastUserChoice", cleanText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-selected-option",
-            text = cleanText,
-            type = nodeType
-        )
-
-        return NodeResult.DelayedProceed(delayMs = 600)
-    }
-}
-
-/**
- * Handler for n-select-option-node
- * Displays dropdown with dynamic options
- */
-class NSelectOptionNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.N_SELECT_OPTION
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val optionsData = getList<Map<String, Any?>>(nodeData, "options")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val options = optionsData.map { option ->
-            NodeUIState.Dropdown.Option(
-                id = option["id"]?.toString() ?: "",
-                text = stripHtml(option["optionText"]?.toString() ?: "")
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Dropdown(
-                questionText = choicePrompt,
-                options = options,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("text" to response.toString())
-        }
-
-        val optionText = responseMap["text"]?.toString() ?: ""
-        val cleanText = stripHtml(optionText)
-
-        state.setAnswerVariable(nodeId, cleanText)
-        state.addToTranscript("user", cleanText)
-        state.setVariable("_lastUserChoice", cleanText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-selected-option",
-            text = cleanText,
-            type = nodeType
-        )
-
-        return NodeResult.DelayedProceed(delayMs = 600)
-    }
-}
-
-/**
- * Handler for n-check-options-node
- * Displays multiple checkboxes (multi-select)
- */
-class NCheckOptionsNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.N_CHECK_OPTIONS
-
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val optionsData = getList<Map<String, Any?>>(nodeData, "options")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val options = optionsData.map { option ->
-            NodeUIState.MultipleChoice.Option(
-                id = option["id"]?.toString() ?: "",
-                text = stripHtml(option["optionText"]?.toString() ?: "")
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.MultipleChoice(
-                questionText = choicePrompt,
-                options = options,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
-    }
-
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // Response should be list of selected options
-        val selectedOptions = when (response) {
-            is List<*> -> response.filterIsInstance<String>()
-            is String -> response.split(",").map { it.trim() }
-            else -> listOf(response.toString())
-        }
-
-        val combinedText = selectedOptions.joinToString(", ")
-
-        state.setAnswerVariable(nodeId, combinedText)
-        state.addToTranscript("user", combinedText)
-        state.setVariable("_lastUserChoice", combinedText)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-check-options-response",
-            text = combinedText,
-            type = nodeType,
-            additionalData = mapOf("selectedOptions" to selectedOptions)
-        )
-
-        return NodeResult.Proceed()
-    }
-}
-
-/**
- * Handler for image-choice-node
- * Displays image selection grid
- */
+/** image-choice-node: questionText, images [{id, image, label}] (both non-blank to show). */
 class ImageChoiceNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.IMAGE_CHOICE
 
+    private fun images(data: Map<String, Any?>) = Js.list(data["images"]).mapNotNull { Js.map(it) }
+        .filter { Js.str(it["image"]).trim().isNotEmpty() && Js.str(it["label"]).trim().isNotEmpty() }
+
+    private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.ImageChoice(
+        questionText = FlowKit.shownText(data["questionText"]),
+        images = images(data).map { NodeUIState.ImageChoice.ImageOption(id = Js.str(it["id"]), imageUrl = Js.str(it["image"]), label = FlowKit.shownLabel(it["label"]), targetPort = "source-${Js.str(it["id"])}") },
+        nodeId = nodeId,
+        answerKey = Js.str(data["answerVariable"])
+    )
+
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val imagesData = getList<Map<String, Any?>>(nodeData, "images")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val images = imagesData.map { image ->
-            NodeUIState.ImageChoice.ImageOption(
-                id = image["id"]?.toString() ?: "",
-                imageUrl = image["image"]?.toString() ?: "",
-                label = image["label"]?.toString() ?: "",
-                targetPort = "source-${image["id"]}"
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.ImageChoice(
-                questionText = choicePrompt,
-                images = images,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("label" to response.toString())
-        }
-
-        val imageId = responseMap["id"]?.toString() ?: ""
-        val label = responseMap["label"]?.toString() ?: ""
-
-        state.setAnswerVariable(nodeId, label)
-        state.addToTranscript("user", label)
-        state.setVariable("_lastUserChoice", label)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-image-choice",
-            text = label,
-            type = nodeType,
-            additionalData = mapOf(
-                "imageId" to imageId,
-                "imageUrl" to (responseMap["imageUrl"] ?: "")
-            )
-        )
-
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = "source-$imageId")
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val image = pick(response, images(nodeData), { Js.str(it["id"]) }, { it["label"] }) ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val label = FlowKit.savedText(image["label"])
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-image-choice", "images" to nodeData, "selectedImageLabel" to label, "selectedImage" to image["image"]))
+        FlowKit.userSay(label)
+        ChatState.fillAnswerVariable(nodeId, label)
+        return NodeResult.Proceed("source-${Js.str(image["id"])}")
     }
 }
 
-/**
- * Handler for yes-or-no-choice-node
- * Displays Yes/No buttons
- */
+/** yes-or-no-choice-node: questionText, options [{id, label}] (default Yes "1" / No "2"). */
 class YesOrNoChoiceNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.YES_OR_NO_CHOICE
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val optionsData = getList<Map<String, Any?>>(nodeData, "options")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val choices = if (optionsData.isNotEmpty()) {
-            optionsData.map { option ->
-                NodeUIState.SingleChoice.Choice(
-                    id = option["id"]?.toString() ?: "",
-                    text = option["label"]?.toString() ?: "",
-                    targetPort = "source-${option["id"]}"
-                )
-            }
-        } else {
-            // Default Yes/No
-            listOf(
-                NodeUIState.SingleChoice.Choice("yes", "Yes", targetPort = "source-yes"),
-                NodeUIState.SingleChoice.Choice("no", "No", targetPort = "source-no")
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.SingleChoice(
-                questionText = choicePrompt,
-                choices = choices,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
+    private fun options(data: Map<String, Any?>): List<Map<String, Any?>> {
+        val list = Js.list(data["options"]).mapNotNull { Js.map(it) }
+        return list.ifEmpty { listOf(mapOf("id" to "1", "label" to "Yes"), mapOf("id" to "2", "label" to "No")) }
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val responseMap = when (response) {
-            is Map<*, *> -> response as Map<String, Any?>
-            else -> mapOf("id" to response.toString(), "text" to response.toString())
-        }
+    private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.SingleChoice(
+        questionText = FlowKit.shownText(data["questionText"]),
+        choices = options(data).map { NodeUIState.SingleChoice.Choice(id = Js.str(it["id"]), text = FlowKit.shownLabel(it["label"]), targetPort = "source-${Js.str(it["id"])}") },
+        nodeId = nodeId,
+        answerKey = Js.str(data["answerVariable"])
+    )
 
-        val optionId = responseMap["id"]?.toString() ?: ""
-        val label = responseMap["text"]?.toString() ?: optionId
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
 
-        state.setAnswerVariable(nodeId, label)
-        state.addToTranscript("user", label)
-        state.setVariable("_lastUserChoice", label)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-yes-or-no-choice",
-            text = label,
-            type = nodeType
-        )
-
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = "source-$optionId")
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val option = pick(response, options(nodeData), { Js.str(it["id"]) }, { it["label"] }) ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val text = FlowKit.savedText(option["label"])
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-yes-or-no-choice", "options" to nodeData, "selectedYesOrNoChoice" to text))
+        FlowKit.userSay(text)
+        ChatState.fillAnswerVariable(nodeId, text)
+        return NodeResult.Proceed("source-${Js.str(option["id"])}")
     }
 }
 
+/** What the faces have always recorded (web nodeKit FACE_VALUES). */
+internal val FACE_VALUES = listOf("😡", "😐", "😊", "😀", "😁")
+private val FACE_LABELS = listOf("Very unhappy", "Unhappy", "Neutral", "Happy", "Very happy")
+
+internal fun ratingCount(ratingType: Any?): Int {
+    if (ratingType == "smiley") return 5
+    val n = Js.number(ratingType)
+    return Math.max(1, Math.min(10, if (Js.isFinite(n) && n != 0.0) n.toInt() else 5))
+}
+
+/** What each score means (web nodeKit ratingWords, English). */
+internal fun ratingWords(ratingType: Any?, n: Int): List<String> = when {
+    ratingType == "smiley" -> FACE_LABELS
+    n == 3 -> listOf("Bad", "Okay", "Great")
+    n == 5 -> listOf("Terrible", "Bad", "Okay", "Good", "Amazing")
+    else -> (1..n).map { "$it out of $n" }
+}
+
+/** The value a rating button records: stars, or the face. */
+internal fun ratingValue(ratingType: Any?, i: Int): String = if (ratingType == "smiley") FACE_VALUES.getOrElse(i - 1) { "😊" } else "⭐".repeat(i)
+
+/** A number answer: the card's Int, or {value} / {rating}. */
+internal fun numberAnswer(response: Any): Double {
+    val v = if (response is Map<*, *>) response["value"] ?: response["rating"] else response
+    return if (v == null) Double.NaN else Js.number(v)
+}
+
 /**
- * Handler for rating-choice-node
- * Displays rating selector (smiley, 5-star, 10-point)
+ * rating-choice-node: ratingType 1..10 stars or "smiley" (five faces).
+ * Saves the NUMBER; leaves by source-<value-1>.
  */
 class RatingChoiceNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.RATING_CHOICE
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val ratingType = getString(nodeData, "ratingType", "5")
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val (type, min, max) = when (ratingType.lowercase()) {
-            "smiley" -> Triple(NodeUIState.Rating.RatingType.SMILEY, 1, 5)
-            "10" -> Triple(NodeUIState.Rating.RatingType.NUMBER, 1, 10)
-            else -> Triple(NodeUIState.Rating.RatingType.STAR, 1, 5)
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Rating(
-                questionText = choicePrompt,
-                ratingType = type,
-                minValue = min,
-                maxValue = max,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
+    private fun ui(data: Map<String, Any?>, nodeId: String): NodeUIState.Rating {
+        val type = data["ratingType"]
+        val n = ratingCount(type)
+        return NodeUIState.Rating(
+            questionText = FlowKit.shownText(data["questionText"]),
+            ratingType = if (type == "smiley") NodeUIState.Rating.RatingType.SMILEY else if (n > 5) NodeUIState.Rating.RatingType.NUMBER else NodeUIState.Rating.RatingType.STAR,
+            minValue = 1,
+            maxValue = n,
+            nodeId = nodeId,
+            answerKey = Js.str(data["answerVariable"])
         )
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val rating = when (response) {
-            is Number -> response.toInt()
-            is String -> response.toIntOrNull() ?: 0
-            else -> 0
-        }
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
 
-        state.setAnswerVariable(nodeId, rating)
-        state.addToTranscript("user", rating.toString())
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-rating-choice",
-            text = rating.toString(),
-            type = nodeType
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val type = nodeData["ratingType"]
+        val n = ratingCount(type)
+        val v = numberAnswer(response)
+        if (!Js.isFinite(v) || v != Math.floor(v) || v < 1 || v > n) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val value = v.toInt()
+        val selected = ratingValue(type, value)
+        FlowKit.pushAnswer(
+            mapOf(
+                "id" to nodeId, "shape" to "user-selected-rating-choice", "options" to nodeData, "selectedRatingChoice" to selected,
+                "value" to value, "label" to ratingWords(type, n).getOrElse(value - 1) { "" }, "ratingType" to type
+            )
         )
-
-        // Port is 0-indexed (rating 1 -> source-0, etc.)
-        val targetPort = "source-${rating - 1}"
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = targetPort)
+        FlowKit.userSay(selected)
+        ChatState.fillAnswerVariable(nodeId, value)
+        return NodeResult.Proceed("source-${value - 1}")
     }
 }
 
-/**
- * Handler for opinion-scale-choice-node
- * Displays NPS-style opinion scale
- */
+/** A scale's range; blank is 0 to 10 (web nodeKit scaleRange). */
+internal fun scaleRange(rawFrom: Any?, rawTo: Any?): Pair<Double, Double> {
+    fun blank(v: Any?) = v == null || v == "" || !Js.isFinite(Js.number(v))
+    val from = if (blank(rawFrom)) 0.0 else Js.number(rawFrom)
+    val to = if (blank(rawTo) || Js.number(rawTo) < from) Math.max(from, 10.0) else Js.number(rawTo)
+    return from to to
+}
+
+/** opinion-scale-choice-node: from..to buttons; saves the NUMBER; leaves by source-<value-from>. */
 class OpinionScaleChoiceNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.OPINION_SCALE_CHOICE
 
-    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val from = getInt(nodeData, "from", 1)
-        val to = getInt(nodeData, "to", 10)
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Rating(
-                questionText = choicePrompt,
-                ratingType = NodeUIState.Rating.RatingType.OPINION_SCALE,
-                minValue = from,
-                maxValue = to,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
+    private fun ui(data: Map<String, Any?>, nodeId: String): NodeUIState.Rating {
+        val (from, to) = scaleRange(data["from"], data["to"])
+        return NodeUIState.Rating(
+            questionText = FlowKit.shownText(data["questionText"]),
+            ratingType = NodeUIState.Rating.RatingType.OPINION_SCALE,
+            minValue = from.toInt(),
+            maxValue = to.toInt(),
+            nodeId = nodeId,
+            answerKey = Js.str(data["answerVariable"])
         )
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val value = when (response) {
-            is Number -> response.toInt()
-            is String -> response.toIntOrNull() ?: 0
-            else -> 0
-        }
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
 
-        state.setAnswerVariable(nodeId, value)
-        state.addToTranscript("user", value.toString())
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val (from, to) = scaleRange(nodeData["from"], nodeData["to"])
+        val v = numberAnswer(response)
+        if (!Js.isFinite(v) || v < from || v > to) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val value = Js.tidy(v)
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-opinion-scale-choice", "options" to nodeData, "selectedOpinionScaleChoice" to Js.num(v), "value" to value))
+        FlowKit.userSay(Js.num(v))
+        ChatState.fillAnswerVariable(nodeId, value)
+        return NodeResult.Proceed("source-${Js.num(v - from)}")
+    }
+}
 
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-opinion-scale-choice",
-            text = value.toString(),
-            type = nodeType
-        )
+/** n-select-option-node: selectPrompt, options [{id, optionText}]; no ports - first edge after 600 ms. */
+class NSelectOptionNodeHandler : BaseNodeHandler() {
+    override val nodeType = NodeTypes.N_SELECT_OPTION
 
-        // Calculate port index based on from value
-        val from = getInt(nodeData, "from", 1)
-        val portIndex = value - from
-        return NodeResult.DelayedProceed(delayMs = 600, targetPort = "source-$portIndex")
+    private fun options(data: Map<String, Any?>) = Js.list(data["options"]).mapNotNull { Js.map(it) }.filter { Js.str(it["optionText"]).trim().isNotEmpty() }
+
+    private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.Dropdown(
+        questionText = FlowKit.shownText(data["selectPrompt"]),
+        options = options(data).map { NodeUIState.Dropdown.Option(id = Js.str(it["id"]), text = FlowKit.shownLabel(it["optionText"])) },
+        nodeId = nodeId,
+        answerKey = Js.str(data["answerVariable"])
+    )
+
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
+
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val option = pick(response, options(nodeData), { Js.str(it["id"]) }, { it["optionText"] }) ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val text = FlowKit.savedText(option["optionText"])
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-option", "options" to nodeData, "selectedOption" to text))
+        FlowKit.userSay(text)
+        ChatState.fillAnswerVariable(nodeId, text)
+        return NodeResult.DelayedProceed(600)
     }
 }
 
 /**
- * Handler for user-rating-node (legacy)
- * Displays simple rating
+ * n-check-options-node: checkOptionsPrompt, options; the ticked texts in LIST
+ * order joined ", "; first edge after 600 ms. Answers: {buttonIds: [...]} or
+ * the card's list of ticked labels.
  */
-class UserRatingNodeHandler : BaseNodeHandler() {
-    override val nodeType = NodeTypes.USER_RATING
+class NCheckOptionsNodeHandler : BaseNodeHandler() {
+    override val nodeType = NodeTypes.N_CHECK_OPTIONS
+
+    private fun options(data: Map<String, Any?>) = Js.list(data["options"]).mapNotNull { Js.map(it) }.filter { Js.str(it["optionText"]).trim().isNotEmpty() }
+
+    private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.MultipleChoice(
+        questionText = FlowKit.shownText(data["checkOptionsPrompt"]),
+        options = options(data).map { NodeUIState.MultipleChoice.Option(id = Js.str(it["id"]), text = FlowKit.shownLabel(it["optionText"])) },
+        nodeId = nodeId,
+        answerKey = Js.str(data["answerVariable"])
+    )
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val answerKey = getString(nodeData, "answerVariable", nodeId)
-        val choicePrompt = nodeData["choicePrompt"]?.toString()?.let { state.resolveVariables(stripHtml(it)) }?.takeIf { it.isNotBlank() }
-        state.addAnswerVariable(nodeId, answerKey)
-
-        return NodeResult.DisplayUI(
-            NodeUIState.Rating(
-                questionText = choicePrompt,
-                ratingType = NodeUIState.Rating.RatingType.STAR,
-                minValue = 1,
-                maxValue = 5,
-                nodeId = nodeId,
-                answerKey = answerKey
-            )
-        )
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
     }
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val rating = when (response) {
-            is Number -> response.toInt()
-            is String -> response.toIntOrNull() ?: 0
-            else -> 0
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val options = options(nodeData)
+        val r = FlowKit.asMap(response)
+        val ids: List<String> = when {
+            r["buttonIds"] is List<*> -> Js.list(r["buttonIds"]).map { Js.str(it) }
+            r["optionIds"] is List<*> -> Js.list(r["optionIds"]).map { Js.str(it) }
+            response is List<*> -> response.mapNotNull { label -> options.firstOrNull { FlowKit.shownLabel(it["optionText"]) == Js.str(label) || FlowKit.savedText(it["optionText"]) == Js.str(label) }?.let { Js.str(it["id"]) } }
+            else -> emptyList()
         }
+        val ticked = FlowText.inListOrder(ids, options.map { Js.str(it["id"]) }).mapNotNull { id -> options.firstOrNull { Js.str(it["id"]) == id } }
+        if (ticked.isEmpty()) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val text = ticked.joinToString(", ") { FlowKit.savedText(it["optionText"]) }
+        FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-check-options", "options" to nodeData, "selectedCheckOptions" to text))
+        FlowKit.userSay(text)
+        ChatState.fillAnswerVariable(nodeId, text)
+        return NodeResult.DelayedProceed(600)
+    }
+}
 
-        state.setAnswerVariable(nodeId, rating)
-        state.addToTranscript("user", rating.toString())
+internal const val CAROUSEL_CONTINUE = "Continue"
 
-        recordResponse(
-            nodeId = nodeId,
-            shape = "user-rating-response",
-            text = rating.toString(),
-            type = nodeType
+internal data class CarouselButton(val id: String, val label: String, val action: String, val href: String)
+internal data class CarouselCard(val id: String, val image: String, val title: String, val description: String, val price: String, val buttons: List<CarouselButton>)
+
+/** The cards as the web reads them (nodeKit carouselCards): at most 10, 3 buttons each. */
+internal fun carouselCards(data: Map<String, Any?>?): List<CarouselCard> =
+    Js.list(data?.get("cards")).mapIndexedNotNull { ci, c ->
+        val card = Js.map(c) ?: emptyMap()
+        CarouselCard(
+            id = Js.str(card["id"] ?: "card-$ci"),
+            image = Js.str(card["image"]).trim(),
+            title = Js.str(card["title"]).trim(),
+            description = Js.str(card["description"]).trim(),
+            price = Js.str(card["price"]).trim(),
+            buttons = Js.list(card["buttons"]).mapIndexed { bi, b ->
+                val bb = Js.map(b) ?: emptyMap()
+                val action = if (bb["action"] == "link") "link" else "path"
+                CarouselButton(Js.str(bb["id"] ?: "$ci-$bi"), Js.str(bb["label"]).trim(), action, if (action == "link") FlowInputs.linkHref(bb["url"]) else "")
+            }.filter { it.label.isNotEmpty() && (it.action == "path" || it.href.isNotEmpty()) }.take(3)
         )
+    }.filter { it.title.isNotEmpty() || it.description.isNotEmpty() || it.image.isNotEmpty() }.take(10)
 
-        return NodeResult.Proceed()
+/** Cards as choices: one per path button ("Title - Label"), link buttons as links, Continue when no path. */
+internal fun carouselChoices(cards: List<CarouselCard>): List<NodeUIState.SingleChoice.Choice> {
+    val out = mutableListOf<NodeUIState.SingleChoice.Choice>()
+    cards.forEach { c ->
+        c.buttons.forEach { b ->
+            val label = if (b.action == "path" && c.title.isNotEmpty()) "${FlowKit.shownLabel(c.title)} - ${b.label}" else b.label
+            out.add(NodeUIState.SingleChoice.Choice(id = b.id, text = label, imageUrl = c.image.ifEmpty { null }, targetPort = if (b.action == "link") b.href else "source-${b.id}"))
+        }
+    }
+    if (cards.none { c -> c.buttons.any { it.action == "path" } }) out.add(NodeUIState.SingleChoice.Choice(id = "continue", text = CAROUSEL_CONTINUE, targetPort = "source"))
+    return out
+}
+
+/**
+ * carousel-node: a path button leaves by "source-" + its id and saves
+ * "Card title - Button label"; link buttons only open their page. With no
+ * path button anywhere, Continue leaves by "source" and saves nothing.
+ * Answers: {buttonId} (cardId optional) or {action: "continue"}.
+ */
+class CarouselNodeHandler : BaseNodeHandler() {
+    override val nodeType = NodeTypes.CAROUSEL
+
+    private fun ui(data: Map<String, Any?>, nodeId: String) =
+        NodeUIState.SingleChoice(FlowKit.shownText(data["questionText"]), carouselChoices(carouselCards(data)), nodeId, Js.str(data["answerVariable"]))
+
+    override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ui = ui(nodeData, nodeId)
+        FlowKit.botSay(ui.questionText ?: "")
+        return NodeResult.DisplayUI(ui)
+    }
+
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val r = FlowKit.asMap(response)
+        val cards = carouselCards(nodeData)
+        val buttonId = if (r["action"] == "continue") null else FlowKit.pickedId(response)?.takeIf { it != "continue" }
+        var card: CarouselCard? = null
+        var button: CarouselButton? = null
+        for (c in cards) {
+            val b = c.buttons.firstOrNull { it.id == buttonId && it.action == "path" }
+            if (b != null && (r["cardId"] == null || r["cardId"] == c.id)) {
+                card = c
+                button = b
+                break
+            }
+        }
+        // A link button opens its page and the step keeps waiting.
+        if (buttonId != null && button == null) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        if (button == null && cards.any { c -> c.buttons.any { it.action == "path" } }) return NodeResult.DisplayUI(ui(nodeData, nodeId))
+        val title = card?.title ?: ""
+        val label = button?.label ?: ""
+        val answer = if (button != null) (if (title.isNotEmpty() && label.isNotEmpty()) "$title - $label" else title.ifEmpty { label }) else CAROUSEL_CONTINUE
+        val text = FlowKit.savedText(answer)
+        FlowKit.pushAnswer(
+            mapOf(
+                "id" to nodeId, "shape" to "user-selected-carousel", "carousel" to nodeData, "selectedChoice" to text,
+                "selectedCardId" to card?.id, "selectedButtonId" to button?.id
+            )
+        )
+        FlowKit.userSay(text)
+        if (button != null) ChatState.fillAnswerVariable(nodeId, text)
+        return NodeResult.Proceed(if (button != null) "source-${button.id}" else "source")
     }
 }
