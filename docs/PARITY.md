@@ -21,6 +21,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #20 | Launcher motion, passes the golden test | `LauncherMotion.kt`, `ui/compose/LauncherMotionClock.kt`, `src/test/resources/launcher-motion-golden.json` |
 | #21 | User as `visitorContext` + identity hash | `models/Configuration.kt` (`toVisitorContext`), `core/state/ChatState.kt`, `core/Conferbot.kt` |
 | #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
+| #53, #36, #45 | Help centre: loads from `fetched-chatbot-data`, bodies on open, follows `enableKnowledgeBase` / `hideRecentArticles`, Chat / Articles tabs, AI sources and article cards open by id (Compose) | `core/helpcentre/HelpCentre.kt`, `services/KnowledgeBaseService.kt`, `ui/compose/ChatScreen.kt`, `ui/compose/knowledgebase/KnowledgeBaseScreen.kt`, `ui/compose/messages/AgentReply.kt` |
 
 ## Left in this SDK
 
@@ -29,11 +30,17 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - **Why "no card" before (#56):** not a code fault. The tap at (538,968) hits "Identify Test User", not "Open Chat (Compose)". A signed-in visitor matches the smart "customers" rule (`sgcust`, show nothing), which silences the default message too, as on the web. Test without identifying, or clear the app's data.
    - Fixed on the way (#55): settings arriving again (the theme palette, a socket reconnect) no longer re-count and replay a card already showing. Also: the phone-text tail was drawn in px (hidden under the bubble), note/sticky now use the system "casual" hand, note chips are plain words with a wavy underline, postcard/notification names are upper case, the stamp's heart is the text glyph, typewriter padding is the base 14.
    - **Gaps left:** the word fade-up, the "Online" ping and the figure gestures are not drawn; glass and notification have no live blur (more opaque instead); the card uses the system font, not `c.font`; a rule's `action` (flow, ai, link) is not mapped to the tap yet (RN does not either); mascots in the card wait for the mascot work.
-2. The rest of the list below.
-3. **XML gaps:** initials avatar and the wave typing style.
-4. **Test debt:**
+2. **Help centre (#53, #36, #45): done.**
+   - The data comes from `fetched-chatbot-data.knowledgeBaseData` (no bodies). Bodies come from `get-kb-article` (ack). Search adds `search-kb-articles` hits after the local ones. The old `get-knowledge-base-data` had no server handler and is gone.
+   - It shows only while `enableKnowledgeBase` is on and an article is published (`HelpCentre.visible`). The app has no home screen, so recent articles head the Articles tab unless `hideRecentArticles` is set.
+   - AI sources with an `articleId`, and article cards without a `url`, call `Conferbot.openHelpArticle`. Back returns to the chat (web `agentSources.ts`, `agentRich.ts`).
+   - Checked on the emulator against the local embed-server (bot 6ab686f8d47ff029b76892f7, 26 articles): the list, an article's body and an AI source opening it. An injected `agent-message` was used for the source, not a real AI reply. `HelpCentreTest` has 11 tests on a captured payload (`src/test/resources/help-centre-payload.json`).
+   - **Gaps left:** no help centre in the XML chat. No "While you wait" articles. No public `REST /mobile/chatbot/:id/kb` fallback (the socket path is used, as on the web). Article HTML is shown as plain text.
+3. The rest of the list below.
+4. **XML gaps:** initials avatar and the wave typing style.
+5. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
-5. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+6. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## How to test
 
