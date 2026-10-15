@@ -31,7 +31,6 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 3. **XML gaps:** initials avatar and the wave typing style.
 4. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
-   - In `ChatStateTest`, 3 tests are stale: the transcript cap is now 500 (the test expects 200), `getRecordForServer` format, and a null field in "includes all required fields".
 5. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## How to test
