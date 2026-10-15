@@ -441,7 +441,7 @@ fun ConferBotWidget(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(size * 0.16f),
                             ) {
-                                Canvas(Modifier.size(size * 0.52f)) { drawBubbleIcon(iconName, inkColor, this.size.minDimension) }
+                                Canvas(Modifier.size(size * 0.52f)) { drawLauncherIcon(iconName, inkColor, fabColor, this.size.minDimension) }
                                 Text(
                                     text = look.label,
                                     color = inkColor,
@@ -454,7 +454,7 @@ fun ConferBotWidget(
                                 val iconPx = (if (hasLook) look.glyph.dp.toPx() else this.size.minDimension * 0.6f)
                                 drawContext.canvas.save()
                                 drawContext.canvas.translate((this.size.width - iconPx) / 2f, (this.size.height - iconPx) / 2f)
-                                drawBubbleIcon(iconName, inkColor, iconPx)
+                                drawLauncherIcon(iconName, inkColor, fabColor, iconPx)
                                 drawContext.canvas.restore()
                             }
                         }
