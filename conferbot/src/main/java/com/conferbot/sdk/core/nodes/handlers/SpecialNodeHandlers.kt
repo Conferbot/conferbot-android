@@ -1,33 +1,49 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.flow.FlowInputs
+import com.conferbot.sdk.core.flow.FlowInputs.EN
+import com.conferbot.sdk.core.flow.FlowText
+import com.conferbot.sdk.core.flow.Js
+import com.conferbot.sdk.core.flow.flowContext
 import com.conferbot.sdk.core.nodes.*
 import com.conferbot.sdk.core.state.ChatState
+import com.conferbot.sdk.core.state.RecordEntry
 
 /**
- * Handler for delay-node
- * Delays before proceeding to next node
+ * delay-node: shows nothing, waits data.delay seconds (missing: no wait),
+ * then the first edge.
  */
 class DelayNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.DELAY
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val delaySeconds = getInt(nodeData, "delay", 1)
-        val delayMs = delaySeconds * 1000L
-
+        val seconds = Js.number(nodeData["delay"] ?: Double.NaN)
+        val delayMs = if (Js.isFinite(seconds) && seconds > 0) Math.min(seconds * 1000, 10 * 60 * 1000.0).toLong() else 0L
+        if (delayMs == 0L) return NodeResult.Proceed()
         return NodeResult.DelayedProceed(delayMs = delayMs)
     }
 }
 
 /**
- * Handler for human-handover-node
- * Manages live agent handover flow including post-chat survey
+ * human-handover-node, as the web runs it (ts/chat/handlers/special.ts) by
+ * way of RN's HumanHandoverHandler:
+ *
+ * - The builder's pre-chat questions (enablePreChatQuestions) are asked one by
+ *   one in the composer, after 2000 ms of typing each; an "email" or "phone"
+ *   answer is checked.
+ * - Then the handoverMessage after 1000 ms of typing, the record, and
+ *   initiate-handover; the step waits for the team.
+ * - Nobody free (no-agents-available): the owner's fallback message after a
+ *   beat of typing; with "leave a message" off the flow carries on along the
+ *   first edge (otherwise the leave-a-message form carries it on once sent or
+ *   skipped).
+ *
+ * The live chat after a person joins (agent connected, the survey when it
+ * ends) is the handover lifecycle's (Conferbot, core/livechat).
  */
 class HumanHandoverNodeHandler : BaseNodeHandler() {
     override val nodeType = NodeTypes.HUMAN_HANDOVER
 
-    // Track pre-chat question index per node
-    private val preChatIndices = mutableMapOf<String, Int>()
-    private val postChatIndices = mutableMapOf<String, Int>()
     private var handoverState = mutableMapOf<String, NodeUIState.HumanHandover.HandoverState>()
 
     // Store survey responses per node
@@ -36,130 +52,144 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
     // Track node data for post-chat survey
     private val nodeDataCache = mutableMapOf<String, Map<String, Any?>>()
 
+    private fun preKey(nodeId: String) = "_preChat_$nodeId"
+
+    private fun preChatQuestions(data: Map<String, Any?>) =
+        if (Js.truthy(data["enablePreChatQuestions"])) Js.list(data["preChatQuestions"]).map { Js.map(it) ?: emptyMap() } else emptyList()
+
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
-        val enablePreChatQuestions = getBoolean(nodeData, "enablePreChatQuestions", false)
-        val preChatQuestions = getList<Map<String, Any?>>(nodeData, "preChatQuestions")
-
-        // Cache node data for later use (e.g., post-chat survey)
         nodeDataCache[nodeId] = nodeData
-
-        // Initialize state for this node
-        if (!handoverState.containsKey(nodeId)) {
-            handoverState[nodeId] = if (enablePreChatQuestions && preChatQuestions.isNotEmpty()) {
-                NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS
-            } else {
-                NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+        val preChat = preChatQuestions(nodeData)
+        if (preChat.isNotEmpty() && ChatState.getVariable(preKey(nodeId)) == null) {
+            preChat.forEach { q ->
+                val key = Js.str(q["answerVariable"])
+                if (key.isNotEmpty()) ChatState.registerAnswerVariable(Js.str(q["id"]), key)
             }
+            return askPreChat(nodeData, nodeId, 0)
         }
-
-        return when (handoverState[nodeId]) {
-            NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS -> {
-                displayPreChatQuestion(nodeData, nodeId, preChatQuestions)
-            }
-            NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT -> {
-                initiateHandover(nodeData, nodeId)
-            }
-            else -> {
-                // Already connected or survey
-                NodeResult.DisplayUI(buildHandoverUIState(nodeData, nodeId))
-            }
-        }
+        return initiateHandover(nodeData, nodeId)
     }
 
-    private fun displayPreChatQuestion(
-        nodeData: Map<String, Any?>,
-        nodeId: String,
-        questions: List<Map<String, Any?>>
-    ): NodeResult {
-        val currentIndex = preChatIndices[nodeId] ?: 0
-
-        if (currentIndex >= questions.size) {
-            // All pre-chat questions answered, start handover
-            handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
-            return initiateHandover(nodeData, nodeId)
-        }
-
-        val question = questions[currentIndex]
-        val questionText = question["questionText"]?.toString() ?: "Please answer"
-        val answerType = question["answerVariable"]?.toString() ?: "text"
-        val answerKey = question["id"]?.toString() ?: "prechat_$currentIndex"
-
-        state.addToTranscript("bot", questionText)
-        state.addAnswerVariable(nodeId, answerKey)
-
-        val preChatList = questions.mapIndexed { i, q ->
-            NodeUIState.HumanHandover.PreChatQuestion(
-                id = q["id"]?.toString() ?: "q$i",
-                questionText = q["questionText"]?.toString() ?: "",
-                answerType = q["answerVariable"]?.toString() ?: "text",
-                answerKey = q["id"]?.toString() ?: "prechat_$i"
-            )
-        }
-
-        return NodeResult.DisplayUI(
-            NodeUIState.HumanHandover(
-                state = NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS,
-                preChatQuestions = preChatList,
-                currentQuestionIndex = currentIndex,
-                nodeId = nodeId
-            )
-        )
-    }
-
-    private fun initiateHandover(
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // The builder writes it as rich text (<p>...</p>).
-        val handoverMessage = stripHtml(getString(nodeData, "handoverMessage", "Connecting you to an agent..."))
-        val maxWaitTime = getInt(nodeData, "maxWaitTime", 5)  // minutes
-        val priority = getString(nodeData, "priority", "normal")
-
-        state.addToTranscript("bot", handoverMessage)
-
-        recordResponse(
+    private fun preChatUI(nodeData: Map<String, Any?>, nodeId: String, index: Int): NodeUIState.TextInput {
+        val q = preChatQuestions(nodeData).getOrNull(index) ?: emptyMap()
+        val variable = Js.str(q["answerVariable"]).lowercase()
+        return NodeUIState.TextInput(
+            questionText = FlowKit.shownText(q["questionText"]),
+            inputType = when (variable) {
+                "email" -> NodeUIState.TextInput.InputType.EMAIL
+                "phone", "mobile" -> NodeUIState.TextInput.InputType.PHONE
+                "name" -> NodeUIState.TextInput.InputType.NAME
+                else -> NodeUIState.TextInput.InputType.TEXT
+            },
             nodeId = nodeId,
-            shape = "handover-initiated",
-            text = handoverMessage,
-            type = nodeType,
-            additionalData = mapOf(
-                "priority" to priority,
-                "maxWaitTime" to maxWaitTime
+            answerKey = Js.str(q["answerVariable"])
+        )
+    }
+
+    /** Pre-chat question `index`, after 2000 ms of typing. */
+    private suspend fun askPreChat(nodeData: Map<String, Any?>, nodeId: String, index: Int): NodeResult {
+        handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS
+        flowContext().typing(2000)
+        ChatState.setVariable(preKey(nodeId), index)
+        val ui = preChatUI(nodeData, nodeId, index)
+        FlowKit.botSay(ui.questionText)
+        return NodeResult.DisplayUI(ui)
+    }
+
+    /** An answer to a pre-chat question: checked, saved, then the next one or the handover. */
+    private suspend fun answerPreChat(response: Any, nodeData: Map<String, Any?>, nodeId: String, index: Int): NodeResult {
+        val questions = preChatQuestions(nodeData)
+        val q = questions.getOrNull(index) ?: emptyMap()
+        val value = FlowKit.typedText(response)
+        val ui = preChatUI(nodeData, nodeId, index)
+        if (value.isEmpty()) return NodeResult.DisplayUI(ui)
+        val variable = Js.str(q["answerVariable"])
+        if (variable == "email" && !FlowInputs.isValidEmail(value)) {
+            return NodeResult.Invalid(FlowInputs.ownerTextOr(q["incorrectEmailResponse"], EN.emailInvalid, listOf("Please enter a valid email")), ui)
+        }
+        if ((variable == "mobile" || variable == "phone") && !FlowInputs.isValidPhone(value)) {
+            return NodeResult.Invalid(FlowInputs.ownerTextOr(q["incorrectPhoneNumberResponse"], EN.phoneInvalid), ui)
+        }
+        if (variable == "name") ChatState.setUserMetadata("name", value)
+        if (variable == "email") ChatState.setUserMetadata("email", value)
+        if (variable == "mobile" || variable == "phone") ChatState.setUserMetadata("phone", FlowInputs.normalizePhone(value))
+        ChatState.addRecord(
+            RecordEntry(
+                id = "pre-chat-answer-$nodeId-$index", shape = "pre-chat-question-response", type = "pre-chat-question-response",
+                text = value, time = FlowKit.nowIso(), fields = mapOf("questionId" to q["id"])
             )
         )
+        FlowKit.userSay(value)
+        ChatState.fillAnswerVariable(Js.str(q["id"]), value)
+        if (index + 1 < questions.size) return askPreChat(nodeData, nodeId, index + 1)
+        ChatState.setVariable(preKey(nodeId), "done")
+        return initiateHandover(nodeData, nodeId)
+    }
+
+    private suspend fun initiateHandover(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val ctx = flowContext()
+        handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+        // The builder writes it as rich text (<p>...</p>); one cleared in the builder shows nothing.
+        val message = FlowKit.shownText(nodeData["handoverMessage"] ?: nodeData["waitMessage"] ?: "")
+        if (message.isNotEmpty()) {
+            ctx.typing(1000)
+            FlowKit.botSay(message)
+        }
+        val maxWaitTime = com.conferbot.sdk.core.agent.HandoverPayload.waitMinutesOf(nodeData["maxWaitTime"])
+
+        // In the chat's room, and the record sent BEFORE initiate-handover so
+        // the server has the Response document when it makes the ticket.
+        ctx.joinChatRoom()
+        ctx.sendRecord()
+        com.conferbot.sdk.core.agent.HandoverPayload.build(nodeData)?.let { ctx.emit("initiate-handover", it) }
+        ChatState.setVariable("_handoverInitiated", true)
+
+        // Nobody free: the owner's fallback, then (leave a message off) on.
+        var off: () -> Unit = {}
+        off = ctx.on("no-agents-available") {
+            off()
+            val fallback = FlowKit.shownText(nodeData["fallbackMessage"] ?: "")
+            if (fallback.isNotEmpty()) {
+                ctx.typing(1000)
+                if (ctx.isStale()) return@on
+                FlowKit.botSay(fallback, side = true)
+                val fallbackId = Js.str(nodeData["fallbackMessage"])
+                ChatState.addRecord(
+                    RecordEntry(
+                        id = fallbackId, shape = "", type = "agent-declined-message", time = FlowKit.nowIso(),
+                        fields = mapOf("message" to fallback, "renderedText" to fallback)
+                    )
+                )
+            }
+            if (ctx.customizations["chatLeaveMessage"] == false) ctx.respond(mapOf("action" to "continue"))
+        }
 
         return NodeResult.DisplayUI(
             NodeUIState.HumanHandover(
                 state = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT,
-                handoverMessage = handoverMessage,
-                maxWaitTime = maxWaitTime,
+                handoverMessage = message,
+                maxWaitTime = maxWaitTime.toInt(),
                 nodeId = nodeId
             )
         )
     }
 
-    private fun buildHandoverUIState(
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeUIState.HumanHandover {
-        return NodeUIState.HumanHandover(
-            state = handoverState[nodeId] ?: NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT,
-            handoverMessage = stripHtml(getString(nodeData, "handoverMessage", "")),
-            maxWaitTime = getInt(nodeData, "maxWaitTime", 5),
-            nodeId = nodeId
-        )
-    }
+    override suspend fun handleResponse(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val action = (response as? Map<*, *>)?.get("action")
+        val preIndex = ChatState.getVariable(preKey(nodeId))
+        if (preIndex is Number && action == null && response !is List<*>) return answerPreChat(response, nodeData, nodeId, preIndex.toInt())
 
-    override suspend fun handleResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // The visitor left the queue (the wait card's Cancel), or a restored
-        // wait is over: the flow carries on from this step, as on the web.
-        when ((response as? Map<*, *>)?.get("action")) {
+        // The visitor left the queue (the wait card's Cancel), or the wait is
+        // over: the flow carries on from this step, as on the web.
+        when (action) {
             "cancel" -> {
-                state.addToTranscript("bot", "You left the queue")
+                // Out of the queue: the team must stop seeing the visitor waiting
+                // (web special.ts). Conferbot.leaveQueue sends it itself and
+                // waits for the answer (queueLeft); a headless caller gets it here.
+                if ((response as Map<*, *>)["queueLeft"] != true) {
+                    ChatState.chatSessionId?.let { flowContext().emit("queue-self-resolve", com.conferbot.sdk.core.livechat.HandoverState.queueSelfResolvePayload(it)) }
+                }
+                ChatState.addToTranscript("bot", "You left the queue")
                 recordResponse(nodeId = nodeId, shape = "handover-cancelled", text = "You left the queue", type = nodeType)
                 cleanup(nodeId)
                 return NodeResult.Proceed()
@@ -170,279 +200,87 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
             }
         }
         return when (handoverState[nodeId]) {
-            NodeUIState.HumanHandover.HandoverState.PRE_CHAT_QUESTIONS -> {
-                handlePreChatResponse(response, nodeData, nodeId)
-            }
-            NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY -> {
-                handlePostChatSurveyResponse(response, nodeData, nodeId)
-            }
-            NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED -> {
-                handleAgentChatMessage(response, nodeData, nodeId)
-            }
-            else -> {
-                // Waiting or other state
-                NodeResult.DisplayUI(buildHandoverUIState(nodeData, nodeId))
-            }
+            NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY -> handlePostChatSurveyResponse(response, nodeId)
+            NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED -> handleAgentChatMessage(response, nodeData, nodeId)
+            else -> NodeResult.DisplayUI(buildHandoverUIState(nodeData, nodeId))
         }
     }
 
-    private fun handlePreChatResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val questions = getList<Map<String, Any?>>(nodeData, "preChatQuestions")
-        val currentIndex = preChatIndices[nodeId] ?: 0
-
-        if (currentIndex >= questions.size) {
-            handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
-            return initiateHandover(nodeData, nodeId)
-        }
-
-        val question = questions[currentIndex]
-        val answerType = question["answerVariable"]?.toString() ?: "text"
-        val value = response.toString().trim()
-
-        // Validate based on type
-        when (answerType.lowercase()) {
-            "email" -> {
-                if (!isValidEmail(value)) {
-                    val errorMsg = question["incorrectEmailResponse"]?.toString()
-                        ?: "Please enter a valid email"
-                    return NodeResult.Error(errorMsg, shouldProceed = false)
-                }
-                state.setUserMetadata("email", value)
-            }
-            "phone", "mobile" -> {
-                if (!isValidPhone(value)) {
-                    val errorMsg = question["incorrectPhoneNumberResponse"]?.toString()
-                        ?: "Please enter a valid phone number"
-                    return NodeResult.Error(errorMsg, shouldProceed = false)
-                }
-                state.setUserMetadata("phone", value)
-            }
-            "name" -> {
-                if (value.isEmpty()) {
-                    return NodeResult.Error("Please enter your name", shouldProceed = false)
-                }
-                state.setUserMetadata("name", value)
-            }
-        }
-
-        // Store answer
-        val answerKey = question["id"]?.toString() ?: "prechat_$currentIndex"
-        state.setAnswerVariable(nodeId, value)
-        state.setAnswerVariableByKey(answerKey, value)
-        state.addToTranscript("user", value)
-
-        recordResponse(
-            nodeId = nodeId,
-            shape = "prechat-question-response",
-            text = value,
-            type = nodeType,
-            additionalData = mapOf("questionIndex" to currentIndex)
-        )
-
-        // Move to next question
-        preChatIndices[nodeId] = currentIndex + 1
-
-        // Check if more questions
-        if (currentIndex + 1 < questions.size) {
-            return displayPreChatQuestion(nodeData, nodeId, questions)
-        }
-
-        // All pre-chat questions answered
-        handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
-        return initiateHandover(nodeData, nodeId)
-    }
+    private fun buildHandoverUIState(nodeData: Map<String, Any?>, nodeId: String): NodeUIState.HumanHandover = NodeUIState.HumanHandover(
+        state = handoverState[nodeId] ?: NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT,
+        handoverMessage = FlowText.bubbleText(ChatState.resolveVariables(Js.str(nodeData["handoverMessage"]), html = true)),
+        maxWaitTime = com.conferbot.sdk.core.agent.HandoverPayload.waitMinutesOf(nodeData["maxWaitTime"]).toInt(),
+        nodeId = nodeId
+    )
 
     /**
-     * Handle post-chat survey response
-     * Receives list of SurveyResponse objects from the PostChatSurveyView
+     * Handle post-chat survey response: a list of SurveyResponse from the
+     * PostChatSurveyView (empty: skipped).
      */
-    @Suppress("UNCHECKED_CAST")
-    private fun handlePostChatSurveyResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        // Response is a list of SurveyResponse objects
-        val responses = response as? List<NodeUIState.SurveyResponse> ?: emptyList()
-
+    private fun handlePostChatSurveyResponse(response: Any, nodeId: String): NodeResult {
+        val responses = (response as? List<*>)?.filterIsInstance<NodeUIState.SurveyResponse>() ?: emptyList()
         if (responses.isEmpty()) {
-            // User skipped the survey
-            state.addToTranscript("bot", "Survey skipped")
-            recordResponse(
-                nodeId = nodeId,
-                shape = "postchat-survey-skipped",
-                text = "Survey skipped by user",
-                type = nodeType
-            )
+            ChatState.addToTranscript("bot", "Survey skipped")
+            recordResponse(nodeId = nodeId, shape = "postchat-survey-skipped", text = "Survey skipped by user", type = nodeType)
             cleanup(nodeId)
             return NodeResult.Proceed()
         }
-
-        // Store all survey responses
         surveyResponses[nodeId] = responses.toMutableList()
-
-        // Build response summary for transcript
         val surveyData = mutableMapOf<String, Any>()
-        responses.forEach { surveyResponse ->
-            surveyData[surveyResponse.questionId] = surveyResponse.value
-
-            // Record individual responses
-            val valueStr = when (val value = surveyResponse.value) {
-                is Int -> value.toString()
+        responses.forEach { r ->
+            surveyData[r.questionId] = r.value
+            val valueStr = when (val value = r.value) {
                 is List<*> -> value.joinToString(", ")
                 else -> value.toString()
             }
-            state.addToTranscript("user", "Survey response: $valueStr")
+            ChatState.addToTranscript("user", "Survey response: $valueStr")
         }
-
-        // Record the complete survey submission
         recordResponse(
-            nodeId = nodeId,
-            shape = "postchat-survey-response",
-            text = "Survey completed",
-            type = nodeType,
-            additionalData = mapOf(
-                "surveyResponses" to surveyData,
-                "responseCount" to responses.size
-            )
+            nodeId = nodeId, shape = "postchat-survey-response", text = "Survey completed", type = nodeType,
+            additionalData = mapOf("surveyResponses" to surveyData, "responseCount" to responses.size)
         )
-
-        // Clean up and proceed to next node
         cleanup(nodeId)
         return NodeResult.Proceed()
     }
 
-    /**
-     * Legacy handler for question-by-question post-chat survey
-     * Kept for backward compatibility
-     */
-    private fun handleLegacyPostChatResponse(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val questions = getList<Map<String, Any?>>(nodeData, "postChatSurveyQuestions")
-        val currentIndex = postChatIndices[nodeId] ?: 0
-
-        val value = response.toString().trim()
-
-        // Store answer
-        state.addToTranscript("user", value)
-        recordResponse(
-            nodeId = nodeId,
-            shape = "postchat-survey-response",
-            text = value,
-            type = nodeType,
-            additionalData = mapOf("questionIndex" to currentIndex)
-        )
-
-        // Move to next question
-        postChatIndices[nodeId] = currentIndex + 1
-
-        // Check if more questions
-        if (currentIndex + 1 < questions.size) {
-            // Display next post-chat question
-            val nextQuestion = questions[currentIndex + 1]
-            state.addToTranscript("bot", nextQuestion["questionText"]?.toString() ?: "")
-            return NodeResult.DisplayUI(
-                NodeUIState.HumanHandover(
-                    state = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY,
-                    preChatQuestions = questions.mapIndexed { i, q ->
-                        NodeUIState.HumanHandover.PreChatQuestion(
-                            id = q["id"]?.toString() ?: "q$i",
-                            questionText = q["questionText"]?.toString() ?: "",
-                            answerType = q["answerVariable"]?.toString() ?: "text",
-                            answerKey = q["id"]?.toString() ?: "postchat_$i"
-                        )
-                    },
-                    currentQuestionIndex = currentIndex + 1,
-                    nodeId = nodeId
-                )
-            )
-        }
-
-        // All post-chat questions answered, proceed to next node
-        cleanup(nodeId)
-        return NodeResult.Proceed()
-    }
-
-    private fun handleAgentChatMessage(
-        response: Any,
-        nodeData: Map<String, Any?>,
-        nodeId: String
-    ): NodeResult {
-        val message = response.toString().trim()
-
+    private fun handleAgentChatMessage(response: Any, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
+        val message = FlowKit.typedText(response)
         if (message.isNotEmpty()) {
-            state.addToTranscript("user", message)
-            recordResponse(
-                nodeId = nodeId,
-                shape = "handover-user-message",
-                text = message,
-                type = nodeType
-            )
+            ChatState.addToTranscript("user", message)
+            recordResponse(nodeId = nodeId, shape = "handover-user-message", text = message, type = nodeType)
         }
-
-        // Stay in agent connected state
         return NodeResult.DisplayUI(buildHandoverUIState(nodeData, nodeId))
     }
 
-    /**
-     * Called when agent accepts the handover
-     */
+    /** Called when an agent accepts the handover */
     fun onAgentAccepted(nodeId: String, agentName: String) {
         handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED
-        state.addToTranscript("bot", "$agentName has joined the chat")
+        ChatState.addToTranscript("bot", "$agentName has joined the chat")
     }
 
-    /**
-     * Called when no agents are available
-     */
+    /** Called when no agents are available (a caller outside the step's own listener). */
     fun onNoAgentsAvailable(nodeId: String, nodeData: Map<String, Any?>): NodeResult {
         handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE
-        val fallbackMessage = stripHtml(getString(nodeData, "fallbackMessage", "No agents available at the moment."))
-
-        state.addToTranscript("bot", fallbackMessage)
-
+        val fallbackMessage = FlowText.bubbleText(ChatState.resolveVariables(Js.str(nodeData["fallbackMessage"] ?: "No agents available at the moment."), html = true))
+        ChatState.addToTranscript("bot", fallbackMessage)
         return NodeResult.DisplayUI(
-            NodeUIState.HumanHandover(
-                state = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE,
-                handoverMessage = fallbackMessage,
-                nodeId = nodeId
-            )
+            NodeUIState.HumanHandover(state = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE, handoverMessage = fallbackMessage, nodeId = nodeId)
         )
     }
 
-    /**
-     * Called when agent chat ends - start post-chat survey if enabled
-     */
+    /** Called when the agent chat ends: the post-chat survey if enabled, else on. */
     fun onChatEnded(nodeId: String, nodeData: Map<String, Any?>): NodeResult {
         val enablePostChatSurvey = getBoolean(nodeData, "enablePostChatSurvey", false)
         val postChatQuestions = getList<Map<String, Any?>>(nodeData, "postChatSurveyQuestions")
-
         if (enablePostChatSurvey && postChatQuestions.isNotEmpty()) {
             handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY
-            postChatIndices[nodeId] = 0
-
-            // Cache the node data for survey response handling
             nodeDataCache[nodeId] = nodeData
-
-            // Build survey questions for the new PostChatSurvey UI
-            val surveyQuestions = buildSurveyQuestions(postChatQuestions)
-
-            // Get survey configuration
             val surveyTitle = getString(nodeData, "postChatSurveyTitle", "How was your experience?")
             val surveyDescription = getString(nodeData, "postChatSurveyDescription", "")
-
-            state.addToTranscript("bot", surveyTitle)
-
+            ChatState.addToTranscript("bot", surveyTitle)
             return NodeResult.DisplayUI(
                 NodeUIState.PostChatSurvey(
-                    questions = surveyQuestions,
+                    questions = buildSurveyQuestions(postChatQuestions),
                     currentQuestionIndex = 0,
                     nodeId = nodeId,
                     surveyTitle = surveyTitle,
@@ -450,99 +288,59 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
                 )
             )
         }
-
-        // No post-chat survey, proceed to next node
         cleanup(nodeId)
         return NodeResult.Proceed()
     }
 
-    /**
-     * Build survey questions from node configuration
-     * Maps the server-side question format to our SurveyQuestion data class
-     */
-    private fun buildSurveyQuestions(
-        questionConfigs: List<Map<String, Any?>>
-    ): List<NodeUIState.PostChatSurvey.SurveyQuestion> {
-        return questionConfigs.mapIndexed { index, config ->
-            val questionId = config["id"]?.toString() ?: "survey_q_$index"
-            val questionText = config["questionText"]?.toString() ?: config["question"]?.toString() ?: ""
-            val answerType = config["answerVariable"]?.toString()
-                ?: config["type"]?.toString()
-                ?: "text"
-
-            // Determine question type
+    /** Survey questions from the node's configuration. */
+    private fun buildSurveyQuestions(questionConfigs: List<Map<String, Any?>>): List<NodeUIState.PostChatSurvey.SurveyQuestion> =
+        questionConfigs.mapIndexed { index, config ->
+            val answerType = config["answerVariable"]?.toString() ?: config["type"]?.toString() ?: "text"
             val questionType = when (answerType.lowercase()) {
                 "rating", "star", "stars" -> NodeUIState.PostChatSurvey.SurveyQuestionType.RATING
                 "choice", "single", "single-choice", "radio" -> NodeUIState.PostChatSurvey.SurveyQuestionType.CHOICE
                 "multi", "multiple", "multi-choice", "checkbox" -> NodeUIState.PostChatSurvey.SurveyQuestionType.MULTI_CHOICE
                 else -> NodeUIState.PostChatSurvey.SurveyQuestionType.TEXT
             }
-
-            // Get options for choice questions
             @Suppress("UNCHECKED_CAST")
             val options = (config["options"] as? List<String>)
                 ?: (config["choices"] as? List<String>)
                 ?: (config["answers"] as? List<Map<String, Any?>>)?.map { it["text"]?.toString() ?: "" }
-
-            // Get rating configuration
-            val minRating = when (val min = config["minRating"] ?: config["min"]) {
-                is Number -> min.toInt()
-                is String -> min.toIntOrNull() ?: 1
-                else -> 1
+            fun intOf(v: Any?, d: Int) = when (v) {
+                is Number -> v.toInt()
+                is String -> v.toIntOrNull() ?: d
+                else -> d
             }
-            val maxRating = when (val max = config["maxRating"] ?: config["max"]) {
-                is Number -> max.toInt()
-                is String -> max.toIntOrNull() ?: 5
-                else -> 5
-            }
-
-            // Check if required
             val required = when (val req = config["required"]) {
                 is Boolean -> req
                 is String -> req.lowercase() == "true"
-                else -> true // Default to required
+                else -> true
             }
-
             NodeUIState.PostChatSurvey.SurveyQuestion(
-                id = questionId,
+                id = config["id"]?.toString() ?: "survey_q_$index",
                 type = questionType,
-                question = questionText,
+                question = config["questionText"]?.toString() ?: config["question"]?.toString() ?: "",
                 options = options,
                 required = required,
-                minRating = minRating,
-                maxRating = maxRating
+                minRating = intOf(config["minRating"] ?: config["min"], 1),
+                maxRating = intOf(config["maxRating"] ?: config["max"], 5)
             )
         }
-    }
 
-    /**
-     * Get cached node data for a given nodeId
-     * Useful when handling socket events that don't include full node data
-     */
-    fun getCachedNodeData(nodeId: String): Map<String, Any?>? {
-        return nodeDataCache[nodeId]
-    }
+    /** Cached node data for a node (socket events that don't carry it). */
+    fun getCachedNodeData(nodeId: String): Map<String, Any?>? = nodeDataCache[nodeId]
 
     private fun cleanup(nodeId: String) {
         handoverState.remove(nodeId)
-        preChatIndices.remove(nodeId)
-        postChatIndices.remove(nodeId)
         surveyResponses.remove(nodeId)
         nodeDataCache.remove(nodeId)
+        ChatState.setVariable(preKey(nodeId), null)
     }
 
-    /**
-     * Send survey responses via socket
-     * Called by NodeFlowEngine after survey is submitted
-     */
+    /** The survey's answers by question, for the server. */
     fun getSurveyResponsesForSocket(nodeId: String): Map<String, Any>? {
         val responses = surveyResponses[nodeId] ?: return null
         if (responses.isEmpty()) return null
-
-        val responseMap = mutableMapOf<String, Any>()
-        responses.forEach { response ->
-            responseMap[response.questionId] = response.value
-        }
-        return responseMap
+        return responses.associate { it.questionId to it.value }
     }
 }
