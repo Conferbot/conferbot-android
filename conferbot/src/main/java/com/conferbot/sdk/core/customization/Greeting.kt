@@ -107,21 +107,34 @@ object Greeting {
         }
     }
 
-    private fun instant(v: Any?): Long? {
-        val s = v as? String ?: return null
+    /**
+     * An ISO date or date-time as epoch ms. java.time needs API 26 and minSdk
+     * is 21 without desugaring (its classes are simply missing below 26, an
+     * Error no catch here would stop), so this parses with SimpleDateFormat.
+     * The offset is rewritten to +hhmm because "X" patterns need API 24.
+     */
+    internal fun instant(v: Any?): Long? {
+        val s = (v as? String)?.trim() ?: return null
         if (s.isEmpty()) return null
+        val dateOnly = Regex("""^\d{4}-\d{2}-\d{2}$""")
+        val dateTime = Regex("""^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)(\.\d+)?(Z|[+-]\d{2}:?\d{2})$""")
         return try {
-            java.time.Instant.parse(s).toEpochMilli()
-        } catch (_: Exception) {
-            try {
-                java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli()
-            } catch (_: Exception) {
-                try {
-                    java.time.LocalDate.parse(s).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
-                } catch (_: Exception) {
-                    null
-                }
+            if (dateOnly.matches(s)) {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    isLenient = false
+                }.parse(s)?.time
+            } else {
+                val m = dateTime.matchEntire(s) ?: return null
+                val (base, fraction, zone) = m.destructured
+                val pattern = if (base.length == 16) "yyyy-MM-dd'T'HH:mmZ" else "yyyy-MM-dd'T'HH:mm:ssZ"
+                val offset = if (zone == "Z") "+0000" else zone.replace(":", "")
+                val ms = fraction.drop(1).padEnd(3, '0').take(3).ifEmpty { "0" }.toLong()
+                java.text.SimpleDateFormat(pattern, java.util.Locale.US).apply { isLenient = false }
+                    .parse(base + offset)?.time?.plus(ms)
             }
+        } catch (_: Exception) {
+            null
         }
     }
 
