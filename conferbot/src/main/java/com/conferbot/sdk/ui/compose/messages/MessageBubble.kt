@@ -4,6 +4,7 @@ package com.conferbot.sdk.ui.compose.messages
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInHorizontally
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,7 +64,16 @@ fun MessageBubble(
             AgentReplyExtras(message)
         }
         is RecordItem.AgentRichMessage -> RichAgentMessageBubble(message, modifier)
-        is RecordItem.AgentLeftMessage -> SystemMessageBubble(
+        // "Connecting you with the team…" while an AI hands the visitor on,
+        // then how the wait ended (core/livechat/HandoverState.kt); its dots
+        // only while pending.
+        is RecordItem.AgentLeftMessage -> if (message.handover) {
+            val outcome = com.conferbot.sdk.core.livechat.HandoverOutcome.of(message.settled)
+            SystemMessageBubble(
+                RecordItem.SystemMessage(id = message.id, time = message.time, text = com.conferbot.sdk.core.livechat.HandoverState.lineText(outcome)),
+                modifier, animationDuration, pending = outcome == null
+            )
+        } else SystemMessageBubble(
             RecordItem.SystemMessage(id = message.id, time = message.time, text = message.text),
             modifier, animationDuration
         )
@@ -70,13 +81,15 @@ fun MessageBubble(
         // Files: the agent's, and the visitor's in a live chat.
         is RecordItem.AgentMessageFile -> FileBubble(message.file, null, null, fromVisitor = false, sender = message.agentDetails?.name, modifier = modifier)
         is RecordItem.UserLiveMessageFile -> FileBubble(message.url, message.fileName, message.mimeType, fromVisitor = true, sender = null, modifier = modifier)
+        // A person's join after an AI handover: "They can see your conversation so far".
         is RecordItem.AgentJoinedMessage -> SystemMessageBubble(
             RecordItem.SystemMessage(
                 id = message.id,
                 time = message.time,
-                text = "${message.agentDetails.name} joined the chat"
+                text = com.conferbot.sdk.core.livechat.HandoverState.joinedText(message.agentDetails.name)
             ),
-            modifier, animationDuration
+            modifier, animationDuration,
+            note = if (message.afterAI) com.conferbot.sdk.core.livechat.HandoverState.HANDED_OVER_NOTE else null
         )
         else -> {}
     }
@@ -357,7 +370,11 @@ fun AgentMessageBubble(
 fun SystemMessageBubble(
     message: RecordItem.SystemMessage,
     modifier: Modifier = Modifier,
-    animationDuration: Int = 0
+    animationDuration: Int = 0,
+    /** A wait still pending: the typing dots above the words. */
+    pending: Boolean = false,
+    /** A smaller line under the words. */
+    note: String? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -368,19 +385,68 @@ fun SystemMessageBubble(
         visible = true,
         enter = if (animationDuration > 0) fadeIn(tween(animationDuration)) else fadeIn(tween(0))
     ) {
-        Box(
-            modifier = modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = modifier.fillMaxWidth().padding(spacing.sm),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if (pending) PendingDots(colors.systemMessageText)
             Text(
                 text = message.text,
                 color = colors.systemMessageText,
-                style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.captionSize),
-                modifier = Modifier.padding(spacing.sm)
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.captionSize)
+            )
+            if (note != null) {
+                Text(
+                    text = note,
+                    color = colors.systemMessageText.copy(alpha = 0.7f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.captionSize * 0.92f),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The typing dots of a pending "Connecting you with the team…" line (the
+ * web's .cb-sys__typing): three dots fading in turn, one 1.2s loop.
+ */
+@Composable
+private fun PendingDots(color: Color) {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "handover-dots")
+    val t by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            tween(1200, easing = androidx.compose.animation.core.LinearEasing)
+        ),
+        label = "handover-dots-t"
+    )
+    Row(
+        modifier = Modifier.padding(bottom = 4.dp).hiddenFromAccessibility(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(3) { i ->
+            // Bright at (i + 1) / 4 of the loop, dim either side, as the web.
+            val peak = (i + 1) / 4f
+            val d = kotlin.math.abs(t - peak)
+            val alpha = if (d < 0.25f) 1f - (d / 0.25f) * 0.7f else 0.3f
+            Box(
+                Modifier
+                    .padding(horizontal = 1.5.dp)
+                    .size(5.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(color.copy(alpha = alpha))
             )
         }
     }
 }
+
+/** Decorative: hidden from TalkBack. */
+private fun Modifier.hiddenFromAccessibility(): Modifier =
+    this.clearAndSetSemantics { }
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
