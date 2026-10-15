@@ -92,6 +92,13 @@ object ChatState {
     // Flag to enable/disable auto-persistence
     private var autoPersistEnabled = true
 
+    /**
+     * The app's signed-in user (ConferBotUser.toVisitorContext), sent with every
+     * response record. Set by Conferbot.initialize / identify; kept across resets.
+     */
+    @Volatile
+    var visitorContext: Map<String, Any?>? = null
+
     // Answer variables - stores all user responses
     private val _answerVariables = MutableStateFlow<MutableList<AnswerVariable>>(mutableListOf())
     val answerVariables: StateFlow<List<AnswerVariable>> = _answerVariables.asStateFlow()
@@ -911,7 +918,17 @@ object ChatState {
      * Build full response data object for socket emit
      */
     fun buildResponseData(): Map<String, Any?> {
-        return mapOf(
+        // The app's signed-in user travels with every record, as the web widget's
+        // visitorContext; the server checks its hash and drops it.
+        val ctx = visitorContext
+        val visitor = buildMap<String, Any?> {
+            if (ctx != null) {
+                put("visitorContext", ctx)
+                (ctx["name"] as? String)?.let { put("visitorName", it) }
+                (ctx["email"] as? String)?.let { put("visitorEmail", it) }
+            }
+        }
+        return visitor + mapOf(
             "version" to "v2",
             "chatSessionId" to _chatSessionId,
             "visitorId" to _visitorId,
