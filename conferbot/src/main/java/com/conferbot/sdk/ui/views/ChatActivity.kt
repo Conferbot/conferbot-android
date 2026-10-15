@@ -50,6 +50,11 @@ class ChatActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityChatBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // A theme set to "auto" follows the phone's light / dark setting.
+        Conferbot.setSystemDarkMode(
+            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        )
 
         setupUI()
         setupObservers()
@@ -151,8 +156,13 @@ class ChatActivity : AppCompatActivity() {
         // The bot's chat background (core/customization ChatBackground), as on the web.
         binding.chatBackground.setContent {
             val map by Conferbot.serverCustomizationMap.collectAsState()
+            val look by Conferbot.customizations.collectAsState()
             if (map.isNotEmpty()) {
-                val background = androidx.compose.runtime.remember(map) { com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(map) }
+                // A widget theme paints it when the owner kept the default white.
+                val background = androidx.compose.runtime.remember(map, look.surface) {
+                    look.surface?.let { com.conferbot.sdk.core.customization.ChatBackground.Solid(it) }
+                        ?: com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(map)
+                }
                 com.conferbot.sdk.ui.compose.chat.ChatBackgroundLayer(background)
             }
         }
@@ -300,7 +310,8 @@ class ChatActivity : AppCompatActivity() {
             header.titleText.setTextColor(ink)
             header.subtitleText.setTextColor(ink)
             header.backButton.imageTintList = android.content.res.ColorStateList.valueOf(ink)
-            binding.sendButton.imageTintList = android.content.res.ColorStateList.valueOf(bg)
+            binding.sendButton.imageTintList = android.content.res.ColorStateList.valueOf(XmlLook.sendColor(bg))
+            XmlLook.composer(binding.root, binding.inputContainer, binding.brandFooter, binding.messageInput)
             // The chat background (gradient, image, pattern) is drawn behind a see-through list.
             binding.messagesRecyclerView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             val dots = (0 until (binding.typingIndicator.root as android.view.ViewGroup).childCount).map { (binding.typingIndicator.root as android.view.ViewGroup).getChildAt(it) }
