@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.conferbot.sdk.core.Conferbot
+import com.conferbot.sdk.core.helpcentre.HelpCentre
 import com.conferbot.sdk.models.KnowledgeBaseArticle
 import com.conferbot.sdk.models.KnowledgeBaseCategory
 import com.conferbot.sdk.models.KnowledgeBaseData
@@ -34,19 +36,22 @@ sealed class KnowledgeBaseNavState {
     data class ArticleList(val category: KnowledgeBaseCategory) : KnowledgeBaseNavState()
     data class ArticleDetail(
         val article: KnowledgeBaseArticle,
-        val category: KnowledgeBaseCategory?
+        val category: KnowledgeBaseCategory?,
+        /** Opened from the conversation (an AI source, an article card): Back returns to it. */
+        val fromChat: Boolean = false
     ) : KnowledgeBaseNavState()
     data class SearchResults(val query: String) : KnowledgeBaseNavState()
 }
 
 /**
- * Main Knowledge Base screen composable
- * Features:
- * - Category list view
- * - Article list view with category tabs
- * - Article detail view
- * - Search functionality
- * - Navigation between views
+ * The help centre: categories (and recent articles), a category's articles,
+ * one article (its body fetched on open), search.
+ *
+ * [embedded] draws it inside the chat (the Articles tab): no app bar of its
+ * own, a back row while inside. [openRequest] opens one article by id (the
+ * web's openArticle); [onBackToChat] is where Back goes from an article
+ * opened from the conversation. [showRecent] follows the owner's
+ * hideRecentArticles (core/helpcentre/HelpCentre.kt).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +60,12 @@ fun KnowledgeBaseScreen(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     primaryColor: Color = Color(0xFF0100EC),
-    title: String = "Help Center"
+    title: String = "Help Center",
+    embedded: Boolean = false,
+    showRecent: Boolean = true,
+    openRequest: Conferbot.HelpArticleRequest? = null,
+    onOpenRequestHandled: (Conferbot.HelpArticleRequest) -> Unit = {},
+    onBackToChat: (() -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
 
@@ -68,10 +78,23 @@ fun KnowledgeBaseScreen(
     val knowledgeBaseData by knowledgeBaseService.knowledgeBaseData.collectAsState()
     val isLoading by knowledgeBaseService.isLoading.collectAsState()
     val error by knowledgeBaseService.error.collectAsState()
+    val bodies by knowledgeBaseService.articleBodies.collectAsState()
+    val failedBodies by knowledgeBaseService.failedBodies.collectAsState()
 
-    // Fetch KB data on first composition
-    LaunchedEffect(Unit) {
-        knowledgeBaseService.fetchKnowledgeBase()
+    fun openArticle(article: KnowledgeBaseArticle, category: KnowledgeBaseCategory?, fromChat: Boolean = false) {
+        knowledgeBaseService.sendCurrentEngagement()
+        navState = KnowledgeBaseNavState.ArticleDetail(article, category, fromChat)
+        knowledgeBaseService.loadArticleBody(article.id)
+        knowledgeBaseService.trackArticleView(article)
+        knowledgeBaseService.startArticleEngagement(article.id)
+    }
+
+    // One article by id: an AI source or an article card in the chat.
+    LaunchedEffect(openRequest) {
+        val request = openRequest ?: return@LaunchedEffect
+        val (article, category) = HelpCentre.findArticle(knowledgeBaseData, request.articleId, request.title)
+        if (article != null) openArticle(article, category, request.fromChat)
+        onOpenRequestHandled(request)
     }
 
     // Update search results when query changes
@@ -85,31 +108,41 @@ fun KnowledgeBaseScreen(
         }
     }
 
+    val goBack: () -> Unit = {
+        when (val state = navState) {
+            is KnowledgeBaseNavState.ArticleList -> navState = KnowledgeBaseNavState.Categories
+            is KnowledgeBaseNavState.ArticleDetail -> {
+                knowledgeBaseService.sendCurrentEngagement()
+                if (state.fromChat && onBackToChat != null) {
+                    navState = KnowledgeBaseNavState.Categories
+                    onBackToChat()
+                } else {
+                    navState = state.category?.let { KnowledgeBaseNavState.ArticleList(it) } ?: KnowledgeBaseNavState.Categories
+                }
+            }
+            is KnowledgeBaseNavState.SearchResults -> navState = KnowledgeBaseNavState.Categories
+            else -> onDismiss()
+        }
+    }
+
+    // The system Back steps out of an article or a topic first.
+    androidx.activity.compose.BackHandler(enabled = navState !is KnowledgeBaseNavState.Categories) { goBack() }
+
     Scaffold(
         topBar = {
-            KnowledgeBaseTopBar(
-                navState = navState,
-                title = title,
-                onBackClick = {
-                    navState = when (navState) {
-                        is KnowledgeBaseNavState.ArticleList -> KnowledgeBaseNavState.Categories
-                        is KnowledgeBaseNavState.ArticleDetail -> {
-                            val currentState = navState as KnowledgeBaseNavState.ArticleDetail
-                            currentState.category?.let {
-                                KnowledgeBaseNavState.ArticleList(it)
-                            } ?: KnowledgeBaseNavState.Categories
-                        }
-                        is KnowledgeBaseNavState.SearchResults -> KnowledgeBaseNavState.Categories
-                        else -> {
-                            onDismiss()
-                            navState
-                        }
-                    }
-                },
-                onDismiss = onDismiss,
-                primaryColor = primaryColor
-            )
+            if (!embedded) {
+                KnowledgeBaseTopBar(
+                    navState = navState,
+                    title = title,
+                    onBackClick = goBack,
+                    onDismiss = onDismiss,
+                    primaryColor = primaryColor
+                )
+            } else if (navState !is KnowledgeBaseNavState.Categories) {
+                EmbeddedBackRow(navState = navState, onBackClick = goBack, primaryColor = primaryColor)
+            }
         },
+        containerColor = if (embedded) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
         Column(
@@ -173,10 +206,8 @@ fun KnowledgeBaseScreen(
                                 navState = KnowledgeBaseNavState.ArticleList(category)
                             },
                             onArticleClick = { article ->
-                                val category = knowledgeBaseData?.getCategoryById(article.categoryId ?: "")
-                                navState = KnowledgeBaseNavState.ArticleDetail(article, category)
-                                knowledgeBaseService.trackArticleView(article)
-                                knowledgeBaseService.startArticleEngagement(article.id)
+                                val (found, category) = HelpCentre.findArticle(knowledgeBaseData, article.id, article.title)
+                                openArticle(found ?: article, category)
                             },
                             onSearch = { query ->
                                 if (query.isNotBlank()) {
@@ -184,6 +215,7 @@ fun KnowledgeBaseScreen(
                                 }
                             },
                             isLoading = isLoading,
+                            showRecent = showRecent,
                             primaryColor = primaryColor
                         )
                     }
@@ -191,11 +223,7 @@ fun KnowledgeBaseScreen(
                     is KnowledgeBaseNavState.ArticleList -> {
                         ArticleListScreen(
                             category = state.category,
-                            onArticleClick = { article ->
-                                navState = KnowledgeBaseNavState.ArticleDetail(article, state.category)
-                                knowledgeBaseService.trackArticleView(article)
-                                knowledgeBaseService.startArticleEngagement(article.id)
-                            },
+                            onArticleClick = { article -> openArticle(article, state.category) },
                             primaryColor = primaryColor
                         )
                     }
@@ -203,6 +231,7 @@ fun KnowledgeBaseScreen(
                     is KnowledgeBaseNavState.ArticleDetail -> {
                         var relatedArticles by remember { mutableStateOf<List<KnowledgeBaseArticle>>(emptyList()) }
                         var hasRated by remember { mutableStateOf(knowledgeBaseService.hasRatedArticle(state.article.id)) }
+                        val article = bodies[state.article.id]?.let { state.article.copy(content = it) } ?: state.article
 
                         // Fetch related articles
                         LaunchedEffect(state.article) {
@@ -212,13 +241,8 @@ fun KnowledgeBaseScreen(
                         }
 
                         ArticleDetailView(
-                            article = state.article,
-                            onBackClick = {
-                                knowledgeBaseService.sendCurrentEngagement()
-                                navState = state.category?.let {
-                                    KnowledgeBaseNavState.ArticleList(it)
-                                } ?: KnowledgeBaseNavState.Categories
-                            },
+                            article = article,
+                            onBackClick = goBack,
                             onHomeClick = {
                                 knowledgeBaseService.sendCurrentEngagement()
                                 navState = KnowledgeBaseNavState.Categories
@@ -229,12 +253,9 @@ fun KnowledgeBaseScreen(
                                     navState = KnowledgeBaseNavState.ArticleList(it)
                                 }
                             },
-                            onRelatedArticleClick = { article ->
-                                knowledgeBaseService.sendCurrentEngagement()
-                                val category = knowledgeBaseData?.getCategoryById(article.categoryId ?: "")
-                                navState = KnowledgeBaseNavState.ArticleDetail(article, category)
-                                knowledgeBaseService.trackArticleView(article)
-                                knowledgeBaseService.startArticleEngagement(article.id)
+                            onRelatedArticleClick = { related ->
+                                val category = knowledgeBaseData?.getCategoryById(related.categoryId ?: "")
+                                openArticle(related, category)
                             },
                             onRateArticle = { helpful ->
                                 scope.launch {
@@ -251,7 +272,9 @@ fun KnowledgeBaseScreen(
                             categoryName = state.category?.name,
                             onScrollDepthChange = { depth ->
                                 knowledgeBaseService.updateScrollDepth(depth)
-                            }
+                            },
+                            showTopBar = false,
+                            bodyFailed = state.article.id in failedBodies
                         )
                     }
 
@@ -260,10 +283,8 @@ fun KnowledgeBaseScreen(
                             query = state.query,
                             results = searchResults,
                             onArticleClick = { article ->
-                                val category = knowledgeBaseData?.getCategoryById(article.categoryId ?: "")
-                                navState = KnowledgeBaseNavState.ArticleDetail(article, category)
-                                knowledgeBaseService.trackArticleView(article)
-                                knowledgeBaseService.startArticleEngagement(article.id)
+                                val (found, category) = HelpCentre.findArticle(knowledgeBaseData, article.id, article.title)
+                                openArticle(found ?: article, category)
                             },
                             primaryColor = primaryColor
                         )
@@ -271,6 +292,35 @@ fun KnowledgeBaseScreen(
                 }
             }
         }
+    }
+}
+
+/** Inside the chat: Back and where you are, under the chat header. */
+@Composable
+private fun EmbeddedBackRow(
+    navState: KnowledgeBaseNavState,
+    onBackClick: () -> Unit,
+    primaryColor: Color
+) {
+    val label = when (navState) {
+        is KnowledgeBaseNavState.ArticleList -> navState.category.name
+        is KnowledgeBaseNavState.ArticleDetail -> navState.category?.name ?: navState.article.categoryName ?: "Help Center"
+        is KnowledgeBaseNavState.SearchResults -> "Search: ${navState.query}"
+        else -> ""
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBackClick) {
+            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = primaryColor)
+        }
+        Text(
+            text = label,
+            maxLines = 1,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -342,6 +392,7 @@ private fun CategoriesScreen(
     onSearch: (String) -> Unit,
     isLoading: Boolean,
     modifier: Modifier = Modifier,
+    showRecent: Boolean = true,
     primaryColor: Color = Color(0xFF0100EC)
 ) {
     LazyColumn(
@@ -382,6 +433,22 @@ private fun CategoriesScreen(
             }
 
             else -> {
+                // The newest articles, unless the owner hid them (hideRecentArticles).
+                val recent = knowledgeBaseData.recentArticles
+                if (showRecent && recent.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Recent articles",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    items(recent, key = { "recent-" + it.id }) { article ->
+                        RecentArticleRow(article = article, onClick = { onArticleClick(article) }, primaryColor = primaryColor)
+                    }
+                }
+
                 // Section header
                 item {
                     Text(
@@ -553,6 +620,37 @@ fun KnowledgeBaseContent(
                     )
                 }
             }
+        }
+    }
+}
+
+/** One recent article: title, its topic, a chevron. */
+@Composable
+private fun RecentArticleRow(
+    article: KnowledgeBaseArticle,
+    onClick: () -> Unit,
+    primaryColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(imageVector = Icons.Default.Description, contentDescription = null, tint = primaryColor, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(article.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 2)
+                article.categoryName?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+            Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
