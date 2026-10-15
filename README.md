@@ -261,6 +261,31 @@ Conferbot.initiateHandover(message = "I need help with billing")
 Conferbot.endChat()
 ```
 
+### Handover to a person
+
+The chat follows a handover the way the web widget does:
+
+- When an AI agent passes the visitor to the team, the chat shows "Connecting you with the team…" with typing dots. The line then settles to how the wait ended: "Connected with the team", "The team couldn't join just now", "You left the queue" or "Chat ended before the team joined". A person joining after the AI shows "They can see your conversation so far".
+- The waiting card's **Cancel** leaves the queue on the server. From code, call `Conferbot.leaveQueue { left -> }`. `left` is false when a person had already picked the chat up.
+- The header keeps the bot's name and logo. Under it, "Online" carries the team's reply time ("Typically replies in a few minutes", "Online · team replies by email") until a person is in the chat.
+- "Talk to a person" shows only for an AI agent bot while nobody is coming or here. It goes once tapped.
+- After an app restart, call `restorePersistedSession()` before opening the chat. A live chat comes back live with its agent. A chat still in the queue waits again without a second request.
+
+Listen to the waiting signals (the web widget's `cb:*` events):
+
+```kotlin
+val off = Conferbot.onWidgetSignal(HandoverSignals.WAITING_FOR_HUMAN_EVENT) { signal ->
+    // 20s into a wait for a person, or the server says nobody is free right now
+}
+Conferbot.onWidgetSignal(HandoverSignals.HUMAN_JOINED_EVENT) { /* a person joined */ }
+Conferbot.onWidgetSignal(HandoverSignals.WAIT_OVER_EVENT) { signal ->
+    // (signal as WidgetSignal.WaitOver).reason: unavailable, cancelled or ended
+}
+off() // stop listening
+```
+
+`HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
+
 ## Configuration
 
 ### ConferBotConfig
@@ -608,7 +633,9 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `sendMessage` | `sendMessage(text: String)` | Send a visitor message |
 | `sendTypingStatus` | `sendTypingStatus(isTyping: Boolean)` | Report visitor typing state |
 | `initiateHandover` | `initiateHandover(message: String? = null)` | Request a live agent |
-| `endChat` | `endChat()` | End the current conversation |
+| `endChat` | `endChat()` | End the current conversation (leaves the queue while waiting) |
+| `leaveQueue` | `leaveQueue(onDone: (Boolean) -> Unit = {})` | Leave the queue for a person; `false` when a person already has the chat |
+| `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
 | `identify` | `identify(user: ConferBotUser)` | Set the current user (before session creation) |
 | `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
 | `on` / `off` | `on(event: String, callback: Emitter.Listener)` / `off(event: String, callback: Emitter.Listener? = null)` | Raw socket event subscription |
