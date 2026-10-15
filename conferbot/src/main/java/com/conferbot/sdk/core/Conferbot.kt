@@ -253,6 +253,39 @@ object Conferbot {
     private val _customizations = MutableStateFlow(com.conferbot.sdk.core.customization.ResolvedCustomizations())
     val customizations: StateFlow<com.conferbot.sdk.core.customization.ResolvedCustomizations> = _customizations.asStateFlow()
 
+    /** The settings exactly as sent, before the widget theme's palette (applyLook). */
+    private var rawCustomizationMap: Map<String, Any?> = emptyMap()
+    private var rawCustomizationJson: JSONObject? = null
+    /** The phone's dark mode: a theme set to "auto" follows it. */
+    @Volatile private var prefersDark = false
+
+    /**
+     * The phone switched between light and dark: a bot whose theme follows
+     * the phone ("auto") repaints. The chat screens call this; apps need not.
+     */
+    fun setSystemDarkMode(dark: Boolean) {
+        if (dark == prefersDark) return
+        prefersDark = dark
+        if (rawCustomizationJson != null) applyLook()
+    }
+
+    /**
+     * The widget theme over the bot's settings, as the web widget does
+     * (core/customization/WidgetTheme): the theme palette in place of the
+     * owner's colours when chosen, then the resolved look and the chat theme.
+     */
+    private fun applyLook() {
+        val raw = rawCustomizationJson ?: return
+        val themed = com.conferbot.sdk.core.customization.WidgetTheme.withThemePalette(rawCustomizationMap, prefersDark)
+        val widgetTheme = com.conferbot.sdk.core.customization.WidgetTheme.resolve(themed, prefersDark)
+        _serverCustomizationMap.value = themed
+        _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(themed, theme = widgetTheme)
+        val json = if (themed === rawCustomizationMap) raw else JSONObject(raw.toString()).also { j ->
+            themed.forEach { (k, v) -> if (rawCustomizationMap[k] != v && (v == null || v is String)) j.put(k, v ?: JSONObject.NULL) }
+        }
+        parseServerCustomizations(json, widgetTheme)
+    }
+
     /** True once the bot's own settings arrived (the screens keep their host-app look until then). */
     val hasServerCustomizations: Boolean get() = _serverCustomizationMap.value.isNotEmpty()
 
@@ -380,6 +413,8 @@ object Conferbot {
         // FIX 5: Wrap initialization in try-catch for cleanup on failure
         try {
             this.appContext = context.applicationContext
+            prefersDark = (context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
             this.apiKey = apiKey
             this.botId = botId
             this.config = config
@@ -1275,6 +1310,7 @@ object Conferbot {
             _agentBot.value = AgentBotParser.parseAgentBot(chatbotMap)
             @Suppress("UNCHECKED_CAST")
             (chatbotMap["customizations"] as? Map<String, Any?>)?.let {
+                rawCustomizationMap = it
                 _serverCustomizationMap.value = it
                 _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(it)
             }
@@ -1328,7 +1364,8 @@ object Conferbot {
             }
 
             // Parse server customizations and build theme
-            parseServerCustomizations(chatbotData.optJSONObject("customizations"))
+            rawCustomizationJson = chatbotData.optJSONObject("customizations")
+            if (rawCustomizationJson != null) applyLook() else parseServerCustomizations(null)
 
             // Try to start the flow immediately if session is ready
             tryStartFlow()
@@ -1344,7 +1381,10 @@ object Conferbot {
      * `fetched-chatbot-data` socket event. Color values are hex strings (e.g. "#0100EC").
      * Malformed values are silently skipped so the default theme color is kept.
      */
-    private fun parseServerCustomizations(customizations: JSONObject?) {
+    private fun parseServerCustomizations(
+        customizations: JSONObject?,
+        widgetTheme: com.conferbot.sdk.core.customization.ResolvedWidgetTheme? = null
+    ) {
         if (customizations == null) {
             Log.d(TAG, "No customizations object in chatbot data")
             return
@@ -1396,6 +1436,9 @@ object Conferbot {
             // --- 2. Build a theme from color values ---
             val builder = ConferbotThemeBuilder.create()
                 .name("ServerCustomized")
+            // A dark widget theme starts from the SDK's dark theme (disabled
+            // states, overlays); the theme's own surfaces go on top below.
+            if (widgetTheme?.isDark == true) builder.baseTheme(com.conferbot.sdk.ui.theme.DarkTheme)
 
             // Helper to safely parse a hex color string to Compose Color
             fun parseHexColor(raw: String?): androidx.compose.ui.graphics.Color? {
@@ -1497,7 +1540,37 @@ object Conferbot {
             builder.messageSize(resolved.fontSize.sp)
             builder.bodySize(resolved.fontSize.sp)
 
-            val theme = builder.build()
+            // The widget theme's surfaces and text (every theme but classic
+            // in light): chat, composer, cards, quiet text, lines. The
+            // owner's own chat background stays theirs.
+            widgetTheme?.tokens?.let { t ->
+                fun tc(v: String) = parseHexColor(v) ?: androidx.compose.ui.graphics.Color.Unspecified
+                if (!com.conferbot.sdk.core.customization.WidgetTheme.ownsChatBackground(jsonObjectToMap(customizations))) {
+                    builder.background(tc(t.bg))
+                }
+                builder.backgroundColor(tc(t.bg))
+                builder.surfaceColor(tc(t.bg))
+                builder.inputColors(background = tc(t.field), text = tc(t.ink), border = tc(t.line2))
+            }
+
+            val built = builder.build()
+            val theme = widgetTheme?.tokens?.let { t ->
+                fun tc(v: String) = parseHexColor(v) ?: androidx.compose.ui.graphics.Color.Unspecified
+                built.copy(
+                    isDarkTheme = widgetTheme.isDark,
+                    colors = built.colors.copy(
+                        surfaceVariant = tc(t.card2),
+                        onBackground = tc(t.ink),
+                        onSurface = tc(t.ink),
+                        onSurfaceVariant = tc(t.muted),
+                        systemMessageText = tc(t.muted),
+                        inputPlaceholder = tc(t.muted),
+                        divider = tc(t.line),
+                        outline = tc(t.line2),
+                        timestamp = tc(t.muted),
+                    )
+                )
+            } ?: built
             _serverTheme.value = theme
             Log.d(TAG, "Built server theme from customizations")
 
