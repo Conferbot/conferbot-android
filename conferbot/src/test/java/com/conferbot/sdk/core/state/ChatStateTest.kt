@@ -379,14 +379,15 @@ class ChatStateTest {
     }
 
     @Test
-    fun `addToTranscript limits size to 200 entries`() {
-        // Given & When - Add 250 entries
-        repeat(250) { index ->
+    fun `addToTranscript limits size to 500 entries`() {
+        // Given & When - Add 600 entries
+        repeat(600) { index ->
             ChatState.addToTranscript("bot", "Message $index")
         }
 
-        // Then - Should be trimmed to 200
-        assertThat(ChatState.transcript.value.size).isAtMost(200)
+        // Then - Should be trimmed to MAX_TRANSCRIPT_ENTRIES, keeping the newest
+        assertThat(ChatState.transcript.value.size).isAtMost(500)
+        assertThat(ChatState.transcript.value.last().message).isEqualTo("Message 599")
     }
 
     @Test
@@ -495,11 +496,14 @@ class ChatStateTest {
         // Then
         assertThat(result).hasSize(1)
         val serverRecord = result[0]
+        assertThat(serverRecord["_id"]).isEqualTo("record-1")
         assertThat(serverRecord["id"]).isEqualTo("record-1")
-        assertThat(serverRecord["shape"]).isEqualTo("bot-message")
         assertThat(serverRecord["type"]).isEqualTo("message-node")
-        assertThat(serverRecord["text"]).isEqualTo("Hello")
-        assertThat(serverRecord["extra"]).isEqualTo("data")
+        // A bot entry nests its data, text included, as the web widget records it
+        @Suppress("UNCHECKED_CAST")
+        val data = serverRecord["data"] as Map<String, Any?>
+        assertThat(data["text"]).isEqualTo("Hello")
+        assertThat(data["extra"]).isEqualTo("data")
     }
 
     @Test
