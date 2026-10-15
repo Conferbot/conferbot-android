@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class NodeFlowEngine(
     private val socketClient: SocketClient
-) {
+) : com.conferbot.sdk.core.livechat.HandoverFlow {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // Current UI state to render
@@ -492,7 +492,7 @@ class NodeFlowEngine(
     /**
      * Handle user response for current interactive node
      */
-    fun submitResponse(response: Any) {
+    override fun submitResponse(response: Any) {
         android.util.Log.d(TAG, "submitResponse node=$currentNodeId resp=${response.toString().take(30)}")
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
@@ -526,6 +526,20 @@ class NodeFlowEngine(
                 return@launch
             }
 
+            // The handover step's own answers (leave the queue, carry on):
+            // no visitor text to record.
+            val action = (response as? Map<*, *>)?.get("action")?.toString()
+            if (nodeType == NodeTypes.HUMAN_HANDOVER && action == "cancel" && (response as Map<*, *>)["queueLeft"] != true) {
+                // Out of the queue: the team must stop seeing the visitor
+                // waiting (web special.ts). Conferbot.leaveQueue sends it
+                // itself and waits for the answer; a headless caller gets it here.
+                ChatState.chatSessionId?.let {
+                    socketClient.emit("queue-self-resolve", JSONObject(com.conferbot.sdk.core.livechat.HandoverState.queueSelfResolvePayload(it)))
+                }
+            }
+            // The handover survey's rating, as the web sends it (submit-chat-rating).
+            if (nodeType == NodeTypes.HUMAN_HANDOVER && response is List<*>) sendSurveyRating(response)
+
             try {
                 // Push user response to record (matching web widget format)
                 val responseText = when (response) {
@@ -536,7 +550,7 @@ class NodeFlowEngine(
                         ?: response.toString()
                     else -> response.toString()
                 }
-                ChatState.pushToRecord(RecordEntry(
+                if (action == null) ChatState.pushToRecord(RecordEntry(
                     id = nodeId,
                     shape = "user-input-response",
                     type = nodeData["type"]?.toString(),
@@ -682,9 +696,58 @@ class NodeFlowEngine(
     }
 
     /**
+     * The handover survey's answers as submit-chat-rating (the server has
+     * no post-chat-survey-response): its first rating, and its first written
+     * answer as the feedback.
+     */
+    private fun sendSurveyRating(responses: List<*>) {
+        val sessionId = ChatState.chatSessionId ?: return
+        val survey = _currentUIState.value as? NodeUIState.PostChatSurvey ?: return
+        val answers = responses.filterIsInstance<NodeUIState.SurveyResponse>()
+        val ratingQ = survey.questions.firstOrNull { q ->
+            q.type == NodeUIState.PostChatSurvey.SurveyQuestionType.RATING && answers.any { it.questionId == q.id && it.value is Number }
+        }
+        val rating = ratingQ?.let { q -> (answers.first { it.questionId == q.id }.value as Number).toInt() }
+        val feedback = answers.firstOrNull { a ->
+            survey.questions.any { it.id == a.questionId && it.type == NodeUIState.PostChatSurvey.SurveyQuestionType.TEXT } && a.value is String
+        }?.value as? String
+        val payload = com.conferbot.sdk.core.livechat.LiveChat.surveyRatingPayload(sessionId, ratingQ?.maxRating, rating, feedback) ?: return
+        socketClient.emit("submit-chat-rating", JSONObject(payload))
+    }
+
+    /**
+     * A restored chat that was waiting on a step (a handover still in the
+     * queue): back on that step showing [ui], without running the step
+     * again - a second run would ask the server for a person a second time.
+     * The visitor's answer (Cancel, the flow carrying on) then goes through
+     * submitResponse as usual. False when the step is not in the flow.
+     */
+    override fun waitAt(nodeId: String, ui: NodeUIState): Boolean {
+        val index = steps.indexOfFirst { it["id"]?.toString() == nodeId }
+        if (index < 0) return false
+        val node = steps[index]
+        @Suppress("UNCHECKED_CAST")
+        val data = node["data"] as? Map<String, Any?> ?: emptyMap()
+        currentNodeId = nodeId
+        currentNodeData = data
+        currentNodeType = data["type"]?.toString() ?: node["type"]?.toString()
+        ChatState.setCurrentIndex(index)
+        _isProcessing.value = false
+        _currentUIState.value = ui
+        return true
+    }
+
+    /** Run a step again (a restored handover whose request never went out). */
+    override fun resumeFrom(nodeId: String) {
+        val index = steps.indexOfFirst { it["id"]?.toString() == nodeId }
+        if (index < 0) return
+        scope.launch { processNodeAtIndex(index) }
+    }
+
+    /**
      * Handle agent-related events
      */
-    fun handleAgentAccepted(agentName: String) {
+    override fun handleAgentAccepted(agentName: String) {
         val nodeId = currentNodeId ?: return
         val nodeData = currentNodeData ?: return
 
@@ -732,7 +795,7 @@ class NodeFlowEngine(
     }
 
     /** Waiting on its handover step (for a person, or after nobody came). */
-    val isAtHandover: Boolean
+    override val isAtHandover: Boolean
         get() = (currentNodeType ?: currentNodeData?.get("type")?.toString()) == NodeTypes.HUMAN_HANDOVER
 
     /**
