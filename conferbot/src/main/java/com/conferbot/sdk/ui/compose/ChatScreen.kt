@@ -130,6 +130,10 @@ private fun ConferBotChatScreenContent(
         ?: look.title.takeIf { hasLook }
         ?: "Support Chat"
 
+    // A theme set to "auto" follows the phone's light / dark setting.
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    LaunchedEffect(systemDark) { Conferbot.setSystemDarkMode(systemDark) }
+
     LaunchedEffect(Unit) {
         if (Conferbot.chatSessionId.value == null) {
             Conferbot.initializeSession()
@@ -156,7 +160,11 @@ private fun ConferBotChatScreenContent(
     ) { paddingValues ->
         // The bot's chat background (core/customization ChatBackground) once its
         // settings arrived; the host app's theme background before that.
-        val chatBackground = remember(customizationMap) { com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(customizationMap) }
+        // A widget theme paints it when the owner kept the default white.
+        val chatBackground = remember(customizationMap, look.surface) {
+            look.surface?.let { com.conferbot.sdk.core.customization.ChatBackground.Solid(it) }
+                ?: com.conferbot.sdk.core.customization.ChatBackgrounds.resolve(customizationMap)
+        }
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(paddingValues)) {
         if (hasLook) com.conferbot.sdk.ui.compose.chat.ChatBackgroundLayer(chatBackground)
         ConferbotBackgroundContainer(
