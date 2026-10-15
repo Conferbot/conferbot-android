@@ -46,10 +46,19 @@ fun ChatHeader(
     serverCustomization: ServerChatbotCustomization? = null,
     /** The bot's settings as the web applies them; null keeps the host app's look. */
     look: com.conferbot.sdk.core.customization.ResolvedCustomizations? = null,
-    /** A person in the chat: their photo (or initials) instead of the bot's logo. */
+    /**
+     * Kept for source compatibility and not shown: the header keeps the bot's
+     * name and logo when a person joins, as the web widget does.
+     */
     agentName: String? = null,
     agentAvatar: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * The words on the Online line: "Online", or the team's reply time
+     * ("Typically replies in a few minutes", "Online · team back at 9 AM";
+     * core/livechat/ReplyTime.kt headerStatus). Default "Online".
+     */
+    statusText: String = "Online"
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -72,14 +81,13 @@ fun ChatHeader(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // The agent's photo, else the bot's logo (the web shows the logo
-            // here, not the avatar), none when the owner hid it.
+            // The bot's logo (the web shows the logo here, not the avatar),
+            // none when the owner hid it. A person joining does not change it.
             val avatarUrl = when {
-                agentName != null -> agentAvatar
                 look != null -> look.logo
                 else -> serverCustomization?.avatarUrl ?: serverCustomization?.logoUrl
             }
-            val showAvatar = agentName != null || look?.hideLogo != true
+            val showAvatar = look?.hideLogo != true
             if (showAvatar && avatarUrl != null) {
                 AsyncImage(
                     model = avatarUrl,
@@ -135,8 +143,9 @@ fun ChatHeader(
                         serverCustomization.tagline
                     else -> null
                 }
-                // The web's "Online" line: a 7dp green dot with a soft ring.
-                if (subtitleText == null && agentName == null && look?.showOnline == true) {
+                // The web's "Online" line: a 7dp green dot with a soft ring, and
+                // the reply time on it; still there while a person is in the chat.
+                if (subtitleText == null && look?.showOnline == true) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             Modifier
@@ -147,10 +156,11 @@ fun ChatHeader(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            text = "Online",
+                            text = statusText,
                             style = TextStyle(fontFamily = typography.fontFamily, fontSize = 11.sp),
                             color = colors.headerText.copy(alpha = 0.75f),
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
