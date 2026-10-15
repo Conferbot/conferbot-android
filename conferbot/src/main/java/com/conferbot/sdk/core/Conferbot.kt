@@ -554,7 +554,18 @@ object Conferbot {
 
             // Initialize Node Flow Engine
             socketClient?.let { client ->
-                _flowEngine = NodeFlowEngine(client)
+                _flowEngine = NodeFlowEngine(
+                    client,
+                    apiOrigin = { serverOrigin },
+                    customizations = { _serverCustomizationMap.value },
+                    readFile = { uri ->
+                        try {
+                            appContext?.contentResolver?.openInputStream(android.net.Uri.parse(uri))?.use { it.readBytes() }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                )
                 // Initialize ChatAnalytics with socket client
                 ChatAnalytics.setSocketClient(client)
             }
@@ -786,24 +797,9 @@ object Conferbot {
             // on when the owner turned that off.
             val engine = nodeFlowEngine
             if (engine != null && engine.isAtHandover) {
-                val raw = engine.handoverNodeData?.get("fallbackMessage")?.toString().orEmpty()
-                val fallback = ChatState.resolveVariables(raw)
-                    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n").replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n")
-                    .replace(Regex("<[^>]*>"), "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
-                scope.launch {
-                    engine.clearHandoverUI()
-                    if (fallback.isNotEmpty()) {
-                        val id = "agent-declined-${System.currentTimeMillis()}"
-                        addMessageToRecord(RecordItem.BotMessage(id = id, time = java.util.Date(), text = fallback))
-                        ChatState.pushToRecord(
-                            com.conferbot.sdk.core.state.RecordEntry(
-                                id = id, shape = "agent-declined-message", type = "agent-declined-message", text = fallback,
-                                data = mutableMapOf("message" to fallback, "renderedText" to fallback)
-                            )
-                        )
-                    }
-                    if (_serverCustomizationMap.value["chatLeaveMessage"] == false) engine.continueAfterHandover()
-                }
+                // The step itself listens: it says the owner's fallback and
+                // carries the flow on when "leave a message" is off.
+                scope.launch { engine.clearHandoverUI() }
                 return@Listener
             }
             // Add "No agents available" system message
@@ -1741,6 +1737,14 @@ object Conferbot {
     }
 
     private fun observeFlowEngineMessages() {
+        // Bot lines besides a step's own card (a greeting, an answer, a
+        // refused answer's reason, the team's fallback).
+        scope.launch {
+            nodeFlowEngine?.botMessages?.collect { ui ->
+                val text = (ui as? NodeUIState.Message)?.text ?: return@collect
+                addMessageToRecord(RecordItem.BotMessage(id = "flow-${ui.nodeId}-${System.nanoTime()}", time = java.util.Date(), text = text))
+            }
+        }
         scope.launch {
             nodeFlowEngine?.currentUIState?.collectLatest { uiState ->
                 if (uiState == null) return@collectLatest
