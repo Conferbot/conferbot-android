@@ -1,9 +1,11 @@
 package com.conferbot.sdk.ui.compose.messages
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.conferbot.sdk.core.Conferbot
@@ -42,4 +44,13 @@ fun optionShape(): Shape {
     val look by Conferbot.customizations.collectAsState()
     val map by Conferbot.serverCustomizationMap.collectAsState()
     return RoundedCornerShape(if (map.isNotEmpty()) look.optionRadius.dp else 12.dp)
+}
+
+/** The widget theme's outline round a bubble (cartoon, neo-brutal, sketch...), else nothing. */
+@Composable
+fun bubbleOutline(shape: Shape): Modifier {
+    val look by Conferbot.customizations.collectAsState()
+    val b = look.bubbleBorder ?: return Modifier
+    val color = com.conferbot.sdk.ui.compose.lookColor(b.color) ?: return Modifier
+    return Modifier.border(b.width.dp, color, shape)
 }
