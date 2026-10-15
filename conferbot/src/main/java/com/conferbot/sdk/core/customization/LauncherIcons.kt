@@ -20,6 +20,24 @@ data class IconGradient(
     val stops: List<IconStop> = emptyList(),
 )
 
+/** An animated group a shape sits in, outer first (see LauncherMotion). */
+data class IconPart(
+    /** Its motion classes ("cbl-eye", "cbl-conf>*"...). */
+    val c: List<String> = emptyList(),
+    /** Group id: its box in LauncherIcon.boxes is the transform origin's box. */
+    val g: Int = 0,
+    val dx: Double? = null,
+    val dy: Double? = null,
+    /** Its own transform attribute (an animation on it replaces this). */
+    val t: List<Double>? = null,
+    /** No class of its own: it turns about the icon's origin. */
+    val u: Int? = null,
+    /** Its own opacity attribute (an animated opacity replaces this). */
+    val o: Double? = null,
+    /** The static transform between the previous part and this one. */
+    val pre: List<Double>? = null,
+)
+
 data class IconOp(
     val d: String = "",
     val m: List<Double>? = null,
@@ -32,7 +50,15 @@ data class IconOp(
     val rule: String? = null,
     val strokeFirst: Boolean? = null,
     val clip: String? = null,
-    val part: List<String>? = null,
+    /** How many of the parts the clip moves with. */
+    val clipDepth: Int? = null,
+    /** The shape itself is the innermost animated element. */
+    val self: Int? = null,
+    /** The opacity from elements that are not animated parts (when it differs from op). */
+    val opRest: Double? = null,
+    /** The static transform after the last part, down to the shape. */
+    val post: List<Double>? = null,
+    val parts: List<IconPart>? = null,
 )
 
 data class LauncherIcon(
@@ -40,6 +66,8 @@ data class LauncherIcon(
     val anim: String = "classic",
     val grads: List<IconGradient> = emptyList(),
     val ops: List<IconOp> = emptyList(),
+    /** Each animated group's box (and "0", the whole icon): x, y, width, height. */
+    val boxes: Map<String, List<Double>>? = null,
 )
 
 object LauncherIcons {
