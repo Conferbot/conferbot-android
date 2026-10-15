@@ -118,6 +118,9 @@ object Conferbot {
     // Configuration
     private var apiKey: String? = null
     private var botId: String? = null
+
+    /** The bot this SDK was initialized with (per-bot state such as the greeting card's). */
+    val activeBotId: String? get() = botId
     private var config: ConferBotConfig = ConferBotConfig()
     private var customization: ConferBotCustomization? = null
     private var user: ConferBotUser? = null
