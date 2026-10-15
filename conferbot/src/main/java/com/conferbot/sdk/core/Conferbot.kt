@@ -420,6 +420,7 @@ object Conferbot {
             this.config = config
             this.customization = customization
             this.user = user
+            ChatState.visitorContext = user?.toVisitorContext()
             this.baseUrl = baseUrl
             this.socketUrl = socketUrl
             this.paginationConfig = paginationConfig
@@ -2081,6 +2082,7 @@ object Conferbot {
      */
     fun identify(user: ConferBotUser) {
         this.user = user
+        ChatState.visitorContext = user.toVisitorContext()
     }
 
     /**
