@@ -23,10 +23,18 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 
 ## Left in this SDK
 
-1. **Greeting card** (see "Porting the greeting card" below):
-   - `Greeting.kt` (pure) with tests.
-   - A state holder using SharedPreferences under key `conferbot.greeting.<botId>`.
-   - A Compose `GreetingCard` with the 11 styles, wired into `ConferBotWidget.kt` where the plain greeting bubble is now.
+1. **Greeting card (#23, in progress):**
+   - **On main:** `core/customization/Greeting.kt`, the pure logic (rules, smart greetings, limits, frequency, head, accent, bubble colours). 10 tests in `GreetingTest` pass. Nothing calls it on main yet.
+   - **On branch `wip/greeting-card` (compiles, not yet verified on a device):**
+     - `ui/compose/GreetingState.kt`: SharedPreferences under `conferbot.greeting.<botId>`.
+     - `ui/compose/GreetingCard.kt`: the 11 styles.
+     - `ConferBotWidget.kt`: the card replaces the plain tooltip.
+     - `Conferbot.activeBotId`.
+   - **Where it stopped:**
+     - On the emulator, the Compose screen showed the launcher but no card after 6s with greetingDelay 1.
+     - Debug that first: is `rememberGreeting` getting a non-empty customization map, and is `Greeting.decide` returning null (signed-in or smart rules) or `frequencyAllows` saying no?
+     - The example app's launcher activity is `.ui.xml.MainActivity`. "Open Chat (Compose)" is at (538,968) on a Pixel 9.
+     - Then screenshot all 11 styles, merge the branch into main, close #23.
 2. The rest of the list below.
 3. **XML gaps:** initials avatar and the wave typing style.
 4. **Test debt:**
@@ -59,7 +67,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | 56 launcher icons, drawn from the widget SVGs | done | done | done | done |
 | Launcher motion (idle moments, message reaction, ripple) | done | done | done | done |
 | Signed-in user as `visitorContext` + identity hash | done | done | done | done |
-| Greeting card (rules, frequency, 11 styles) | done | todo | todo | todo |
+| Greeting card (rules, frequency, 11 styles) | done | logic done, UI on a branch | todo | todo |
 | Launcher entrance / attention / idle call | todo | todo | todo | todo |
 | Home screen | todo | todo | todo | todo |
 | Mascots (incl. `mascotInGreeting`) | todo | todo | todo | todo |
