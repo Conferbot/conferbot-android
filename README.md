@@ -328,6 +328,20 @@ Conferbot.identify(
 
 The user ID is sent when the chat session is created (`initSession(userId = user?.id)`), so identify the user **before** the chat is opened. Calling `identify()` after a session exists updates the SDK's local user but does not retroactively re-tag the running session.
 
+The user (its `metadata`, then `id`, `name`, `email`, `phone`) also travels with every message record as the chat's visitor context, as the web widget's `visitorContext` does, so the dashboard shows the visitor's name, email and your own fields.
+
+### Identity verification
+
+To stop anyone posing as one of your users, turn on identity verification in your workspace and pass a `hash`: the HMAC-SHA256 (hex) of the user's `id` (or `email` when there is no id), keyed with your workspace's identity secret. Make it on your server and never ship the secret in the app.
+
+```kotlin
+Conferbot.identify(
+    ConferBotUser(id = "user-123", email = "jane@example.com", hash = hashFromYourServer)
+)
+```
+
+The server checks the hash and drops it before storing. A chat with a matching hash is filed as verified; a wrong hash is rejected, and no hash leaves it unverified.
+
 ## Theming and Flow-Builder Customizations
 
 ### Server customizations apply automatically
