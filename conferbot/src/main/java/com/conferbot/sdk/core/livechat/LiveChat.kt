@@ -224,6 +224,17 @@ object LiveChat {
         "workspaceId" to workspaceId
     )
 
+    /**
+     * The handover step's own post-chat survey as submit-chat-rating (the
+     * server has no post-chat-survey-response): a rating out of more than 5
+     * is an NPS 0-10, otherwise a 1-5 score. null without a rating.
+     */
+    fun surveyRatingPayload(chatSessionId: String, ratingMax: Int?, rating: Int?, feedback: String? = null): Map<String, Any>? {
+        if (rating == null || chatSessionId.isEmpty()) return null
+        return if ((ratingMax ?: 5) > 5) ratingPayload(chatSessionId, "nps", rating.coerceIn(0, 10), feedback)
+        else ratingPayload(chatSessionId, "stars", rating.coerceIn(1, 5), feedback)
+    }
+
     fun ratingPayload(chatSessionId: String, type: String, value: Any, feedback: String? = null): Map<String, Any> {
         val out = linkedMapOf<String, Any>("chatSessionId" to chatSessionId, "source" to "post_chat_survey")
         when (type) {
