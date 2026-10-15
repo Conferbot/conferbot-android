@@ -108,6 +108,8 @@ class ChatActivity : AppCompatActivity() {
         super.onResume()
         // Register this activity for in-app notification banners
         Conferbot.setCurrentActivity(this)
+        // On screen: the waiting signal and receipts count the chat as open.
+        Conferbot.setChatVisible(true)
         // Clear unread count when chat is visible
         // Note: unreadCount is a private field, handled internally
     }
@@ -116,6 +118,7 @@ class ChatActivity : AppCompatActivity() {
         super.onPause()
         // Unregister from in-app banners
         Conferbot.setCurrentActivity(null)
+        Conferbot.setChatVisible(false)
     }
 
     private fun setupUI() {
@@ -209,7 +212,8 @@ class ChatActivity : AppCompatActivity() {
                             modifier = androidx.compose.ui.Modifier.fillMaxWidth()
                         )
                     }
-                    // The handover step while it waits: the compact queue card.
+                    // The handover step while it waits: the compact queue card
+                    // (its Cancel leaves the queue on the server).
                     val ui by Conferbot.currentUIState.collectAsState()
                     (ui as? com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover)
                         ?.takeIf { it.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT }
@@ -287,19 +291,29 @@ class ChatActivity : AppCompatActivity() {
             }
             .launchIn(lifecycleScope)
 
-        // The bot's look (core/customization) and the agent in the chat: the
+        // The bot's look (core/customization) and who is in the chat: the
         // header, background, send button and typing dots, as on the web.
-        combine(Conferbot.customizations, Conferbot.serverCustomizationMap, Conferbot.currentAgent) { look, map, agent ->
-            Triple(look, map, agent)
+        combine(Conferbot.customizations, Conferbot.serverCustomizationMap, Conferbot.currentAgent, Conferbot.record, Conferbot.agentBot) { look, map, agent, record, agentBot ->
+            val personInChat = com.conferbot.sdk.core.livechat.HandoverState.phase(
+                com.conferbot.sdk.core.livechat.HandoverState.entriesOfItems(record)
+            ) == com.conferbot.sdk.core.livechat.HandoverPhase.JOINED ||
+                (agent != null && !agent.id.startsWith("ai-agent-") && agentBot == null)
+            val status = com.conferbot.sdk.core.livechat.ReplyTime.headerStatus(
+                com.conferbot.sdk.core.livechat.ReplyTime.of(map["replyTime"]),
+                personInChat = personInChat,
+                agentBot = agentBot != null
+            ) ?: com.conferbot.sdk.core.livechat.ReplyTime.ONLINE
+            Triple(look, map, status)
         }
-            .onEach { (look, map, agent) -> applyLook(look, map, agent) }
+            .onEach { (look, map, status) -> applyLook(look, map, status) }
             .launchIn(lifecycleScope)
     }
 
     private fun applyLook(
         look: com.conferbot.sdk.core.customization.ResolvedCustomizations,
         map: Map<String, Any?>,
-        agent: com.conferbot.sdk.models.Agent?
+        /** "Online", or the team's reply time (core/livechat/ReplyTime.kt). */
+        status: String
     ) {
         val header = binding.chatHeader
         val loaded = map.isNotEmpty()
@@ -317,27 +331,23 @@ class ChatActivity : AppCompatActivity() {
             val dots = (0 until (binding.typingIndicator.root as android.view.ViewGroup).childCount).map { (binding.typingIndicator.root as android.view.ViewGroup).getChildAt(it) }
             XmlLook.typing(binding.typingIndicator.root, dots)
         }
-        header.titleText.text = agent?.name
-            ?: look.title.takeIf { loaded }
+        // The header keeps the bot (never the agent), as the web widget does.
+        header.titleText.text = look.title.takeIf { loaded }
             ?: Conferbot.getCustomization()?.headerTitle
             ?: "Support Chat"
-        // Under the title: the tagline, else "Online" with the green dot.
+        // Under the title: the tagline, else "Online" (or the reply time) with the green dot.
         val subtitle: CharSequence? = when {
-            agent != null || !loaded -> null
+            !loaded -> null
             look.tagline != null -> look.tagline
-            look.showOnline -> android.text.SpannableString("\u25CF  Online").apply {
+            look.showOnline -> android.text.SpannableString("\u25CF  $status").apply {
                 setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#22C55E")), 0, 1, 0)
             }
             else -> null
         }
         header.subtitleText.text = subtitle
         header.subtitleText.visibility = if (subtitle != null) View.VISIBLE else View.GONE
-        // The agent's photo, else the bot's logo (none when the owner hid it).
-        val image = when {
-            agent != null -> agent.avatar
-            loaded && !look.hideLogo -> look.logo
-            else -> null
-        }
+        // The bot's logo (none when the owner hid it); a person joining does not change it.
+        val image = if (loaded && !look.hideLogo) look.logo else null
         header.avatarImage.visibility = if (image != null) View.VISIBLE else View.GONE
         if (image != null) {
             header.avatarImage.clipToOutline = true
