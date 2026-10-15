@@ -273,6 +273,15 @@ fun ConferBotWidget(
     val avatarUrl = if (hasLook && look.style == "avatar") look.avatar else null
     val imageUrl = if (hasLook) look.imageUrl else null
 
+    // The icon's idle and new-message moments and the ripple (core LauncherMotion).
+    val motion = com.conferbot.sdk.ui.compose.rememberLauncherMotion(
+        iconId = iconName,
+        mode = look.animation,
+        chatOpen = isChatOpen,
+        unreadCount = unreadCount,
+        enabled = hasLook && imageUrl == null && avatarUrl == null,
+    )
+
     // CTA is placed beside the button, same bottom as the FAB.
     val ctaOffsetFromEdge: Dp = offsetX - tucked + fabWidth + 10.dp
 
@@ -376,6 +385,22 @@ fun ConferBotWidget(
                     bottom = offsetY,
                 ),
         ) {
+            // The ripple: rings of the launcher's colour growing out from behind it.
+            motion.rings.forEach { ring ->
+                if (ring != null) {
+                    Box(
+                        Modifier
+                            .align(if (position == WidgetPosition.BOTTOM_LEFT) Alignment.BottomStart else Alignment.BottomEnd)
+                            .size(width = fabWidth, height = size)
+                            .graphicsLayer {
+                                scaleX = ring.scale.toFloat()
+                                scaleY = ring.scale.toFloat()
+                                alpha = ring.opacity.toFloat()
+                            }
+                            .background(fabColor, fabShape),
+                    )
+                }
+            }
             BadgedBox(
                 badge = {
                     if (config.showUnreadBadge && unreadCount > 0 && !isChatOpen) {
@@ -394,6 +419,7 @@ fun ConferBotWidget(
                 Surface(
                     onClick = {
                         isCtaVisible = false
+                        if (!isChatOpen) com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
                         isChatOpen = !isChatOpen
                     },
                     modifier = Modifier
@@ -454,7 +480,7 @@ fun ConferBotWidget(
                                 val iconPx = (if (hasLook) look.glyph.dp.toPx() else this.size.minDimension * 0.6f)
                                 drawContext.canvas.save()
                                 drawContext.canvas.translate((this.size.width - iconPx) / 2f, (this.size.height - iconPx) / 2f)
-                                drawLauncherIcon(iconName, inkColor, fabColor, iconPx)
+                                drawLauncherIcon(iconName, inkColor, fabColor, iconPx, motion.frame)
                                 drawContext.canvas.restore()
                             }
                         }
