@@ -14,8 +14,9 @@ data class KnowledgeBaseArticle(
     @SerializedName("title")
     val title: String,
 
+    /** The body (HTML). Null until it is fetched on open (`get-kb-article`). */
     @SerializedName("content")
-    val content: String,
+    val content: String? = null,
 
     @SerializedName("description")
     val description: String? = null,
@@ -57,14 +58,29 @@ data class KnowledgeBaseArticle(
     val isPublished: Boolean = true,
 
     @SerializedName("order")
-    val order: Int = 0
+    val order: Int = 0,
+
+    @SerializedName("slug")
+    val slug: String? = null,
+
+    /** Minutes, as the server worked them out (the body may not be here). */
+    @SerializedName("readingTime")
+    val readingTime: Int? = null,
+
+    /** Where a body search matched (`search-kb-articles`). */
+    @SerializedName("snippet")
+    val snippet: String? = null
 ) {
+    /** Has the body arrived (inline from an older server, or fetched)? */
+    val hasBody: Boolean get() = content != null
+
     /**
      * Calculate reading time based on content length
      * Average reading speed: 200 words per minute
      */
     fun calculateReadingTime(): String {
-        val text = content.replace(Regex("<[^>]*>"), "") // Strip HTML tags
+        readingTime?.let { return if (it == 1) "1 min read" else "$it min read" }
+        val text = (content ?: description ?: "").replace(Regex("<[^>]*>"), "") // Strip HTML tags
         val wordCount = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
         val minutes = (wordCount / 200).coerceAtLeast(1)
         return if (minutes == 1) "1 min read" else "$minutes min read"
@@ -74,7 +90,7 @@ data class KnowledgeBaseArticle(
      * Get a truncated description for preview
      */
     fun getPreviewDescription(maxLength: Int = 120): String {
-        val desc = description ?: content.replace(Regex("<[^>]*>"), "")
+        val desc = description ?: snippet ?: (content ?: "").replace(Regex("<[^>]*>"), "")
         return if (desc.length > maxLength) {
             desc.substring(0, maxLength).trimEnd() + "..."
         } else {
