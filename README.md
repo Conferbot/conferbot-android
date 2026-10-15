@@ -327,7 +327,9 @@ The user ID is sent when the chat session is created (`initSession(userId = user
 
 ### Server customizations apply automatically
 
-Everything you configure in the dashboard's flow builder (**Customize** tab) is fetched with the bot data and applied by the SDK with no code: header and bubble colors, chat background (solid, gradient, or image), bot name, avatar, font size, bubble radius, branding/tagline, and all floating-widget settings.
+Everything you configure in the dashboard's flow builder (**Customize** tab) is fetched with the bot data and applied by the SDK with no code: header and bubble colors, chat background (solid, gradient (linear, radial, mesh, blur), image with its mask, or one of the 13 patterns), bot name, avatar, font size, bubble radius, branding/tagline, and all floating-widget settings.
+
+**Widget theme**: all 27 dashboard themes (Classic, Minimal, Glass, Neo-brutal, Midnight, Aurora and the rest) apply in both the Compose and the XML chat. Each brings its surfaces, text colours, corner radii and bubble outline, as on the web widget. **Appearance** light, dark, or auto (follows the phone's dark mode, also when it changes while the chat is open); Midnight, Neon, Chalkboard, Cyberpunk and Space are always dark. **Colours** "Brand" keeps your colours; "Theme palette" swaps in the theme's own header, bubble, option, launcher and send-button colours. Your own bubble radius, option radius and chat background still win over the theme. Theme fonts are not loaded on mobile; the app's font is used.
 
 **Precedence: server wins over local.** `ConferBotChatScreen` collects `Conferbot.serverTheme` and, whenever the server provides a `customizations` object, wraps the chat in that theme - even if you supplied your own theme via `ConferBotChatView` or `ConferbotThemeProvider`. Local themes therefore act as fallbacks that only apply when the bot has no server customizations. (For the FAB the same rule applies per attribute, see the table above.)
 
