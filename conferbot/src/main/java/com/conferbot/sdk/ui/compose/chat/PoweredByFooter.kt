@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,13 +57,16 @@ fun PoweredByFooter(
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
+        // The footer grey, or the widget theme's quiet text.
+        val look by com.conferbot.sdk.core.Conferbot.customizations.collectAsState()
+        val ink = com.conferbot.sdk.ui.compose.lookColor(look.theme.tokens?.muted) ?: Color(0xFF56595B)
         if (isCustom) {
             Text(
                 text = serverCustomization!!.customBrand!!,
                 style = TextStyle(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF56595B)
+                    color = ink
                 )
             )
         } else {
@@ -75,7 +80,7 @@ fun PoweredByFooter(
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF56595B) // rgb(86 89 91) from web widget
+                        color = ink // rgb(86 89 91) from web widget
                     )
                 )
                 // Actual Conferbot logo from CDN — same image the web widget uses
