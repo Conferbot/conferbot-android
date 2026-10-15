@@ -1,0 +1,673 @@
+{
+ "customizations": {
+  "enableKnowledgeBase": true,
+  "hideRecentArticles": null,
+  "enableRecentArticles": true
+ },
+ "knowledgeBaseData": {
+  "recentArticles": [
+   {
+    "_id": "6ab7ac0bb03f13ff22412c87",
+    "slug": "how-to-use-conferbot-s-ai-chatbot-builder",
+    "publishedDate": "2026-09-27T06:31:04.520Z",
+    "viewCount": 4,
+    "helpfulCount": 1,
+    "title": "How to Use Conferbot's AI Chatbot Builder",
+    "description": "Learn to create chatbots quickly with Conferbot's AI builder.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c38",
+     "name": "Chatbot Creation"
+    },
+    "chatbotId": "6ab686f8d47ff029b76892f7",
+    "author": {
+     "_id": "642d37a520a83e213dcb95b7",
+     "name": "admin"
+    },
+    "readingTime": 2,
+    "wordCount": 315,
+    "updatedAt": "2026-09-27T18:35:37.072Z"
+   },
+   {
+    "_id": "6ab7ac19b03f13ff22412cd5",
+    "slug": "how-to-set-up-live-chat-with-ai-chatbot-handoff",
+    "publishedDate": "2026-09-27T06:31:04.520Z",
+    "viewCount": 9,
+    "helpfulCount": 1,
+    "title": "How to Set Up Live Chat with AI Chatbot Handoff",
+    "description": "Learn how live chat integrates with AI chatbot for seamless customer support.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c3c",
+     "name": "AI Chatbot Features"
+    },
+    "chatbotId": "6ab686f8d47ff029b76892f7",
+    "author": {
+     "_id": "642d37a520a83e213dcb95b7",
+     "name": "admin"
+    },
+    "readingTime": 2,
+    "wordCount": 289,
+    "updatedAt": "2026-10-11T12:51:45.179Z"
+   },
+   {
+    "_id": "6ab7ac01b03f13ff22412c4e",
+    "slug": "how-to-integrate-openai-with-conferbot",
+    "publishedDate": "2026-09-27T06:31:04.520Z",
+    "viewCount": 4,
+    "helpfulCount": 0,
+    "title": "How to Integrate OpenAI with Conferbot",
+    "description": "Learn how to integrate OpenAI with Conferbot for smarter chatbot interactions.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c36",
+     "name": "Chatbot Essentials"
+    },
+    "chatbotId": "6ab686f8d47ff029b76892f7",
+    "author": {
+     "_id": "642d37a520a83e213dcb95b7",
+     "name": "admin"
+    },
+    "readingTime": 2,
+    "wordCount": 271,
+    "updatedAt": "2026-09-27T18:57:13.827Z"
+   },
+   {
+    "_id": "6ab7ac1cb03f13ff22412ce1",
+    "slug": "how-to-manage-your-chatbot-team-effectively",
+    "publishedDate": "2026-09-27T06:31:04.520Z",
+    "viewCount": 1,
+    "helpfulCount": 0,
+    "title": "How to Manage Your Chatbot Team Effectively",
+    "description": "Organize your support team with role-based access, routing, and analytics.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c3c",
+     "name": "AI Chatbot Features"
+    },
+    "chatbotId": "6ab686f8d47ff029b76892f7",
+    "author": {
+     "_id": "642d37a520a83e213dcb95b7",
+     "name": "admin"
+    },
+    "readingTime": 2,
+    "wordCount": 314,
+    "updatedAt": "2026-09-27T06:31:27.663Z"
+   }
+  ],
+  "categories": [
+   {
+    "_id": "6ab7abfcb03f13ff22412c36",
+    "name": "Chatbot Essentials",
+    "description": "Explore plans, templates, integrations, and AI-powered knowledge for your chatbots.",
+    "icon": "plug",
+    "articles": [
+     {
+      "_id": "6ab7ac01b03f13ff22412c4e",
+      "slug": "how-to-integrate-openai-with-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 4,
+      "helpfulCount": 0,
+      "title": "How to Integrate OpenAI with Conferbot",
+      "description": "Learn how to integrate OpenAI with Conferbot for smarter chatbot interactions.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 271,
+      "updatedAt": "2026-09-27T18:57:13.827Z"
+     },
+     {
+      "_id": "6ab7ac02b03f13ff22412c54",
+      "slug": "what-is-an-nlp-chatbot-and-how-does-it-work",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "What is an NLP Chatbot and How Does it Work?",
+      "description": "Learn about NLP chatbots, their features, and benefits for your business.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 234,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac02b03f13ff22412c5a",
+      "slug": "understanding-conferbot-s-pricing-plans",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "Understanding Conferbot's Pricing Plans",
+      "description": "Discover Conferbot's pricing tiers and features for businesses.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 214,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac03b03f13ff22412c69",
+      "slug": "how-to-build-a-chatbot-knowledge-base",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Build a Chatbot Knowledge Base",
+      "description": "Learn to create a knowledge base for your chatbot with Conferbot.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 341,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac06b03f13ff22412c6f",
+      "slug": "how-to-auto-generate-help-articles-with-ai",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Auto-Generate Help Articles with AI",
+      "description": "Learn how to auto-generate your knowledge base with AI for accurate chatbot responses.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 296,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac07b03f13ff22412c75",
+      "slug": "free-booking-and-scheduling-chatbot-templates",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "Free Booking and Scheduling Chatbot Templates",
+      "description": "Explore 19 free booking and scheduling chatbot templates with Conferbot.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 304,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac07b03f13ff22412c7b",
+      "slug": "how-to-set-up-a-custom-domain-for-your-conferbot-chatbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Set Up a Custom Domain for Your Conferbot Chatbot",
+      "description": "Host your chatbot on your domain with SSL and full branding.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 285,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac08b03f13ff22412c81",
+      "slug": "19-free-support-and-faq-chatbot-templates",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "19 Free Support and FAQ Chatbot Templates",
+      "description": "Explore free, no-code chatbot templates for support and FAQs.",
+      "category": "6ab7abfcb03f13ff22412c36",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 271,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     }
+    ]
+   },
+   {
+    "_id": "6ab7abfcb03f13ff22412c38",
+    "name": "Chatbot Creation",
+    "description": "Explore tools and insights for building and managing AI chatbots effortlessly.",
+    "icon": "code",
+    "articles": [
+     {
+      "_id": "6ab7ac0bb03f13ff22412c87",
+      "slug": "how-to-use-conferbot-s-ai-chatbot-builder",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 4,
+      "helpfulCount": 1,
+      "title": "How to Use Conferbot's AI Chatbot Builder",
+      "description": "Learn to create chatbots quickly with Conferbot's AI builder.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 315,
+      "updatedAt": "2026-09-27T18:35:37.072Z"
+     },
+     {
+      "_id": "6ab7ac0cb03f13ff22412c8d",
+      "slug": "how-to-use-rich-media-in-your-conferbot-chatbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use Rich Media in Your Conferbot Chatbot",
+      "description": "Enhance your chatbot with rich media for better engagement.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 263,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac0cb03f13ff22412c90",
+      "slug": "how-to-use-chatbot-analytics-in-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use Chatbot Analytics in Conferbot",
+      "description": "Learn to optimize your chatbot with Conferbot's analytics tools.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 306,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac0db03f13ff22412c99",
+      "slug": "how-to-build-a-chatbot-with-a-no-code-visual-builder",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Build a Chatbot with a No-Code Visual Builder",
+      "description": "Learn to create chatbots using Conferbot's no-code visual builder.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 3,
+      "wordCount": 404,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac10b03f13ff22412c9f",
+      "slug": "how-to-set-up-a-calendar-booking-chatbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Set Up a Calendar Booking Chatbot",
+      "description": "Learn to automate scheduling with a chatbot that syncs with Google Calendar and Outlook.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 319,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac11b03f13ff22412cab",
+      "slug": "9-free-no-code-surveys-chatbot-templates",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "9 Free No-Code Surveys Chatbot Templates",
+      "description": "Discover 9 free no-code surveys chatbot templates for efficient data collection.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 385,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac11b03f13ff22412cb1",
+      "slug": "how-to-use-chatbot-version-control-in-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use Chatbot Version Control in Conferbot",
+      "description": "Learn to manage, compare, and rollback chatbot versions with Conferbot's version control.",
+      "category": "6ab7abfcb03f13ff22412c38",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 3,
+      "wordCount": 442,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     }
+    ]
+   },
+   {
+    "_id": "6ab7abfcb03f13ff22412c3a",
+    "name": "Chatbot Development",
+    "description": "Explore tools and features to build and integrate AI chatbots across platforms.",
+    "icon": "code",
+    "articles": [
+     {
+      "_id": "6ab7ac11b03f13ff22412ca5",
+      "slug": "how-to-get-started-with-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Get Started with Conferbot",
+      "description": "Learn how to quickly deploy an AI chatbot on multiple channels with Conferbot.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 212,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac13b03f13ff22412cb7",
+      "slug": "ai-chatbot-features-no-code-builder-live-chat",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "AI Chatbot Features: No-Code Builder & Live Chat",
+      "description": "Explore Conferbot's no-code builder and live chat features for AI chatbots.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 231,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac15b03f13ff22412cbd",
+      "slug": "how-to-use-the-mobile-chatbot-sdk",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use the Mobile Chatbot SDK",
+      "description": "Embed and customize chatbots in iOS, Android, and cross-platform apps.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 276,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac16b03f13ff22412cc3",
+      "slug": "how-to-use-the-chatbot-integrations-hub",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use the Chatbot Integrations Hub",
+      "description": "Connect your chatbot to over 50 business tools easily.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 302,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac17b03f13ff22412cc9",
+      "slug": "how-to-integrate-apis-with-conferbot-chatbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Integrate APIs with Conferbot Chatbot",
+      "description": "Learn to integrate APIs with Conferbot chatbots for seamless automation.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 367,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac18b03f13ff22412ccf",
+      "slug": "how-to-deploy-an-omnichannel-chatbot-with-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Deploy an Omnichannel Chatbot with Conferbot",
+      "description": "Learn how to deploy a chatbot across multiple channels using Conferbot.",
+      "category": "6ab7abfcb03f13ff22412c3a",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 299,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     }
+    ]
+   },
+   {
+    "_id": "6ab7abfcb03f13ff22412c3c",
+    "name": "AI Chatbot Features",
+    "description": "Explore tools for seamless chatbot management and human handoff.",
+    "icon": "message",
+    "articles": [
+     {
+      "_id": "6ab7ac19b03f13ff22412cd5",
+      "slug": "how-to-set-up-live-chat-with-ai-chatbot-handoff",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 9,
+      "helpfulCount": 1,
+      "title": "How to Set Up Live Chat with AI Chatbot Handoff",
+      "description": "Learn how live chat integrates with AI chatbot for seamless customer support.",
+      "category": "6ab7abfcb03f13ff22412c3c",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 289,
+      "updatedAt": "2026-10-11T12:51:45.179Z"
+     },
+     {
+      "_id": "6ab7ac1ab03f13ff22412cd9",
+      "slug": "how-to-set-up-ai-agent-handover-in-conferbot",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Set Up AI Agent Handover in Conferbot",
+      "description": "Learn to configure AI agent handover for seamless chatbot to human support.",
+      "category": "6ab7abfcb03f13ff22412c3c",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 324,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac1bb03f13ff22412cdd",
+      "slug": "how-to-use-conferbot-s-chatbot-ticket-system",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 0,
+      "helpfulCount": 0,
+      "title": "How to Use Conferbot's Chatbot Ticket System",
+      "description": "Manage customer issues with Conferbot's ticket system for efficient resolution.",
+      "category": "6ab7abfcb03f13ff22412c3c",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 294,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     },
+     {
+      "_id": "6ab7ac1cb03f13ff22412ce1",
+      "slug": "how-to-manage-your-chatbot-team-effectively",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 1,
+      "helpfulCount": 0,
+      "title": "How to Manage Your Chatbot Team Effectively",
+      "description": "Organize your support team with role-based access, routing, and analytics.",
+      "category": "6ab7abfcb03f13ff22412c3c",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 314,
+      "updatedAt": "2026-09-27T06:31:27.663Z"
+     }
+    ]
+   },
+   {
+    "_id": "6ab7ad8798529c39f680c570",
+    "name": "Knowledge & Pricing",
+    "description": "Explore pricing plans and learn about AI knowledge base integration and customization.",
+    "icon": "book",
+    "articles": [
+     {
+      "_id": "6ab7ad8b98529c39f680c586",
+      "slug": "what-is-the-conferbot-support-policy",
+      "publishedDate": "2026-09-27T06:31:04.520Z",
+      "viewCount": 1,
+      "helpfulCount": 0,
+      "title": "What is the Conferbot support policy?",
+      "description": "Learn about Conferbot's support hours, refund policy, and data handling.",
+      "category": "6ab7ad8798529c39f680c570",
+      "chatbotId": "6ab686f8d47ff029b76892f7",
+      "author": {
+       "_id": "642d37a520a83e213dcb95b7",
+       "name": "admin"
+      },
+      "readingTime": 2,
+      "wordCount": 259,
+      "updatedAt": "2026-09-27T06:31:04.521Z"
+     }
+    ]
+   }
+  ]
+ },
+ "getKbArticle": {
+  "success": true,
+  "articleId": "6ab7ac01b03f13ff22412c4e",
+  "article": {
+   "_id": "6ab7ac01b03f13ff22412c4e",
+   "slug": "how-to-integrate-openai-with-conferbot",
+   "publishedDate": "2026-09-27T06:31:04.520Z",
+   "viewCount": 4,
+   "helpfulCount": 0,
+   "title": "How to Integrate OpenAI with Conferbot",
+   "description": "Learn how to integrate OpenAI with Conferbot for smarter chatbot interactions.",
+   "content": "<p>Integrating OpenAI with Conferbot enhances your chatbot's capabilities, enabling it to deliver intelligent, context-aware conversations. Here's a guide on how to set up OpenAI with Conferbot.</p><h2>Connecting Your OpenAI Model</h2><p>To integrate OpenAI with Conferbot, you need to connect your OpenAI API key. Follow these steps:</p><ol><li>Obtain your OpenAI API key from the OpenAI platform.</li><li>Navigate to your Conferbot dashboard.</li><li>Go to <strong>Settings &gt; Integrations &gt; OpenAI</strong>.</li><li>Paste your API key to establish the connection.</li></ol><p>Once connected, you can select your preferred GPT model and configure settings such as temperature and token limits.</p><h2>Training on Your Business Data</h2><p>For more accurate and brand-consistent responses, train the AI on your business data. You can upload documents, FAQs, and knowledge bases to help the AI understand your business context.</p><h2>Deploying AI-Powered Conversations</h2><p>After setting up the integration, your chatbot can handle complex queries, multi-turn conversations, and nuanced requests. This enhances user interactions and provides a more satisfying customer experience.</p><h2>Advanced Features and Customization</h2><p>Using your own OpenAI API key unlocks advanced features and customization options. You can choose specific GPT models, customize AI behavior, and manage AI usage costs directly.</p><h2>Model Selection and Use Cases</h2><p>Conferbot supports various OpenAI models, each suitable for different use cases:</p><ul><li><strong>Advanced AI models</strong>: Ideal for straightforward customer service tasks.</li><li><strong>Advanced AI</strong>: Best for complex reasoning and nuanced conversations.</li></ul><p>You can switch between models to optimize performance and cost for your specific needs.</p><h2>Benefits of OpenAI Integration</h2><ul><li>Open-ended question handling</li><li>Natural language generation</li><li>Multi-turn context retention</li><li>Summarization and extraction</li><li>Content creation</li><li>Multilingual support</li></ul><p>Conferbot's integration manages technical complexities, allowing you to focus on conversation design.</p>",
+   "category": {
+    "_id": "6ab7abfcb03f13ff22412c36",
+    "name": "Chatbot Essentials"
+   },
+   "chatbotId": "6ab686f8d47ff029b76892f7",
+   "author": {
+    "_id": "642d37a520a83e213dcb95b7",
+    "name": "admin"
+   },
+   "readingTime": 2,
+   "wordCount": 271,
+   "updatedAt": "2026-09-27T18:57:13.827Z"
+  }
+ },
+ "search": {
+  "success": true,
+  "query": "chatbot",
+  "articles": [
+   {
+    "_id": "6ab7ac19b03f13ff22412cd5",
+    "slug": "how-to-set-up-live-chat-with-ai-chatbot-handoff",
+    "title": "How to Set Up Live Chat with AI Chatbot Handoff",
+    "description": "Learn how live chat integrates with AI chatbot for seamless customer support.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c3c",
+     "name": "AI Chatbot Features"
+    },
+    "readingTime": 2,
+    "snippet": "Live chat with AI chatbot handoff combines human empathy with the efficiency of automation, providing a seamless customer support experience. This integration e…"
+   },
+   {
+    "_id": "6ab7ac01b03f13ff22412c4e",
+    "slug": "how-to-integrate-openai-with-conferbot",
+    "title": "How to Integrate OpenAI with Conferbot",
+    "description": "Learn how to integrate OpenAI with Conferbot for smarter chatbot interactions.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c36",
+     "name": "Chatbot Essentials"
+    },
+    "readingTime": 2,
+    "snippet": "…ing OpenAI with Conferbot enhances your chatbot's capabilities, enabling it to deliver intelligent, context-aware conversations. Here's a guide on how to set up…"
+   },
+   {
+    "_id": "6ab7ac0bb03f13ff22412c87",
+    "slug": "how-to-use-conferbot-s-ai-chatbot-builder",
+    "title": "How to Use Conferbot's AI Chatbot Builder",
+    "description": "Learn to create chatbots quickly with Conferbot's AI builder.",
+    "category": {
+     "_id": "6ab7abfcb03f13ff22412c38",
+     "name": "Chatbot Creation"
+    },
+    "readingTime": 2,
+    "snippet": "Conferbot's AI Chatbot Builder allows you to create chatbots quickly by describing your desired chatbot in plain English. The AI handles conversation flow desig…"
+   }
+  ]
+ }
+}
