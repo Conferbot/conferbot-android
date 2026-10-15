@@ -1,5 +1,11 @@
 package com.conferbot.sdk.ui.compose
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -204,8 +210,17 @@ fun ConferBotWidget(
         }
     }
 
-    // Auto-show CTA tooltip after a short delay (only when chat is closed).
-    val ctaText = serverCustomization?.chatIconCtaText
+    // The launcher as the web draws it on a phone (core/customization/Launcher).
+    val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
+    val look = remember(customizationMap, screenWidthDp) {
+        com.conferbot.sdk.core.customization.Launcher.resolve(customizationMap, screenWidthDp)
+    }
+    val hasLook = customizationMap.isNotEmpty()
+
+    // Auto-show CTA tooltip after a short delay (only when chat is closed and
+    // the owner turned the greeting on).
+    val ctaText = if (hasLook) look.ctaText else null
     LaunchedEffect(ctaText) {
         if (!ctaText.isNullOrBlank()) {
             delay(CTA_SHOW_DELAY_MS)
@@ -215,42 +230,36 @@ fun ConferBotWidget(
 
     // ---- Resolve server-driven values with fallbacks ----
 
-    val fabColor: Color = run {
-        fun tryParse(hex: String?): Color? {
-            if (hex.isNullOrBlank()) return null
-            return try {
-                Color(android.graphics.Color.parseColor(hex))
-            } catch (_: Exception) {
-                null
-            }
-        }
-        tryParse(serverCustomization?.widgetIconBgColor)
-            ?: tryParse(serverCustomization?.headerBgColor)
-            ?: config.backgroundColor
-            ?: DefaultFabColor
+    val fabColor: Color = (if (hasLook) com.conferbot.sdk.ui.compose.lookColor(look.solid) else null)
+        ?: config.backgroundColor
+        ?: DefaultFabColor
+    val fabBrush: androidx.compose.ui.graphics.Brush? = look.gradient?.takeIf { hasLook }?.let { (a, b) ->
+        val start = com.conferbot.sdk.ui.compose.lookColor(a)
+        val end = com.conferbot.sdk.ui.compose.lookColor(b)
+        if (start != null && end != null) androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(start, end)) else null
     }
+    val inkColor: Color = (if (hasLook) com.conferbot.sdk.ui.compose.lookColor(look.ink) else null) ?: Color.White
+    val glowColor: Color = (if (hasLook) com.conferbot.sdk.ui.compose.lookColor(look.glow) else null) ?: Color.Black
 
-    val position: WidgetPosition = when (serverCustomization?.widgetPosition?.lowercase()) {
-        "left" -> WidgetPosition.BOTTOM_LEFT
-        "right" -> WidgetPosition.BOTTOM_RIGHT
-        else -> config.position
-    }
+    val position: WidgetPosition = if (hasLook) {
+        if (look.position == "left") WidgetPosition.BOTTOM_LEFT else WidgetPosition.BOTTOM_RIGHT
+    } else config.position
 
-    val size: Dp = serverCustomization?.widgetSize?.dp ?: config.size
+    val size: Dp = if (hasLook) look.size.dp else config.size
+    val fabWidth: Dp = if (hasLook) look.width.dp else config.size
+    val offsetX: Dp = if (hasLook) look.side.dp else config.offsetX
+    val offsetY: Dp = if (hasLook) look.bottom.dp else config.offsetY
+    // Peek: the tab is tucked part-way off screen.
+    val tucked: Dp = if (hasLook) look.tucked.dp else 0.dp
 
-    val offsetX: Dp = when (position) {
-        WidgetPosition.BOTTOM_LEFT ->
-            serverCustomization?.widgetOffsetLeft?.dp ?: config.offsetX
-        WidgetPosition.BOTTOM_RIGHT ->
-            serverCustomization?.widgetOffsetRight?.dp ?: config.offsetX
-    }
-
-    val offsetY: Dp = serverCustomization?.widgetOffsetBottom?.dp ?: config.offsetY
-
-    // Border radius: server value > config value > fully circular (size / 2)
-    val borderRadius: Dp = serverCustomization?.widgetBorderRadius?.dp
-        ?: config.borderRadius
-        ?: (size / 2)
+    val fabShape = if (hasLook) {
+        RoundedCornerShape(
+            topStart = look.corners.topLeft.dp,
+            topEnd = look.corners.topRight.dp,
+            bottomEnd = look.corners.bottomRight.dp,
+            bottomStart = look.corners.bottomLeft.dp,
+        )
+    } else RoundedCornerShape(config.borderRadius ?: (size / 2))
 
     // CTA tooltip corner radius capped at 20 dp (mirrors web: Math.min(widgetBorderRadius ?? 50, 20))
     val ctaBorderRadius: Dp = minOf(
@@ -259,10 +268,13 @@ fun ConferBotWidget(
     ).dp
 
     // Icon name for the SVG renderer; null falls back to the default bubble shape.
-    val iconName: String? = serverCustomization?.widgetIconSVG
+    val iconName: String? = look.iconId ?: serverCustomization?.widgetIconSVG
+    val showLabel = hasLook && look.style == "label"
+    val avatarUrl = if (hasLook && look.style == "avatar") look.avatar else null
+    val imageUrl = if (hasLook) look.imageUrl else null
 
-    // CTA is placed at offsetX + size + 10 dp from the screen edge, same bottom as FAB.
-    val ctaOffsetFromEdge: Dp = offsetX + size + 10.dp
+    // CTA is placed beside the button, same bottom as the FAB.
+    val ctaOffsetFromEdge: Dp = offsetX - tucked + fabWidth + 10.dp
 
     // FAB press scale animation
     val fabScale by animateFloatAsState(
@@ -275,7 +287,6 @@ fun ConferBotWidget(
         WidgetPosition.BOTTOM_RIGHT -> Alignment.BottomEnd
         WidgetPosition.BOTTOM_LEFT -> Alignment.BottomStart
     }
-    val fabShape = RoundedCornerShape(borderRadius)
 
     Box(modifier = modifier.fillMaxSize()) {
 
@@ -386,53 +397,80 @@ fun ConferBotWidget(
                         isChatOpen = !isChatOpen
                     },
                     modifier = Modifier
-                        .size(size)
-                        .shadow(elevation = 12.dp, shape = fabShape)
+                        .then(if (showLabel) Modifier.height(size).widthIn(min = size) else Modifier.size(width = fabWidth, height = size))
+                        // A soft glow in the header colour (0 0 4px), as the web draws it,
+                        // in the same layer as the press scale.
                         .graphicsLayer {
                             scaleX = fabScale
                             scaleY = fabScale
+                            shadowElevation = 6.dp.toPx()
+                            shape = fabShape
+                            clip = true
+                            ambientShadowColor = glowColor
+                            spotShadowColor = glowColor
                         },
                     shape = fabShape,
                     color = fabColor,
-                    contentColor = Color.White,
+                    contentColor = inkColor,
                     interactionSource = fabInteractionSource,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        AnimatedContent(
-                            targetState = isChatOpen,
-                            transitionSpec = {
-                                fadeIn(tween(ICON_CROSSFADE_MS)) togetherWith
-                                        fadeOut(tween(ICON_CROSSFADE_MS))
-                            },
-                            label = "fab_icon",
-                        ) { chatOpen ->
-                            if (chatOpen) {
-                                // Close icon — use the standard Material close vector
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    androidx.compose.material3.Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close chat",
-                                        modifier = Modifier.size(size * 0.5f),
-                                        tint = Color.White,
-                                    )
-                                }
-                            } else {
-                                // Custom SVG bubble icon — drawn at 60 % of FAB size
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val iconPx = this.size.minDimension * 0.6f
-                                    // Translate canvas origin so the icon is centered
-                                    val offsetPx = (this.size.minDimension - iconPx) / 2f
-                                    drawContext.canvas.save()
-                                    drawContext.canvas.translate(offsetPx, offsetPx)
-                                    drawBubbleIcon(iconName, Color.White, iconPx)
-                                    drawContext.canvas.restore()
-                                }
+                    Box(
+                        modifier = Modifier
+                            .then(if (showLabel) Modifier.fillMaxHeight() else Modifier.fillMaxSize())
+                            .then(if (fabBrush != null) Modifier.background(fabBrush, fabShape) else Modifier)
+                            .then(if (showLabel) Modifier.padding(horizontal = ((size - size * 0.52f) / 2)) else Modifier),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        when {
+                            imageUrl != null -> coil.compose.AsyncImage(
+                                model = imageUrl,
+                                contentDescription = "Open chat",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(size * 0.6f).clip(androidx.compose.foundation.shape.CircleShape),
+                            )
+                            avatarUrl != null -> Box(Modifier.fillMaxSize().padding(3.dp)) {
+                                // The photo fills the button inside a thin ring of its colour, with an online dot.
+                                coil.compose.AsyncImage(
+                                    model = avatarUrl,
+                                    contentDescription = "Open chat",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().clip(fabShape).background(Color.White),
+                                )
+                            }
+                            showLabel -> Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(size * 0.16f),
+                            ) {
+                                Canvas(Modifier.size(size * 0.52f)) { drawBubbleIcon(iconName, inkColor, this.size.minDimension) }
+                                Text(
+                                    text = look.label,
+                                    color = inkColor,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                    fontSize = (size.value * 0.3f).coerceIn(13f, 16f).sp,
+                                    maxLines = 1,
+                                )
+                            }
+                            else -> Canvas(modifier = Modifier.fillMaxSize()) {
+                                val iconPx = (if (hasLook) look.glyph.dp.toPx() else this.size.minDimension * 0.6f)
+                                drawContext.canvas.save()
+                                drawContext.canvas.translate((this.size.width - iconPx) / 2f, (this.size.height - iconPx) / 2f)
+                                drawBubbleIcon(iconName, inkColor, iconPx)
+                                drawContext.canvas.restore()
                             }
                         }
                     }
+                }
+                if (avatarUrl != null) {
+                    val dot = maxOf(10f, size.value * 0.24f).dp
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = if (size >= 56.dp) 2.dp else 1.dp, bottom = if (size >= 56.dp) 2.dp else 1.dp)
+                            .size(dot)
+                            .background(Color.White, androidx.compose.foundation.shape.CircleShape)
+                            .padding(2.dp)
+                            .background(Color(0xFF22C55E), androidx.compose.foundation.shape.CircleShape),
+                    )
                 }
             }
         }
