@@ -21,6 +21,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #20 | Launcher motion, passes the golden test | `LauncherMotion.kt`, `ui/compose/LauncherMotionClock.kt`, `src/test/resources/launcher-motion-golden.json` |
 | #21 | User as `visitorContext` + identity hash | `models/Configuration.kt` (`toVisitorContext`), `core/state/ChatState.kt`, `core/Conferbot.kt` |
 | #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
+| #24-#28, #37, #59-#62 | Handover lifecycle: Connecting line and 4 outcomes, 20s waiting signal, leave the queue, live chat back after a restart, header keeps the bot with Online and the reply time, "Talk to a person" only when allowed (Compose + XML) | `core/livechat/HandoverState.kt`, `HandoverWaiting.kt`, `ReplyTime.kt`, `HandoverLifecycle.kt`, `core/agent/HandoverPayload.kt`, `core/NodeFlowEngine.kt` (`waitAt`, `resumeFrom`), `core/Conferbot.kt`, `ui/compose/chat/LiveChatCards.kt`, `ChatHeader.kt`, `messages/MessageBubble.kt`, `ui/views/ChatActivity.kt`, `MessageAdapter.kt` |
 | #53, #36, #45 | Help centre: loads from `fetched-chatbot-data`, bodies on open, follows `enableKnowledgeBase` / `hideRecentArticles`, Chat / Articles tabs, AI sources and article cards open by id (Compose) | `core/helpcentre/HelpCentre.kt`, `services/KnowledgeBaseService.kt`, `ui/compose/ChatScreen.kt`, `ui/compose/knowledgebase/KnowledgeBaseScreen.kt`, `ui/compose/messages/AgentReply.kt` |
 
 ## Left in this SDK
@@ -36,11 +37,22 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - AI sources with an `articleId`, and article cards without a `url`, call `Conferbot.openHelpArticle`. Back returns to the chat (web `agentSources.ts`, `agentRich.ts`).
    - Checked on the emulator against the local embed-server (bot 6ab686f8d47ff029b76892f7, 26 articles): the list, an article's body and an AI source opening it. An injected `agent-message` was used for the source, not a real AI reply. `HelpCentreTest` has 11 tests on a captured payload (`src/test/resources/help-centre-payload.json`).
    - **Gaps left:** no help centre in the XML chat. No "While you wait" articles. No public `REST /mobile/chatbot/:id/kb` fallback (the socket path is used, as on the web). Article HTML is shown as plain text.
-3. The rest of the list below.
-4. **XML gaps:** initials avatar and the wave typing style.
-5. **Test debt:**
+3. **Handover lifecycle (#24-#28, #37, #59-#62): done, ported from RN.**
+   - An AI escalating (`agent-left` with `reason: escalated`, `handover: true` or an AI leaver) draws "Connecting you with the team…" with its dots; `visitor_inactive` draws nothing. The line settles in place: "Connected with the team", "The team couldn't join just now", "You left the queue", "Chat ended before the team joined". A person after an AI handover gets "They can see your conversation so far". A repeat accept is not announced.
+   - `cb:waiting-for-human` 20s into a wait (held while the chat is closed), `cb:human-joined`, `cb:wait-over`: `Conferbot.onWidgetSignal(name) { }`.
+   - The wait card's Cancel and `Conferbot.leaveQueue()` send `queue-self-resolve` and wait for the answer (`not_waiting` asks `live-chat-state`; live means stay). `queue-left` from another device leaves too. `endChat()` no longer sends the agent-only `end-chat` (#60). The handover survey's rating goes as `submit-chat-rating` (#61).
+   - A restored session (`restorePersistedSession`) joins the room, asks `live-chat-state` and comes back live with the person (and the join line it missed), back on the handover step's wait without a second request (`NodeFlowEngine.waitAt`), carries on, or runs the step again. Settled lines are saved (a message saved again now replaces itself, #62).
+   - The header keeps the bot's name and logo; its Online line shows the reply time ("Typically replies in a few minutes", "Online · team replies by email") until a person is in the chat, then plain "Online". An agent bot shows no reply-time line.
+   - "Talk to a person" is offered only for an agent bot, only while `talkToPersonAllowed`; it goes on tap and does not come back; the owner's quick actions stay.
+   - `initiate-handover` carries the step's `enableHandoverEmail`, sound settings, `assignmentMethod` / `requiredSkills` (#59).
+   - Tests: `HandoverStateTest` 16, `HandoverWaitingTest` 5, `HandoverLifecycleTest` 12, `ReplyTimeTest` 7, `HandoverPayloadTest` 3, `LiveChatTest` +1.
+   - Checked on the emulator against the local embed-server with a node script playing the agent (temp bot, handover email off, deleted after): wait card and Cancel (the ticket closed `self_service`, `handoverData.enableHandoverEmail: false`), header reply time, agent joined with the header still the bot, the Connecting line, its settled outcome with the note, and a restart while live (live again, one ticket, agent messages arrive).
+   - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. No requeued / transferred lines (#44). #63: Clear History draws flow messages twice (found during the check).
+4. The rest of the list below.
+5. **XML gaps:** initials avatar and the wave typing style.
+6. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
-6. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+7. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## How to test
 
@@ -53,6 +65,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
   - Force-stop before relaunching, or it resumes the XML chat.
   - The launcher activity is `.ui.xml.MainActivity`. On a 1080x2400 Pixel, "Open Chat (Compose)" is at (540,833); (538,968) is "Identify Test User", which signs the visitor in and so silences the greeting.
   - `uiautomator dump` hangs on the Compose screen (the launcher's motion never idles); wait with a sleep instead.
+  - The emulator may come up with no network: `adb reverse tcp:8001 tcp:8001` and `http://127.0.0.1:8001` instead of 10.0.2.2. A temp bot copied from 6ab686f8d47ff029b76892f7 needs `version: "v2"` and no `creationType` (an `ai_agent` copy loads as an agent bot).
   - Revert the example before committing.
 
 ## The goal
@@ -77,7 +90,8 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | `widgetLanguage` (i18n) | todo | todo | todo | todo |
 | Message sounds | todo | todo | todo | todo |
 | Celebrations / reactions | todo | todo | todo | todo |
-| Reply-time wording | todo | todo | todo | todo |
+| Reply-time wording (header) | done | done (#28) | todo | todo |
+| Handover lifecycle (Connecting line, outcomes, waiting signals, leave queue, restore) | done | done (#24-#27, #37) | todo | todo |
 
 Live chat / agent features (handover, queue card, receipts, rating, files, prefill, max-wait timeout, agent bot replies, suggestion chips) are done in all 4.
 
