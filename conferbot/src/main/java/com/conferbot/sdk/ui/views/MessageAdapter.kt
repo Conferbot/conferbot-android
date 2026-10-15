@@ -1759,8 +1759,17 @@ class MessageAdapter(
             when (message) {
                 is RecordItem.SystemMessage -> messageText.text = message.text
                 // Agent events and files drew as empty bubbles: say what they are.
-                is RecordItem.AgentJoinedMessage -> messageText.text = "${message.agentDetails.name} joined the chat"
-                is RecordItem.AgentLeftMessage -> messageText.text = message.text
+                // A person's join, with "They can see your conversation so far"
+                // after an AI handover (core/livechat/HandoverState.kt).
+                is RecordItem.AgentJoinedMessage -> messageText.text =
+                    com.conferbot.sdk.core.livechat.HandoverState.joinedText(message.agentDetails.name) +
+                        if (message.afterAI) "\n" + com.conferbot.sdk.core.livechat.HandoverState.HANDED_OVER_NOTE else ""
+                // An AI handing the visitor on: "Connecting you with the team…",
+                // then how the wait ended.
+                is RecordItem.AgentLeftMessage -> messageText.text =
+                    if (message.handover) com.conferbot.sdk.core.livechat.HandoverState.lineText(
+                        com.conferbot.sdk.core.livechat.HandoverOutcome.of(message.settled)
+                    ) else message.text
                 is RecordItem.AgentMessageFile -> {
                     messageText.text = linkText("\uD83D\uDCCE " + fileNameOf(message.file), message.file)
                     messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
