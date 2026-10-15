@@ -20,21 +20,15 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #19 | 56 icons | `LauncherIcons.kt`, `LauncherIconsData.kt`, `ui/compose/LauncherIconDraw.kt` |
 | #20 | Launcher motion, passes the golden test | `LauncherMotion.kt`, `ui/compose/LauncherMotionClock.kt`, `src/test/resources/launcher-motion-golden.json` |
 | #21 | User as `visitorContext` + identity hash | `models/Configuration.kt` (`toVisitorContext`), `core/state/ChatState.kt`, `core/Conferbot.kt` |
+| #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
 
 ## Left in this SDK
 
-1. **Greeting card (#23, in progress):**
-   - **On main:** `core/customization/Greeting.kt`, the pure logic (rules, smart greetings, limits, frequency, head, accent, bubble colours). 10 tests in `GreetingTest` pass. Nothing calls it on main yet.
-   - **On branch `wip/greeting-card` (compiles, not yet verified on a device):**
-     - `ui/compose/GreetingState.kt`: SharedPreferences under `conferbot.greeting.<botId>`.
-     - `ui/compose/GreetingCard.kt`: the 11 styles.
-     - `ConferBotWidget.kt`: the card replaces the plain tooltip.
-     - `Conferbot.activeBotId`.
-   - **Where it stopped:**
-     - On the emulator, the Compose screen showed the launcher but no card after 6s with greetingDelay 1.
-     - Debug that first: is `rememberGreeting` getting a non-empty customization map, and is `Greeting.decide` returning null (signed-in or smart rules) or `frequencyAllows` saying no?
-     - The example app's launcher activity is `.ui.xml.MainActivity`. "Open Chat (Compose)" is at (538,968) on a Pixel 9.
-     - Then screenshot all 11 styles, merge the branch into main, close #23.
+1. **Greeting card (#23): done, merged into main.**
+   - Checked on the emulator (Pixel, 1080x2400) against the local embed-server: all 11 styles show, with the bot's avatar, name, "Online" and the AI agent's 3 suggested questions. `GreetingTest` has 11 tests.
+   - **Why "no card" before (#56):** not a code fault. The tap at (538,968) hits "Identify Test User", not "Open Chat (Compose)". A signed-in visitor matches the smart "customers" rule (`sgcust`, show nothing), which silences the default message too, as on the web. Test without identifying, or clear the app's data.
+   - Fixed on the way (#55): settings arriving again (the theme palette, a socket reconnect) no longer re-count and replay a card already showing. Also: the phone-text tail was drawn in px (hidden under the bubble), note/sticky now use the system "casual" hand, note chips are plain words with a wavy underline, postcard/notification names are upper case, the stamp's heart is the text glyph, typewriter padding is the base 14.
+   - **Gaps left:** the word fade-up, the "Online" ping and the figure gestures are not drawn; glass and notification have no live blur (more opaque instead); the card uses the system font, not `c.font`; a rule's `action` (flow, ai, link) is not mapped to the tap yet (RN does not either); mascots in the card wait for the mascot work.
 2. The rest of the list below.
 3. **XML gaps:** initials avatar and the wave typing style.
 4. **Test debt:**
@@ -50,6 +44,8 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
   - To point it at a local server, add `baseUrl = "http://10.0.2.2:8001/api/v1/mobile/", socketUrl = "http://10.0.2.2:8001"` to `ExampleApplication.kt`.
   - Build with `sh ./gradlew :example:assembleDebug`. Package `com.conferbot.example`.
   - Force-stop before relaunching, or it resumes the XML chat.
+  - The launcher activity is `.ui.xml.MainActivity`. On a 1080x2400 Pixel, "Open Chat (Compose)" is at (540,833); (538,968) is "Identify Test User", which signs the visitor in and so silences the greeting.
+  - `uiautomator dump` hangs on the Compose screen (the launcher's motion never idles); wait with a sleep instead.
   - Revert the example before committing.
 
 ## The goal
@@ -67,7 +63,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | 56 launcher icons, drawn from the widget SVGs | done | done | done | done |
 | Launcher motion (idle moments, message reaction, ripple) | done | done | done | done |
 | Signed-in user as `visitorContext` + identity hash | done | done | done | done |
-| Greeting card (rules, frequency, 11 styles) | done | logic done, UI on a branch | todo | todo |
+| Greeting card (rules, frequency, 11 styles) | done | done (#23) | todo | todo |
 | Launcher entrance / attention / idle call | todo | todo | todo | todo |
 | Home screen | todo | todo | todo | todo |
 | Mascots (incl. `mascotInGreeting`) | todo | todo | todo | todo |
