@@ -57,7 +57,9 @@ fun ArticleDetailView(
     modifier: Modifier = Modifier,
     primaryColor: Color = Color(0xFF0100EC),
     categoryName: String? = null,
-    onScrollDepthChange: (Int) -> Unit = {}
+    onScrollDepthChange: (Int) -> Unit = {},
+    showTopBar: Boolean = true,
+    bodyFailed: Boolean = false
 ) {
     val scrollState = rememberScrollState()
     var contentHeight by remember { mutableStateOf(0) }
@@ -75,7 +77,7 @@ fun ArticleDetailView(
 
     Scaffold(
         topBar = {
-            ArticleDetailTopBar(
+            if (showTopBar) ArticleDetailTopBar(
                 title = article.title,
                 onBackClick = onBackClick,
                 primaryColor = primaryColor
@@ -153,7 +155,7 @@ fun ArticleDetailView(
             }
 
             // Table of contents (if article has multiple sections)
-            val headings = extractHeadings(article.content)
+            val headings = extractHeadings(article.content ?: "")
             if (headings.size >= 2) {
                 TableOfContents(
                     headings = headings,
@@ -164,11 +166,26 @@ fun ArticleDetailView(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Article content
-            HtmlContent(
-                html = article.content,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            // Article content: the body is fetched on open (get-kb-article)
+            val body = article.content
+            when {
+                body != null -> HtmlContent(
+                    html = body,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                bodyFailed -> Text(
+                    text = "This article could not be loaded. Please try again later.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                else -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = primaryColor, modifier = Modifier.size(28.dp))
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
