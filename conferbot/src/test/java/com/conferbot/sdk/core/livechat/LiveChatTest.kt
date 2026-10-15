@@ -137,4 +137,13 @@ class LiveChatTest {
         assertThat(p["workspaceId"]).isEqualTo("w1")
         assertThat(p["assignmentData"]).isEqualTo(mapOf("assignmentType" to "manual", "assignmentStrategy" to "round_robin", "assignedAgents" to listOf("a2")))
     }
+
+    @Test
+    fun `the handover survey's rating goes as submit-chat-rating (#61)`() {
+        assertThat(LiveChat.surveyRatingPayload("s1", 5, 4, " Quick help "))
+            .isEqualTo(mapOf("chatSessionId" to "s1", "source" to "post_chat_survey", "csatScore" to 4, "feedback" to "Quick help"))
+        assertThat(LiveChat.surveyRatingPayload("s1", 10, 9)).isEqualTo(mapOf("chatSessionId" to "s1", "source" to "post_chat_survey", "npsScore" to 9))
+        assertThat(LiveChat.surveyRatingPayload("s1", null, 7)!!["csatScore"]).isEqualTo(5)
+        assertThat(LiveChat.surveyRatingPayload("s1", 5, null)).isNull()
+    }
 }
