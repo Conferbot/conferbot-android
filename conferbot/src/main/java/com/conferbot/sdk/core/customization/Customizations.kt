@@ -35,6 +35,12 @@ data class ResolvedCustomizations(
     val botBubble: Corners = Corners(18f, 18f, 18f, 6f),
     val userBubble: Corners = Corners(18f, 18f, 6f, 18f),
     val optionRadius: Float = 10f,
+    /** An outline round each bubble, from the theme (cartoon, neo-brutal...), or null. */
+    val bubbleBorder: BubbleBorder? = null,
+    /** The composer field's corner radius: 25 (a pill) unless the theme has its own. */
+    val fieldRadius: Float = 25f,
+    /** The chat surface the theme paints when the owner kept the default white, else null. */
+    val surface: String? = null,
     /** Message text size: 14.5 unless the owner set something other than 14. */
     val fontSize: Float = 14.5f,
     /** Colours, as hex strings, with the web's defaults and fallbacks. */
@@ -48,6 +54,12 @@ data class ResolvedCustomizations(
     val optionTextColor: String = "#ffffff",
     /** dots, wave, shimmer, pencil or mascot (pencil and mascot draw dots until mascots land). */
     val typingStyle: String = "dots",
+    /** Send button: the theme palette's accent when it supplied the colours, else the header colour. */
+    val accent: String = "#0b4eb8",
+    /** Ink on the send button: the theme palette's, else null (picked for contrast). */
+    val accentInk: String? = null,
+    /** The widget theme in force (core/customization/WidgetTheme). */
+    val theme: ResolvedWidgetTheme = ResolvedWidgetTheme(),
 )
 
 object Customizations {
@@ -79,8 +91,13 @@ object Customizations {
         else -> size / 2f
     }
 
-    fun resolve(raw: Map<String, Any?>?, botName: String = ""): ResolvedCustomizations {
+    fun resolve(raw: Map<String, Any?>?, botName: String = "", theme: ResolvedWidgetTheme? = null): ResolvedCustomizations {
         val c = raw ?: emptyMap()
+        // A theme other than classic brings its own radii; the owner's still win.
+        val themeShape = theme?.shape
+        val r = themeShape?.rBubble ?: 18f
+        val tail = themeShape?.rTail ?: 6f
+        val optionSet = num(c["optionBubbleBorderRadius"])
         val name = str(c["logoText"]).ifEmpty { str(c["botName"]) }.ifEmpty { botName }.ifEmpty { "Chat" }
         val tagline = if (c["enableTagline"] == true && str(c["tagline"]).isNotEmpty()) str(c["tagline"]) else null
         val avatarSet = num(c["avatarSize"])
@@ -107,9 +124,12 @@ object Customizations {
             avatarSize = avatarSize,
             avatarShape = shape,
             avatarRadius = avatarRadius(shape, avatarSize),
-            botBubble = if (ownBubble) Corners.all(bubbleSet!!) else Corners(18f, 18f, 18f, 6f),
-            userBubble = if (ownBubble) Corners.all(bubbleSet!!) else Corners(18f, 18f, 6f, 18f),
-            optionRadius = num(c["optionBubbleBorderRadius"]) ?: 10f,
+            botBubble = if (ownBubble) Corners.all(bubbleSet!!) else Corners(r, r, r, tail),
+            userBubble = if (ownBubble) Corners.all(bubbleSet!!) else Corners(r, r, tail, r),
+            optionRadius = if (optionSet != null && (optionSet != 10f || themeShape == null)) optionSet else themeShape?.rCtl ?: 10f,
+            bubbleBorder = themeShape?.bubbleBorder,
+            fieldRadius = themeShape?.rField ?: 25f,
+            surface = theme?.tokens?.takeIf { !WidgetTheme.ownsChatBackground(c) }?.bg,
             fontSize = if (fontSet != null && fontSet > 0f && fontSet != 14f) fontSet else 14.5f,
             headerBg = str(c["headerBgColor"]).ifEmpty { "#0b4eb8" },
             headerText = str(c["headerTextColor"]).ifEmpty { "#ffffff" },
@@ -122,6 +142,9 @@ object Customizations {
             optionBubbleColor = str(c["optionBubbleMsgColor"]).ifEmpty { str(c["botMsgColor"]) }.ifEmpty { "#e7e4e4" },
             optionTextColor = str(c["optionBubbleTextColor"]).ifEmpty { str(c["botTextColor"]) }.ifEmpty { "#000000" },
             typingStyle = (c["typingStyle"] as? String)?.takeIf { it in TYPING } ?: "dots",
+            accent = str(c["themeAccent"]).ifEmpty { str(c["headerBgColor"]) }.ifEmpty { "#0b4eb8" },
+            accentInk = str(c["themeOnAccent"]).ifEmpty { null },
+            theme = theme ?: ResolvedWidgetTheme(),
         )
     }
 }
