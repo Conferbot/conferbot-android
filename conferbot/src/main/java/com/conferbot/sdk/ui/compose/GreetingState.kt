@@ -171,6 +171,10 @@ fun rememberGreeting(
             state.card = null
             return@LaunchedEffect
         }
+        // Decided once, as the web does: settings arriving again (the theme's
+        // palette applied, a socket reconnect re-fetching the bot) leave a
+        // showing card alone rather than counting and playing it again.
+        if (state.card != null) return@LaunchedEffect
         if (!state.session.counted) {
             state.session.counted = true
             state.write(state.stored.copy(visits = state.stored.visits + 1))
