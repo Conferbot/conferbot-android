@@ -55,6 +55,9 @@ import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.ui.theme.ConferbotThemeProvider
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.key
 
 // ============================================================
 // CONSTANTS
@@ -65,9 +68,6 @@ private const val OVERLAY_TRANSITION_MS = 300
 
 /** Duration (ms) for the FAB icon crossfade. */
 private const val ICON_CROSSFADE_MS = 200
-
-/** Delay (ms) before the CTA tooltip auto-appears. */
-private const val CTA_SHOW_DELAY_MS = 2_000L
 
 /** Default brand blue — used when neither server nor config provides a color. */
 private val DefaultFabColor = Color(0xFF1B55F3)
@@ -173,7 +173,7 @@ fun WidgetCtaTooltip(
  *  - OffsetY    : widgetOffsetBottom > config.offsetY
  *  - Radius     : widgetBorderRadius > config.borderRadius > size / 2 (circular)
  *  - Icon       : widgetIconSVG (one of WidgetBubbleIcon1..15) — drawn via Canvas
- *  - CTA text   : chatIconCtaText — shown 2 s after mount, dismissed on tap or chat open
+ *  - Greeting   : the web's greeting card (chatIconCta, greetingRules, greetingStyle, ...) - see GreetingCard
  *
  * Usage:
  * ```
@@ -193,7 +193,6 @@ fun ConferBotWidget(
     modifier: Modifier = Modifier,
 ) {
     var isChatOpen by remember { mutableStateOf(false) }
-    var isCtaVisible by remember { mutableStateOf(false) }
     val fabInteractionSource = remember { MutableInteractionSource() }
     val isPressed by fabInteractionSource.collectIsPressedAsState()
 
@@ -206,7 +205,6 @@ fun ConferBotWidget(
         Conferbot.setChatVisible(isChatOpen)
         if (isChatOpen) {
             Conferbot.resetUnreadCount()
-            isCtaVisible = false
         }
     }
 
@@ -218,13 +216,24 @@ fun ConferBotWidget(
     }
     val hasLook = customizationMap.isNotEmpty()
 
-    // Auto-show CTA tooltip after a short delay (only when chat is closed and
-    // the owner turned the greeting on).
-    val ctaText = if (hasLook) look.ctaText else null
-    LaunchedEffect(ctaText) {
-        if (!ctaText.isNullOrBlank()) {
-            delay(CTA_SHOW_DELAY_MS)
-            if (!isChatOpen) isCtaVisible = true
+    // The bot's greeting is the web's greeting card (core/customization/Greeting):
+    // its rules, delay, frequency and style.
+    val agentBot by Conferbot.agentBot.collectAsState()
+    val greeting = rememberGreeting(
+        customizations = customizationMap,
+        chatOpen = isChatOpen,
+        botId = Conferbot.activeBotId ?: "default",
+        agentBot = agentBot,
+        enabled = hasLook,
+    )
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // A "send" greeting or a suggested question goes out once the chat has a session.
+    val sendWhenReady: (String) -> Unit = { text ->
+        scope.launch {
+            delay(400)
+            kotlinx.coroutines.withTimeoutOrNull(8_000) { Conferbot.chatSessionId.first { it != null } }
+            Conferbot.sendMessage(text)
         }
     }
 
@@ -261,12 +270,6 @@ fun ConferBotWidget(
         )
     } else RoundedCornerShape(config.borderRadius ?: (size / 2))
 
-    // CTA tooltip corner radius capped at 20 dp (mirrors web: Math.min(widgetBorderRadius ?? 50, 20))
-    val ctaBorderRadius: Dp = minOf(
-        serverCustomization?.widgetBorderRadius?.toFloat() ?: 50f,
-        20f,
-    ).dp
-
     // Icon name for the SVG renderer; null falls back to the default bubble shape.
     val iconName: String? = look.iconId ?: serverCustomization?.widgetIconSVG
     val showLabel = hasLook && look.style == "label"
@@ -281,9 +284,6 @@ fun ConferBotWidget(
         unreadCount = unreadCount,
         enabled = hasLook && imageUrl == null && avatarUrl == null,
     )
-
-    // CTA is placed beside the button, same bottom as the FAB.
-    val ctaOffsetFromEdge: Dp = offsetX - tucked + fabWidth + 10.dp
 
     // FAB press scale animation
     val fabScale by animateFloatAsState(
@@ -344,29 +344,41 @@ fun ConferBotWidget(
             }
         }
 
-        // ---- CTA tooltip ----
-        if (!ctaText.isNullOrBlank()) {
-            AnimatedVisibility(
-                visible = isCtaVisible && !isChatOpen,
-                enter = fadeIn(tween(OVERLAY_TRANSITION_MS)),
-                exit = fadeOut(tween(OVERLAY_TRANSITION_MS)),
-                modifier = Modifier
-                    .align(
-                        if (position == WidgetPosition.BOTTOM_LEFT) Alignment.BottomStart
-                        else Alignment.BottomEnd,
-                    )
+        // ---- The greeting card: 12 above the launcher, its edge in line with it ----
+        val card = greeting.card
+        if (card != null && !isChatOpen) {
+            val edge = maxOf(8.dp, offsetX - tucked)
+            val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+            Box(
+                Modifier
+                    .align(if (position == WidgetPosition.BOTTOM_LEFT) Alignment.BottomStart else Alignment.BottomEnd)
                     .padding(
-                        start = if (position == WidgetPosition.BOTTOM_LEFT) ctaOffsetFromEdge else 0.dp,
-                        end = if (position == WidgetPosition.BOTTOM_RIGHT) ctaOffsetFromEdge else 0.dp,
-                        bottom = offsetY,
-                    ),
+                        start = if (position == WidgetPosition.BOTTOM_LEFT) edge else 0.dp,
+                        end = if (position == WidgetPosition.BOTTOM_RIGHT) edge else 0.dp,
+                        bottom = offsetY + size + 12.dp,
+                    )
+                    .widthIn(max = screenWidth - 24.dp),
             ) {
-                Box(modifier = Modifier.widthIn(max = 212.dp)) {
-                    WidgetCtaTooltip(
-                        text = ctaText,
-                        backgroundColor = fabColor,
-                        borderRadius = ctaBorderRadius,
-                        onDismiss = { isCtaVisible = false },
+                key(card) {
+                    GreetingCard(
+                        data = card,
+                        onPress = {
+                            greeting.closeForNow()
+                            if (card.click == "link" && card.linkUrl.isNotBlank()) {
+                                try { uriHandler.openUri(card.linkUrl) } catch (_: Exception) {}
+                            } else {
+                                com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
+                                isChatOpen = true
+                                if (card.click == "send") sendWhenReady(card.text)
+                            }
+                        },
+                        onClose = { greeting.dismiss() },
+                        onStarter = { text ->
+                            greeting.closeForNow()
+                            com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
+                            isChatOpen = true
+                            sendWhenReady(text)
+                        },
                     )
                 }
             }
@@ -418,7 +430,6 @@ fun ConferBotWidget(
             ) {
                 Surface(
                     onClick = {
-                        isCtaVisible = false
                         if (!isChatOpen) com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
                         isChatOpen = !isChatOpen
                     },
