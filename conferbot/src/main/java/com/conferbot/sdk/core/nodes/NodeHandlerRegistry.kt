@@ -56,6 +56,7 @@ object NodeHandlerRegistry {
         register(RatingChoiceNodeHandler())
         register(YesOrNoChoiceNodeHandler())
         register(OpinionScaleChoiceNodeHandler())
+        register(CarouselNodeHandler())
 
         // Special display nodes (v2)
         register(UserRedirectNodeHandler())
@@ -91,11 +92,33 @@ object NodeHandlerRegistry {
         register(NotionNodeHandler())
         register(ZohoCrmNodeHandler())
         register(StripeNodeHandler())
+        register(MailchimpNodeHandler())
+        register(SegmentNodeHandler())
+        register(SalesforceNodeHandler())
 
         // ==================== SPECIAL FLOW NODE HANDLERS ====================
 
         register(DelayNodeHandler())
         register(HumanHandoverNodeHandler())
+
+        // ==================== RICH STEPS (web richNodes.ts) ====================
+
+        register(DynamicChoicesNodeHandler())
+        register(HiddenFieldsNodeHandler())
+        register(ConsentNodeHandler())
+        register(ProductCardNodeHandler())
+        register(SliderNodeHandler())
+        register(DateTimeNodeHandler())
+        register(RankingNodeHandler())
+        register(OtpNodeHandler())
+        register(AddressNodeHandler())
+        register(MatrixNodeHandler())
+        register(AiExtractNodeHandler())
+        register(AiRouteNodeHandler())
+        register(KbAnswerNodeHandler())
+        register(SignatureNodeHandler())
+        register(PaymentNodeHandler())
+        // Loops and sub-flows (loop, subflow, run-subflow, subflow-return) are run by the engine itself.
     }
 
     /**
