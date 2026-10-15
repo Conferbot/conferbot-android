@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -382,6 +383,101 @@ object Conferbot {
         )
     }
 
+    // ========== Handover lifecycle ==========
+    // The "Connecting you with the team…" line and its outcome, the 20s
+    // waiting signal, leaving the queue, and a live chat picked back up after
+    // a restart (core/livechat/HandoverState.kt, HandoverSignals.kt).
+    private val handover: com.conferbot.sdk.core.livechat.HandoverLifecycle by lazy {
+        com.conferbot.sdk.core.livechat.HandoverLifecycle(
+            socket = { socketClient?.let { HandoverSocketAdapter(it) } },
+            flow = { nodeFlowEngine },
+            host = handoverHost,
+            timer = object : com.conferbot.sdk.core.livechat.SignalTimer {
+                override fun set(ms: Long, fn: () -> Unit): Any = scope.launch { delay(ms); fn() }
+                override fun clear(handle: Any) { (handle as? Job)?.cancel() }
+            }
+        )
+    }
+
+    private class HandoverSocketAdapter(private val client: SocketClient) : com.conferbot.sdk.core.livechat.HandoverSocket {
+        override fun on(event: String, fn: (Map<String, Any?>?) -> Unit) {
+            client.on(event, Emitter.Listener { args -> fn(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(args.firstOrNull() as? JSONObject)) })
+        }
+        override fun emit(event: String, data: Map<String, Any?>) = client.emit(event, JSONObject(data))
+        override fun ask(event: String, data: Map<String, Any?>, timeoutMs: Long, onAnswer: (Map<String, Any?>?) -> Unit) =
+            client.emitWithAck(event, JSONObject(data), timeoutMs) { onAnswer(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(it as? JSONObject)) }
+        override fun joinRoom(chatSessionId: String) = client.joinChatRoom(chatSessionId, deviceInfo())
+    }
+
+    private val handoverHost = object : com.conferbot.sdk.core.livechat.HandoverHost {
+        override fun items(): List<RecordItem> = _record.value
+        override fun updateItems(transform: (List<RecordItem>) -> List<RecordItem>) {
+            var before: List<RecordItem> = emptyList()
+            var after: List<RecordItem> = emptyList()
+            _record.update { cur -> before = cur; transform(cur).also { after = it } }
+            if (after === before) return
+            val old = before.associateBy { it.id }
+            val changed = after.filter { old[it.id] != null && old[it.id] != it }
+            if (changed.isNotEmpty()) scope.launch { changed.forEach { messageManager?.addMessage(it) } }
+        }
+        override fun addItem(item: RecordItem) {
+            var added = false
+            _record.update { cur ->
+                if (cur.any { it.id == item.id }) cur
+                else (cur + item).let { if (it.size > paginationConfig.maxMemoryMessages) it.takeLast(paginationConfig.maxMemoryMessages) else it }
+                    .also { added = true }
+            }
+            if (added) scope.launch { messageManager?.addMessage(item) }
+        }
+        override fun record() = ChatState.record.value
+        override fun saveEntry(entry: com.conferbot.sdk.core.state.RecordEntry) = ChatState.pushToRecord(entry)
+        override fun sessionId(): String? = _chatSessionId.value
+        override fun chatOpen(): Boolean = _isChatVisible.value
+        override fun flowWaiting(): Boolean {
+            val ui = nodeFlowEngine?.currentUIState?.value
+            return !_isLiveChatMode.value && ui is NodeUIState.HumanHandover &&
+                ui.state == NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+        }
+        override fun setLiveMode(on: Boolean) {
+            _isLiveChatMode.value = on
+            ChatState.setLiveChatMode(on)
+        }
+        override fun setAgent(agent: Agent?) { _currentAgent.value = agent }
+    }
+
+    private fun deviceInfo() = mapOf(
+        "os" to "Android",
+        "osVersion" to Build.VERSION.RELEASE,
+        "sdkVersion" to Build.VERSION.SDK_INT.toString(),
+        "deviceModel" to Build.MODEL
+    )
+
+    /**
+     * The visitor leaves the queue (the wait card's Cancel): queue-self-resolve,
+     * so the team stops seeing them waiting, then "You left the queue" and the
+     * flow carries on. [onDone] gets false when a person had already picked the
+     * chat up (the visitor stays).
+     */
+    fun leaveQueue(onDone: (Boolean) -> Unit = {}) = handover.leaveQueue { left -> scope.launch { onDone(left) } }
+
+    /**
+     * Listen to the widget's handover signals, as the web widget dispatches
+     * them on its window: `cb:waiting-for-human` (20s into a wait for a
+     * person, or the server's own handover-waiting), `cb:human-joined` and
+     * `cb:wait-over` (com.conferbot.sdk.core.livechat.HandoverSignals). Returns
+     * the unsubscribe.
+     */
+    fun onWidgetSignal(name: String, listener: (com.conferbot.sdk.core.livechat.WidgetSignal) -> Unit): () -> Unit =
+        handover.onWidgetSignal(name, listener)
+
+    /**
+     * "Talk to a person" was tapped, or a handover took it off: it does not
+     * come back on the quick actions strip for this conversation.
+     */
+    private val _talkToPersonRetired = MutableStateFlow(false)
+    val talkToPersonRetired: StateFlow<Boolean> = _talkToPersonRetired.asStateFlow()
+    fun retireTalkToPerson() { _talkToPersonRetired.value = true }
+
     // Gson for JSON parsing
     private val gson = Gson()
 
@@ -582,6 +678,10 @@ object Conferbot {
         // Agent accepted (embed-server sends agentDetails, not agent)
         socketClient?.on(SocketEvents.AGENT_ACCEPTED, Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
+            // The wait is over: the Connecting line settles (joined, or
+            // unavailable when the AI takes the chat back) and the waiting
+            // signal stops - before the agent bot's own check, as the web does.
+            val plan = handover.onAccepted(data?.let { jsonObjectToMap(it) })
             // An agent bot's own AI agent taking the chat it already greeted:
             // nothing to announce.
             if (onAgentBotAccepted(data)) return@Listener
@@ -598,29 +698,12 @@ object Conferbot {
                 _isLiveChatMode.value = true
                 ChatState.setLiveChatMode(true)
 
-                // Add system message: "{agent name} has joined the chat"
-                val agentDetails = AgentDetails(
-                    id = agent.id,
-                    name = agent.name,
-                    email = agent.email,
-                    avatar = agent.avatar
-                )
-                val joinedMessage = RecordItem.AgentJoinedMessage(
-                    id = "agent-joined-${System.currentTimeMillis()}",
-                    time = java.util.Date(),
-                    agentDetails = agentDetails
-                )
-                addMessageToRecord(joinedMessage)
-
-                // Add to ChatState record for server sync
-                ChatState.pushToRecord(
-                    com.conferbot.sdk.core.state.RecordEntry(
-                        id = joinedMessage.id,
-                        shape = "agent-joined-message",
-                        type = "agent-joined-message",
-                        text = "${agent.name} has joined the chat",
-                        data = mutableMapOf("name" to agent.name)
-                    )
+                // "<name> joined the chat" - not again for the same person (a
+                // repeat after a reconnect), with "They can see your
+                // conversation so far" after an AI handover.
+                if (plan.announce) handover.addJoin(
+                    AgentDetails(id = agent.id, name = agent.name, email = agent.email, avatar = agent.avatar, isAIAgent = plan.ai),
+                    plan.afterAI
                 )
 
                 // Notify flow engine about agent connection
@@ -631,32 +714,17 @@ object Conferbot {
 
         // Agent left
         socketClient?.on(SocketEvents.AGENT_LEFT, Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject
+            if (!isOwnSession(data)) return@Listener
             val agent = _currentAgent.value
-            _currentAgent.value = null
-
-            // Add system message: "{agent name} has left the chat"
-            val agentName = agent?.name ?: "Agent"
-            val leftMessage = RecordItem.AgentLeftMessage(
-                id = "agent-left-${System.currentTimeMillis()}",
-                time = java.util.Date(),
-                text = "$agentName has left the chat",
-                agentDetails = agent?.let {
-                    AgentDetails(id = it.id, name = it.name, email = it.email, avatar = it.avatar)
-                }
-            )
-            addMessageToRecord(leftMessage)
-
-            // Add to ChatState record for server sync
-            ChatState.pushToRecord(
-                com.conferbot.sdk.core.state.RecordEntry(
-                    id = leftMessage.id,
-                    shape = "agent-left-chat",
-                    type = "agent-left-chat",
-                    text = "$agentName has left the chat"
-                )
-            )
-
-            agent?.let { eventListener?.onAgentLeft(it) }
+            // An AI handing the visitor to the team is not leaving them: the
+            // Connecting line, not "<name> left the chat"; an AI pausing an
+            // idle visitor (visitor_inactive) draws nothing (HandoverState).
+            val kind = handover.onAgentLeft(data?.let { jsonObjectToMap(it) }, agent?.name)
+            if (kind == com.conferbot.sdk.core.livechat.AgentLeftKind.LEFT) {
+                _currentAgent.value = null
+                agent?.let { eventListener?.onAgentLeft(it) }
+            }
         })
 
         // Agent typing - server sends {chatSessionId, isTyping, agentDetails}
@@ -675,6 +743,7 @@ object Conferbot {
 
         setupAgentBotListeners()
         liveChat.setupListeners()
+        handover.setupListeners()
         watchLiveChat()
 
         // Chat ended
@@ -689,16 +758,17 @@ object Conferbot {
             val endedMessage = RecordItem.SystemMessage(
                 id = "chat-ended-${System.currentTimeMillis()}",
                 time = java.util.Date(),
-                text = "Chat has ended"
+                text = "Chat has ended",
+                kind = "agent-chat-ended"
             )
             addMessageToRecord(endedMessage)
 
-            // Add to ChatState record for server sync
+            // Add to ChatState record for server sync (the web's agent-chat-ended)
             ChatState.pushToRecord(
                 com.conferbot.sdk.core.state.RecordEntry(
                     id = endedMessage.id,
-                    shape = "system-message",
-                    type = "system-message",
+                    shape = "agent-chat-ended",
+                    type = "agent-chat-ended",
                     text = "Chat has ended"
                 )
             )
@@ -953,15 +1023,18 @@ object Conferbot {
         if (agentStartedFor == sessionId) return
         agentStartedFor = sessionId
         val details = agentDetailsOf(bot)
-        _currentAgent.value = Agent(id = details.id, name = details.name, avatar = details.avatar)
+        val resumed = _record.value.any {
+            (it is RecordItem.AgentMessage && it.id.startsWith("agent-greeting-")) || it is RecordItem.UserLiveMessage
+        }
+        // A restored chat a person has (the AI handed it on): not the AI.
+        if (!(resumed && handover.phase() == com.conferbot.sdk.core.livechat.HandoverPhase.JOINED)) {
+            _currentAgent.value = Agent(id = details.id, name = details.name, avatar = details.avatar)
+        }
         // Visitor messages go the live way from the start; they wait for the
         // agent's acceptance (agentHandoverPending).
         _isLiveChatMode.value = true
         ChatState.setLiveChatMode(true)
 
-        val resumed = _record.value.any {
-            (it is RecordItem.AgentMessage && it.id.startsWith("agent-greeting-")) || it is RecordItem.UserLiveMessage
-        }
         if (resumed) {
             agentPendingHandover = null
             agentHandoverPending = false
@@ -1255,9 +1328,13 @@ object Conferbot {
         liveChatWatchers = listOfNotNull(
             ui?.let {
                 scope.launch {
+                    var wasWaiting = false
                     kotlinx.coroutines.flow.combine(it, _isLiveChatMode) { state, live -> state to live }.collect { (state, live) ->
                         val waiting = state is com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover &&
                             state.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT
+                        // A flow's handover waiting for a person: the 20s waiting signal.
+                        if (waiting && !live && !wasWaiting) handover.flowWaitStarted(nodeFlowEngine?.handoverNodeData)
+                        wasWaiting = waiting && !live
                         if (waiting && !live) {
                             liveChat.startQueuePoll()
                             liveChat.startWaitTimer(nodeFlowEngine?.handoverNodeData, cachedWorkspaceId ?: ChatState.workspaceId)
@@ -1621,12 +1698,24 @@ object Conferbot {
         _agentBot.value?.let { bot ->
             flowStarted = true
             startAgentBotChat(sessionId, bot, nodes)
+            // Restored after a restart: a person (or the wait for one) is
+            // picked back up from the server (live-chat-state).
+            if (restoredConversation) handover.resumeRestored(null)
             return
         }
 
-        // A restored conversation is not replayed from the first node.
+        // A restored conversation is not replayed from the first node. A
+        // live chat, or a handover still in the queue, is picked back up from
+        // the server (live-chat-state) instead of the flow running again.
         if (restoredConversation) {
             flowStarted = true
+            initializeFlowEngine(nodes, edges)
+            observeFlowEngineMessages()
+            val current = nodes.getOrNull(ChatState.currentIndex.value)
+            @Suppress("UNCHECKED_CAST")
+            val type = (current?.get("data") as? Map<String, Any?>)?.get("type")?.toString() ?: current?.get("type")?.toString()
+            val handoverNodeId = current?.get("id")?.toString()?.takeIf { type == com.conferbot.sdk.core.nodes.NodeTypes.HUMAN_HANDOVER }
+            handover.resumeRestored(handoverNodeId)
             return
         }
 
@@ -2393,7 +2482,12 @@ object Conferbot {
         val sessionId = _chatSessionId.value ?: return
         // Finalize analytics before ending chat
         ChatAnalytics.finalizeChatAnalytics()
-        socketClient?.endChat(sessionId)
+        // The server has no visitor end-chat (only an agent ends a live chat,
+        // embed-server handoverHandler.js end-chat). Still in the queue: leave
+        // it, as the web widget does; queue-self-resolve closes only a waiting
+        // ticket, a person on the chat keeps it.
+        if (handover.inWait()) handover.leaveQueue()
+        else socketClient?.emit("queue-self-resolve", JSONObject(com.conferbot.sdk.core.livechat.HandoverState.queueSelfResolvePayload(sessionId)))
     }
 
     /**
@@ -2401,6 +2495,8 @@ object Conferbot {
      */
     fun clearHistory() {
         liveChat.reset()
+        handover.reset()
+        _talkToPersonRetired.value = false
         _record.value = emptyList()
         _chatSessionId.value = null
         _currentAgent.value = null
