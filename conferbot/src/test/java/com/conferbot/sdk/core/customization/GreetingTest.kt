@@ -158,4 +158,19 @@ class GreetingTest {
         val own = c + ("greetingRules" to listOf(rule("id" to "own001", "text" to "Hello again")) + smart)
         assertThat(Greeting.decide(own, Greeting.Facts(returning = false, signedIn = true))!!.text).isEqualTo("Hello again")
     }
+
+    @Test
+    fun `reads ISO dates without java time, which API 21 to 25 lack`() {
+        // 2026-10-16T09:30:00Z
+        val t = 1792143000000L
+        assertThat(Greeting.instant("2026-10-16T09:30:00Z")).isEqualTo(t)
+        assertThat(Greeting.instant("2026-10-16T09:30:00.250Z")).isEqualTo(t + 250)
+        assertThat(Greeting.instant("2026-10-16T13:30:00+04:00")).isEqualTo(t)
+        assertThat(Greeting.instant("2026-10-16T05:30:00-0400")).isEqualTo(t)
+        assertThat(Greeting.instant("2026-10-16T09:30Z")).isEqualTo(t)
+        assertThat(Greeting.instant("2026-10-16")).isEqualTo(1792108800000L)
+        assertThat(Greeting.instant("not a date")).isNull()
+        assertThat(Greeting.instant("")).isNull()
+        assertThat(Greeting.instant(null)).isNull()
+    }
 }
