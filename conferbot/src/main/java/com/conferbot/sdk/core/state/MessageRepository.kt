@@ -134,10 +134,14 @@ class MessageRepository(
      */
     suspend fun addMessage(message: RecordItem) = mutex.withLock {
         withContext(Dispatchers.IO) {
-            // Add to in-memory structures
-            messageIds.add(message.id)
+            // Saved again (a vote, a settled handover line): replaced in place,
+            // never stored twice.
+            val again = message.id in messageIds
+            if (!again) {
+                messageIds.add(message.id)
+                _totalMessageCount++
+            }
             messageCache.put(message.id, message)
-            _totalMessageCount++
 
             // Persist to disk
             persistMessage(message)
@@ -167,7 +171,8 @@ class MessageRepository(
      */
     private fun persistMessage(message: RecordItem) {
         val allMessages = loadAllMessagesFromDisk().toMutableList()
-        allMessages.add(message)
+        val at = allMessages.indexOfFirst { it.id == message.id }
+        if (at >= 0) allMessages[at] = message else allMessages.add(message)
         saveMessagesToDisk(allMessages)
     }
 
@@ -404,7 +409,12 @@ private data class SerializableMessage(
     val deleted: Boolean? = null,
     // agent-message-rich: the rich entry in its server shape
     val rich: Map<String, Any?>? = null,
-    val answered: String? = null
+    val answered: String? = null,
+    // The handover lines (core/livechat/HandoverState.kt)
+    val handover: Boolean? = null,
+    val settled: String? = null,
+    val afterAI: Boolean? = null,
+    val kind: String? = null
 ) {
     private fun agent(): com.conferbot.sdk.models.AgentDetails = com.conferbot.sdk.models.AgentDetails(
         id = agentDetailsId ?: "",
@@ -471,7 +481,9 @@ private data class SerializableMessage(
                 id = id,
                 time = date,
                 text = text ?: "",
-                agentDetails = if (agentDetailsId != null) agent() else null
+                agentDetails = if (agentDetailsId != null) agent() else null,
+                handover = handover == true,
+                settled = settled
             )
             "agent-message-file" -> RecordItem.AgentMessageFile(
                 id = id,
@@ -500,17 +512,14 @@ private data class SerializableMessage(
             "agent-joined-message" -> RecordItem.AgentJoinedMessage(
                 id = id,
                 time = date,
-                agentDetails = com.conferbot.sdk.models.AgentDetails(
-                    id = agentDetailsId ?: "",
-                    name = agentDetailsName ?: "",
-                    email = agentDetailsEmail,
-                    avatar = agentDetailsAvatar
-                )
+                agentDetails = agent(),
+                afterAI = afterAI == true
             )
             "system-message" -> RecordItem.SystemMessage(
                 id = id,
                 time = date,
-                text = text ?: ""
+                text = text ?: "",
+                kind = kind
             )
             else -> RecordItem.SystemMessage(
                 id = id,
@@ -621,7 +630,9 @@ private data class SerializableMessage(
                     agentDetailsId = item.agentDetails.id,
                     agentDetailsName = item.agentDetails.name,
                     agentDetailsEmail = item.agentDetails.email,
-                    agentDetailsAvatar = item.agentDetails.avatar
+                    agentDetailsAvatar = item.agentDetails.avatar,
+                    agentIsAI = item.agentDetails.isAIAgent.takeIf { it },
+                    afterAI = item.afterAI.takeIf { it }
                 )
                 is RecordItem.AgentLeftMessage -> SerializableMessage(
                     id = item.id,
@@ -631,7 +642,9 @@ private data class SerializableMessage(
                     agentDetailsId = item.agentDetails?.id,
                     agentDetailsName = item.agentDetails?.name,
                     agentDetailsEmail = item.agentDetails?.email,
-                    agentDetailsAvatar = item.agentDetails?.avatar
+                    agentDetailsAvatar = item.agentDetails?.avatar,
+                    handover = item.handover.takeIf { it },
+                    settled = item.settled
                 )
                 is RecordItem.UserLiveMessage -> SerializableMessage(
                     id = item.id,
@@ -650,7 +663,8 @@ private data class SerializableMessage(
                     id = item.id,
                     type = "system-message",
                     time = item.time.time,
-                    text = item.text
+                    text = item.text,
+                    kind = item.kind
                 )
             }
         }
