@@ -46,8 +46,10 @@ internal object XmlLook {
 
     private fun px(context: Context, dp: Float) = dp * context.resources.displayMetrics.density
 
-    private fun drawable(context: Context, fill: Int, corners: Corners) = GradientDrawable().apply {
+    private fun drawable(context: Context, fill: Int, corners: Corners, outline: Boolean = false) = GradientDrawable().apply {
         setColor(fill)
+        // The theme's outline round bubbles (cartoon, neo-brutal, sketch...).
+        c.bubbleBorder?.takeIf { outline }?.let { setStroke(px(context, it.width).toInt().coerceAtLeast(1), color(it.color, Color.BLACK)) }
         cornerRadii = floatArrayOf(
             px(context, corners.topLeft), px(context, corners.topLeft),
             px(context, corners.topRight), px(context, corners.topRight),
@@ -59,13 +61,13 @@ internal object XmlLook {
     /** A bot (or agent) bubble: the bot's colour and the web's corners. Keeps the layout's own when not loaded. */
     fun botBubble(view: View) {
         if (!loaded) return
-        view.background = drawable(view.context, color(c.botBubbleColor, Color.parseColor("#0b4eb8")), c.botBubble)
+        view.background = drawable(view.context, color(c.botBubbleColor, Color.parseColor("#0b4eb8")), c.botBubble, outline = true)
         view.backgroundTintList = null
     }
 
     fun userBubble(view: View) {
         if (!loaded) return
-        view.background = drawable(view.context, color(c.userBubbleColor, Color.parseColor("#f0f0f0")), c.userBubble)
+        view.background = drawable(view.context, color(c.userBubbleColor, Color.parseColor("#f0f0f0")), c.userBubble, outline = true)
         view.backgroundTintList = null
     }
 
@@ -79,6 +81,32 @@ internal object XmlLook {
         view.alpha = if (enabled) 1f else 0.5f
         view.isAllCaps = false
     }
+
+    /** The widget theme's surfaces and text (null for classic in light: the layout's own). */
+    val tokens get() = if (loaded) c.theme.tokens else null
+
+    /**
+     * The composer and footer on the theme's surface: the field filled and
+     * outlined as the theme draws it, its text and hint in the theme's ink.
+     */
+    fun composer(root: View, container: View, footer: View, input: android.widget.EditText) {
+        val t = tokens ?: return
+        val surface = color(t.bg, Color.WHITE)
+        // The screen itself too: the strips between the list and the composer.
+        root.setBackgroundColor(surface)
+        container.setBackgroundColor(surface)
+        footer.setBackgroundColor(surface)
+        input.background = GradientDrawable().apply {
+            setColor(color(t.field, surface))
+            setStroke(px(input.context, 1f).toInt().coerceAtLeast(1), color(t.line2, Color.LTGRAY))
+            cornerRadius = px(input.context, minOf(c.fieldRadius, 25f))
+        }
+        input.setTextColor(color(t.ink, Color.BLACK))
+        input.setHintTextColor(color(t.muted, Color.GRAY))
+    }
+
+    /** The send button: the palette's accent when the theme supplied the colours, else the header colour. */
+    fun sendColor(fallback: Int) = if (loaded && c.accentInk != null) color(c.accent, fallback) else headerBg(fallback)
 
     /** Typing dots in the bot's text colour, on the bot's bubble. */
     fun typing(bubble: View, dots: List<View>) {
