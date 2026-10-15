@@ -252,6 +252,20 @@ object Conferbot {
     private val _serverCustomizationMap = MutableStateFlow<Map<String, Any?>>(emptyMap())
     val serverCustomizationMap: StateFlow<Map<String, Any?>> = _serverCustomizationMap.asStateFlow()
 
+    /**
+     * The help centre's categories and recent articles, from
+     * fetched-chatbot-data (core/helpcentre/HelpCentre.kt). Empty while the
+     * owner has it off.
+     */
+    private val _knowledgeBase = MutableStateFlow<com.conferbot.sdk.models.KnowledgeBaseData?>(null)
+    val knowledgeBase: StateFlow<com.conferbot.sdk.models.KnowledgeBaseData?> = _knowledgeBase.asStateFlow()
+
+    /** An article to open in the help centre (an AI source, an article card). */
+    data class HelpArticleRequest(val articleId: String, val title: String?, val fromChat: Boolean, val at: Long = System.nanoTime())
+
+    private val _helpArticleRequest = MutableStateFlow<HelpArticleRequest?>(null)
+    val helpArticleRequest: StateFlow<HelpArticleRequest?> = _helpArticleRequest.asStateFlow()
+
     /** The bot's settings as the web widget applies them (core/customization); defaults until it loads. */
     private val _customizations = MutableStateFlow(com.conferbot.sdk.core.customization.ResolvedCustomizations())
     val customizations: StateFlow<com.conferbot.sdk.core.customization.ResolvedCustomizations> = _customizations.asStateFlow()
@@ -1299,6 +1313,12 @@ object Conferbot {
 
             // Server wraps chatbot data inside a 'chatbotData' key
             val chatbotData = data.optJSONObject("chatbotData") ?: data
+
+            // The help centre: categories and recent articles, no bodies.
+            _knowledgeBase.value = com.conferbot.sdk.core.helpcentre.HelpCentre.parse(
+                data.optJSONObject("knowledgeBaseData")?.let { jsonObjectToMap(it) },
+                chatbotData.optJSONObject("customizations")?.let { jsonObjectToMap(it) }
+            )
 
             // Parse elements array: elements is an array with one object containing nodes and edges
             val elementsArray = chatbotData.optJSONArray("elements")
@@ -2904,16 +2924,38 @@ object Conferbot {
             _knowledgeBaseService = KnowledgeBaseService(
                 socketClient = socket,
                 visitorId = visitorId,
-                chatSessionId = sessionId
-            ).also { it.initialize() }
+                chatSessionId = sessionId,
+                chatbotId = botId ?: "",
+                knowledgeBase = knowledgeBase
+            )
         }
 
         return _knowledgeBaseService
     }
 
+    /** Is the help centre on, with something published (enableKnowledgeBase)? */
+    val isHelpCentreOn: Boolean
+        get() = com.conferbot.sdk.core.helpcentre.HelpCentre.visible(_serverCustomizationMap.value, _knowledgeBase.value)
+
     /**
-     * Fetch Knowledge Base data
-     * Triggers socket event to fetch categories and articles
+     * Open a help centre article by id in the chat's help centre (the web's
+     * openArticle). False, and nothing opens, while the help centre is off.
+     * [title] names an article the payload does not list; its body loads on open.
+     */
+    fun openHelpArticle(articleId: String, title: String? = null, fromChat: Boolean = true): Boolean {
+        if (!com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(_serverCustomizationMap.value, _knowledgeBase.value, articleId)) return false
+        _helpArticleRequest.value = HelpArticleRequest(articleId, title, fromChat)
+        return true
+    }
+
+    /** The help centre took the open request. */
+    fun consumeHelpArticleRequest(request: HelpArticleRequest) {
+        if (_helpArticleRequest.value == request) _helpArticleRequest.value = null
+    }
+
+    /**
+     * The help centre comes with the bot's data, so there is nothing to ask
+     * for; kept for existing callers.
      */
     fun fetchKnowledgeBase() {
         initKnowledgeBaseService()?.fetchKnowledgeBase()
