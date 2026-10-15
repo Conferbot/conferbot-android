@@ -1,9 +1,8 @@
 package com.conferbot.sdk.services
 
 import android.util.Log
+import com.conferbot.sdk.core.helpcentre.HelpCentre
 import com.conferbot.sdk.models.*
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import io.socket.emitter.Emitter
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -11,48 +10,66 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.coroutines.resume
 
 /**
- * Knowledge Base Service
+ * Knowledge Base Service: the help centre's data and the calls it makes.
  *
- * Handles all knowledge base operations including:
- * - Fetching articles and categories
- * - Searching articles
- * - Tracking article views and engagement
- * - Rating articles
+ * The categories and articles come with the bot's data (socket
+ * `fetched-chatbot-data` -> `knowledgeBaseData`, see core/helpcentre/HelpCentre.kt)
+ * and are handed in as [knowledgeBase]; nothing is asked for to list them.
+ * An article's body is fetched when it opens (`get-kb-article`), once per
+ * session, and search adds the server's matches inside article text
+ * (`search-kb-articles`), as the web widget does (ts/knowledgeBase/kbContent.ts).
+ * Views, reading and votes go to `track-article-view`,
+ * `track-article-engagement` and `rate-article`.
  */
 class KnowledgeBaseService(
     private val socketClient: SocketClient,
     private val visitorId: String,
-    private val chatSessionId: String
+    private val chatSessionId: String,
+    private val chatbotId: String = "",
+    knowledgeBase: StateFlow<KnowledgeBaseData?> = MutableStateFlow(null)
 ) {
     companion object {
         private const val TAG = "KnowledgeBaseService"
 
-        // Socket events
-        const val EVENT_GET_KB_DATA = "get-knowledge-base-data"
-        const val EVENT_KB_DATA_RECEIVED = "knowledge-base-data"
+        // Socket events (embed-server src/socket/handlers/chatbotHandler.js)
+        const val EVENT_GET_ARTICLE = "get-kb-article"
+        const val EVENT_SEARCH_ARTICLES = "search-kb-articles"
         const val EVENT_TRACK_ARTICLE_VIEW = "track-article-view"
         const val EVENT_TRACK_ARTICLE_ENGAGEMENT = "track-article-engagement"
         const val EVENT_RATE_ARTICLE = "rate-article"
         const val EVENT_ARTICLE_RATED = "article-rated"
-        const val EVENT_SEARCH_ARTICLES = "search-articles"
-        const val EVENT_SEARCH_RESULTS = "search-results"
+
+        private const val FETCH_TIMEOUT_MS = 8_000L
+        private const val SEARCH_TIMEOUT_MS = 5_000L
     }
 
-    private val gson = Gson()
-
-    // State
-    private val _knowledgeBaseData = MutableStateFlow<KnowledgeBaseData?>(null)
-    val knowledgeBaseData: StateFlow<KnowledgeBaseData?> = _knowledgeBaseData.asStateFlow()
+    /** Categories, recent articles: from the bot's data. */
+    val knowledgeBaseData: StateFlow<KnowledgeBaseData?> = knowledgeBase
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    // articleId -> body HTML, for the session.
+    private val _bodies = MutableStateFlow<Map<String, String>>(emptyMap())
+    val articleBodies: StateFlow<Map<String, String>> = _bodies.asStateFlow()
+
+    // Articles whose body could not be loaded (the view says so instead of spinning).
+    private val _failedBodies = MutableStateFlow<Set<String>>(emptySet())
+    val failedBodies: StateFlow<Set<String>> = _failedBodies.asStateFlow()
+
+    private val inflight = mutableSetOf<String>()
+    private val remoteSearches = mutableMapOf<String, List<KnowledgeBaseArticle>>()
 
     // Track viewed and rated articles in session
     private val viewedArticlesInSession = mutableSetOf<String>()
@@ -61,9 +78,6 @@ class KnowledgeBaseService(
     // Current article engagement tracking
     private var currentEngagement: ArticleEngagementState? = null
 
-    /**
-     * Internal engagement tracking state
-     */
     private data class ArticleEngagementState(
         val articleId: String,
         val startTime: Long,
@@ -71,168 +85,73 @@ class KnowledgeBaseService(
         var isCompleted: Boolean = false
     )
 
-    /**
-     * Initialize service and setup socket listeners
-     */
-    fun initialize() {
-        setupSocketListeners()
-    }
-
-    /**
-     * Setup socket event listeners
-     */
-    private fun setupSocketListeners() {
-        socketClient.on(EVENT_KB_DATA_RECEIVED, Emitter.Listener { args ->
-            handleKnowledgeBaseData(args)
-        })
-
-        socketClient.on(EVENT_ARTICLE_RATED, Emitter.Listener { args ->
-            handleArticleRated(args)
-        })
-
-        socketClient.on(EVENT_SEARCH_RESULTS, Emitter.Listener { args ->
-            handleSearchResults(args)
-        })
-    }
-
-    /**
-     * Handle received knowledge base data
-     */
-    private fun handleKnowledgeBaseData(args: Array<Any>) {
-        try {
-            val data = args.firstOrNull() as? JSONObject ?: return
-            Log.d(TAG, "Received KB data: $data")
-
-            val categoriesJson = data.optJSONArray("categories")
-            val isEnabled = data.optBoolean("enableKnowledgeBase", false)
-
-            if (categoriesJson != null) {
-                val categories = mutableListOf<KnowledgeBaseCategory>()
-
-                for (i in 0 until categoriesJson.length()) {
-                    val categoryJson = categoriesJson.getJSONObject(i)
-                    val category = parseCategoryFromJson(categoryJson)
-                    categories.add(category)
-                }
-
-                _knowledgeBaseData.value = KnowledgeBaseData(
-                    categories = categories,
-                    isEnabled = isEnabled
-                )
-            }
-
-            _isLoading.value = false
-            _error.value = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error parsing KB data", e)
-            _error.value = "Failed to load knowledge base"
-            _isLoading.value = false
-        }
-    }
-
-    /**
-     * Parse category from JSON
-     */
-    private fun parseCategoryFromJson(json: JSONObject): KnowledgeBaseCategory {
-        val articlesJson = json.optJSONArray("articles")
-        val articles = mutableListOf<KnowledgeBaseArticle>()
-
-        if (articlesJson != null) {
-            for (i in 0 until articlesJson.length()) {
-                val articleJson = articlesJson.getJSONObject(i)
-                val article = parseArticleFromJson(articleJson)
-                articles.add(article)
-            }
-        }
-
-        return KnowledgeBaseCategory(
-            id = json.optString("_id"),
-            name = json.optString("name"),
-            description = json.optString("description", ""),
-            icon = json.optString("icon", null),
-            articles = articles,
-            order = json.optInt("order", 0),
-            isActive = json.optBoolean("isActive", true)
-        )
-    }
-
-    /**
-     * Parse article from JSON
-     */
-    private fun parseArticleFromJson(json: JSONObject): KnowledgeBaseArticle {
-        val authorJson = json.optJSONObject("author")
-        val author = authorJson?.let {
-            ArticleAuthor(
-                id = it.optString("_id"),
-                name = it.optString("name"),
-                email = it.optString("email", null),
-                avatar = it.optString("avatar", null),
-                title = it.optString("title", null)
-            )
-        }
-
-        val tagsJson = json.optJSONArray("tags")
-        val tags = mutableListOf<String>()
-        if (tagsJson != null) {
-            for (i in 0 until tagsJson.length()) {
-                tags.add(tagsJson.getString(i))
-            }
-        }
-
-        return KnowledgeBaseArticle(
-            id = json.optString("_id"),
-            title = json.optString("title"),
-            content = json.optString("content"),
-            description = json.optString("description", null),
-            categoryId = json.optString("categoryId", null),
-            categoryName = json.optString("categoryName", null),
-            coverImage = json.optString("coverImage", null),
-            tags = tags,
-            author = author,
-            viewCount = json.optInt("viewCount", 0),
-            helpfulCount = json.optInt("helpfulCount", 0),
-            notHelpfulCount = json.optInt("notHelpfulCount", 0),
-            rating = json.optDouble("rating", 0.0).toFloat(),
-            isPublished = json.optBoolean("isPublished", true),
-            order = json.optInt("order", 0)
-        )
-    }
-
-    /**
-     * Handle article rated response
-     */
-    private fun handleArticleRated(args: Array<Any>) {
-        val data = args.firstOrNull() as? JSONObject ?: return
-        val success = data.optBoolean("success", false)
-        val articleId = data.optString("articleId")
-
-        if (success && articleId.isNotEmpty()) {
-            Log.d(TAG, "Article $articleId rated successfully")
-        }
-    }
-
-    /**
-     * Handle search results
-     */
-    private fun handleSearchResults(args: Array<Any>) {
-        // Search results are handled via callback flow
-    }
+    /** Kept for callers of the old API: there is nothing to listen for. */
+    fun initialize() {}
 
     // ==================== Public API ====================
 
     /**
-     * Fetch all categories with articles
+     * The help centre arrives with the bot's data; there is no separate
+     * request (the old `get-knowledge-base-data` had no server handler).
+     * Kept so existing callers still compile.
      */
     fun fetchKnowledgeBase() {
-        _isLoading.value = true
+        _isLoading.value = false
         _error.value = null
+    }
 
-        val data = JSONObject().apply {
-            put("visitorId", visitorId)
-            put("sessionId", chatSessionId)
+    /**
+     * The article's body: the inline one, the cached one, or fetched now
+     * with `get-kb-article`. [articleBodies] gets it, or [failedBodies] the id.
+     */
+    fun loadArticleBody(articleId: String) {
+        if (articleId.isBlank()) return
+        val inline = knowledgeBaseData.value?.getArticleById(articleId)?.content
+        if (inline != null) {
+            _bodies.value = _bodies.value + (articleId to inline)
+            return
         }
+        synchronized(inflight) {
+            if (_bodies.value.containsKey(articleId) || !inflight.add(articleId)) return
+        }
+        _failedBodies.value = _failedBodies.value - articleId
+        val payload = JSONObject().apply {
+            put("chatbotId", chatbotId)
+            put("articleId", articleId)
+        }
+        socketClient.emitWithAck(EVENT_GET_ARTICLE, payload, FETCH_TIMEOUT_MS) { reply ->
+            synchronized(inflight) { inflight.remove(articleId) }
+            val article = HelpCentre.parseArticleReply((reply as? JSONObject)?.let { toMap(it) })
+            val body = article?.content
+            if (body != null) {
+                _bodies.value = _bodies.value + (articleId to body)
+            } else {
+                Log.w(TAG, "No body for article $articleId")
+                _failedBodies.value = _failedBodies.value + articleId
+            }
+        }
+    }
 
-        socketClient.emit(EVENT_GET_KB_DATA, data)
+    /** The article with its body when it has arrived. */
+    fun withBody(article: KnowledgeBaseArticle): KnowledgeBaseArticle =
+        _bodies.value[article.id]?.let { article.copy(content = it) } ?: article
+
+    /** Matches inside article text from the server; null on failure (not cached). */
+    private suspend fun remoteSearch(query: String): List<KnowledgeBaseArticle>? {
+        val key = query.trim().lowercase()
+        if (key.length < 2) return emptyList()
+        remoteSearches[key]?.let { return it }
+        val payload = JSONObject().apply {
+            put("chatbotId", chatbotId)
+            put("query", key)
+            put("limit", 10)
+        }
+        val reply = suspendCancellableCoroutine<Any?> { cont ->
+            socketClient.emitWithAck(EVENT_SEARCH_ARTICLES, payload, SEARCH_TIMEOUT_MS) { if (cont.isActive) cont.resume(it) }
+        }
+        val hits = HelpCentre.parseSearchReply((reply as? JSONObject)?.let { toMap(it) }) ?: return null
+        remoteSearches[key] = hits
+        return hits
     }
 
     /**
@@ -254,15 +173,20 @@ class KnowledgeBaseService(
     }
 
     /**
-     * Search articles locally (client-side search)
+     * Search: titles, descriptions, tags (and bodies already here) at once,
+     * then the server's matches inside article text added after them.
      */
-    fun searchArticles(query: String): Flow<List<KnowledgeBaseArticle>> {
-        return knowledgeBaseData.map { data ->
-            if (query.isBlank()) {
-                emptyList()
-            } else {
-                data?.searchArticles(query)?.map { it.article } ?: emptyList()
-            }
+    fun searchArticles(query: String): Flow<List<KnowledgeBaseArticle>> = flow {
+        if (query.isBlank()) {
+            emit(emptyList())
+            return@flow
+        }
+        val data = knowledgeBaseData.value
+        val local = data?.searchArticles(query)?.map { it.article } ?: emptyList()
+        emit(local)
+        if (query.trim().length >= 2) {
+            val remote = remoteSearch(query)
+            if (!remote.isNullOrEmpty()) emit(HelpCentre.mergeSearch(local, remote, data))
         }
     }
 
@@ -450,8 +374,19 @@ class KnowledgeBaseService(
      */
     fun dispose() {
         sendCurrentEngagement()
-        socketClient.off(EVENT_KB_DATA_RECEIVED)
-        socketClient.off(EVENT_ARTICLE_RATED)
-        socketClient.off(EVENT_SEARCH_RESULTS)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun toMap(json: JSONObject): Map<String, Any?> {
+        val out = mutableMapOf<String, Any?>()
+        json.keys().forEach { k -> val key = k as String; out[key] = plain(json.opt(key)) }
+        return out
+    }
+
+    private fun plain(v: Any?): Any? = when (v) {
+        is JSONObject -> toMap(v)
+        is JSONArray -> (0 until v.length()).map { plain(v.opt(it)) }
+        JSONObject.NULL -> null
+        else -> v
     }
 }
