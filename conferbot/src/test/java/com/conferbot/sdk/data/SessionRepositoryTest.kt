@@ -233,7 +233,7 @@ class SessionRepositoryTest {
         repository.updateCurrentIndex(sessionId, 10)
 
         // Then
-        coVerify { chatSessionDao.updateCurrentIndex(sessionId, 10) }
+        coVerify { chatSessionDao.updateCurrentIndex(sessionId, 10, any()) }
     }
 
     @Test
@@ -246,7 +246,7 @@ class SessionRepositoryTest {
         repository.deactivateSession(sessionId)
 
         // Then
-        coVerify { chatSessionDao.updateActiveStatus(sessionId, false) }
+        coVerify { chatSessionDao.updateActiveStatus(sessionId, false, any()) }
     }
 
     @Test
@@ -259,7 +259,7 @@ class SessionRepositoryTest {
         repository.touchSession(sessionId)
 
         // Then
-        coVerify { chatSessionDao.touch(sessionId) }
+        coVerify { chatSessionDao.touch(sessionId, any()) }
     }
 
     @Test
@@ -293,7 +293,7 @@ class SessionRepositoryTest {
 
         // Then
         coVerify { messageDao.insert(any()) }
-        coVerify { chatSessionDao.touch(sessionId) }
+        coVerify { chatSessionDao.touch(sessionId, any()) }
     }
 
     @Test
@@ -463,7 +463,7 @@ class SessionRepositoryTest {
         repository.updateUserMetadataField(sessionId, "name", "Jane")
 
         // Then
-        coVerify { userMetadataDao.updateName(sessionId, "Jane") }
+        coVerify { userMetadataDao.updateName(sessionId, "Jane", any()) }
     }
 
     @Test
@@ -476,7 +476,7 @@ class SessionRepositoryTest {
         repository.updateUserMetadataField(sessionId, "email", "jane@example.com")
 
         // Then
-        coVerify { userMetadataDao.updateEmail(sessionId, "jane@example.com") }
+        coVerify { userMetadataDao.updateEmail(sessionId, "jane@example.com", any()) }
     }
 
     @Test
@@ -489,7 +489,7 @@ class SessionRepositoryTest {
         repository.updateUserMetadataField(sessionId, "phone", "+9876543210")
 
         // Then
-        coVerify { userMetadataDao.updatePhone(sessionId, "+9876543210") }
+        coVerify { userMetadataDao.updatePhone(sessionId, "+9876543210", any()) }
     }
 
     @Test
@@ -507,7 +507,7 @@ class SessionRepositoryTest {
         repository.updateUserMetadataField(sessionId, "company", "Acme Inc")
 
         // Then
-        coVerify { userMetadataDao.updateCustomData(sessionId, any()) }
+        coVerify { userMetadataDao.updateCustomData(sessionId, any(), any()) }
     }
 
     @Test
