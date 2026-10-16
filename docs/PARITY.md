@@ -49,9 +49,9 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - Tests: `HandoverStateTest` 16, `HandoverWaitingTest` 5, `HandoverLifecycleTest` 12, `ReplyTimeTest` 7, `HandoverPayloadTest` 3, `LiveChatTest` +1.
    - Checked on the emulator against the local embed-server with a node script playing the agent (temp bot, handover email off, deleted after): wait card and Cancel (the ticket closed `self_service`, `handoverData.enableHandoverEmail: false`), header reply time, agent joined with the header still the bot, the Connecting line, its settled outcome with the note, and a restart while live (live again, one ticket, agent messages arrive).
    - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. No requeued / transferred lines (#44). #63: Clear History draws flow messages twice (found during the check).
-4. **Flow nodes (#29-#34, #48, #54, #64-#67): done, ported from RN.** See "Flow nodes" below.
+4. **Flow nodes (#29-#34, #48, #54, #64-#67): done, ported from RN, with a Compose card for every step.** See "Flow nodes" below.
 5. The rest of the list below.
-6. **XML gaps:** initials avatar and the wave typing style.
+6. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
 7. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
    - `SessionPersistenceManagerTest` (27) and 2 of `MemoryManagerTest` already failed before the flow work: their setup touches `ChatState` without `Dispatchers.setMain`.
@@ -79,7 +79,12 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
   - GPT is `POST /api/v1/bot/:id/gpt` `{nodeId, transcript}`; AI route / extract and KB answer are `ai/route`, `ai/extract`, `kb/answer`; OTP `otp/send|verify`; payment `pay/start|status`; address `geo/search`; uploads `media`. The origin is the socket server (`Conferbot.serverOrigin`).
   - stripe-node shows the link and moves on after 500 ms; payment-node is the gate.
   - The handover step asks its pre-chat questions in the composer, then sends the record and `initiate-handover`; on `no-agents-available` it says the fallback and, with `chatLeaveMessage` off, carries on.
-- **Native UI still missing (#48):** the rich steps draw through the existing cards: consent, dynamic choices, product card, payment and navigate as choices; slider as the range; date/time as the calendar; ranking as multiple choice; OTP, AI, KB, signature and address as the text box; matrix as the multiple-questions card. A drawn signature, the address results list, opening a link or Checkout from a choice, and a real matrix grid need native cards.
+- **Step cards (#48), Compose:** every waiting step has its web card (`ui/compose/steps/`): consent with links, OTP (digit boxes, resend countdown, skip, change email), address (suggestions, confirm, by hand), signature (Canvas pad, trimmed PNG, typed), matrix grid, ranking, slider, date/time, calendar slots, payment (Pay now / I've paid / Cancel), carousel and product card (link buttons open, Continue when only links), navigate (links open, Done), image choice with its images.
+  - The engine stamps each waiting UI state with `NodeUIState.step` (`StepInfo`: type, settings, the handler's extras, the card's refusal, the visit). Handlers add what only they know: the OTP stage, where the code went and the resend wait; the address results; the payment's Checkout, amount and whether it is open; the calendar's open days.
+  - The cards answer with `core/flow/FlowStepAnswer` through `Conferbot.answerStep` / `NodeFlowEngine.submitStepResponse`; the step's own reply lines come back on `NodeFlowEngine.visitorLines` and are the visitor's bubbles.
+  - A refusal keeps the card's draft (state is kept per visit) and shows its reason on the card, not in the banner. The composer is hidden under OTP, address and signature. The card stays in view as it grows.
+  - Tested: `FlowStepViewAnswerTest` plays each step's fixtures as its card sends them (same builders, same card state, only what the card offers) and the QA tour; plus the card state (RankingOrder, MatrixPicks), OTP helpers, the month grid, date rules, base64 and the signature trim. No Robolectric in this project, so the composables themselves were checked on the emulator.
+  - **XML gaps:** the XML Views chat still draws these steps with its generic cards (choices, the range, the calendar, text input).
 - **Left:** webhook-node still runs from the device, in the background (the spec says webOnly); hidden-fields has no page in an app unless `NodeFlowEngine.Config.pageUrl` is set; the google-calendar "book" picker waits for the server.
 
 ## How to test
@@ -87,7 +92,7 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
 - **Unit tests:**
   - Run one class at a time: `sh ./gradlew :conferbot:testDebugUnitTest --tests 'com.conferbot.sdk.core.customization.*' --no-daemon -q`.
   - Results are in `conferbot/build/test-results/testDebugUnitTest/`.
-  - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes").
+  - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes"); the step cards' answers: `--tests '*FlowStepViewAnswerTest'`.
 - **Example app:**
   - To point it at a local server, add `baseUrl = "http://10.0.2.2:8001/api/v1/mobile/", socketUrl = "http://10.0.2.2:8001"` to `ExampleApplication.kt`.
   - Build with `sh ./gradlew :example:assembleDebug`. Package `com.conferbot.example`.
@@ -95,6 +100,8 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
   - The launcher activity is `.ui.xml.MainActivity`. On a 1080x2400 Pixel, "Open Chat (Compose)" is at (540,833); (538,968) is "Identify Test User", which signs the visitor in and so silences the greeting.
   - `uiautomator dump` hangs on the Compose screen (the launcher's motion never idles); wait with a sleep instead.
   - The emulator may come up with no network: `adb reverse tcp:8001 tcp:8001` and `http://127.0.0.1:8001` instead of 10.0.2.2. A temp bot copied from 6ab686f8d47ff029b76892f7 needs `version: "v2"` and no `creationType` (an `ai_agent` copy loads as an agent bot).
+  - Step cards on a device: the rich steps call the bot server (`otp/send`, `pay/start`, `ai/*`, `kb/answer`, `geo/search`, `media`), so stub them in a temporary example-app hook (a `FlowApi` put in front of the engine's) to send no real e-mail, OTP, payment or AI request. `adb shell input text` drops characters into Compose fields when sent in one go: type a character at a time.
+  - Android's regex engine refuses a literal `}` that the JVM tests accept (#70): escape it in every pattern.
   - Revert the example before committing.
 
 ## The goal
@@ -121,6 +128,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | Celebrations / reactions | todo | todo | todo | todo |
 | Reply-time wording (header) | done | done (#28) | todo | todo |
 | Flow nodes: shared spec, 156 fixtures | 156/156 | 156/156 | todo | todo |
+| Flow step cards (every waiting step answered as on the web) | done | done in Compose (#48); XML generic | done | done |
 | Handover lifecycle (Connecting line, outcomes, waiting signals, leave queue, restore) | done | done (#24-#27, #37) | todo | todo |
 
 Live chat / agent features (handover, queue card, receipts, rating, files, prefill, max-wait timeout, agent bot replies, suggestion chips) are done in all 4.
