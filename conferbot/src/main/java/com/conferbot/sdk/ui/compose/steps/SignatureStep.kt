@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.flow.FlowRich
-import com.conferbot.sdk.core.flow.FlowRich.t
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.nodes.NodeUIState
 import java.io.ByteArrayOutputStream
@@ -131,7 +131,7 @@ fun SignatureStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, se
                     .background(Color.White)
                     .border(1.dp, if (!step.error.isNullOrEmpty() && strokes.isEmpty()) StepLook.ERROR_LINE else style.text.copy(alpha = 0.22f), shape)
                     .onSizeChanged { pad = it }
-                    .semantics { contentDescription = t("signature.pad") }
+                    .semantics { contentDescription = t("sdk.signature.pad") }
                     // Every stroke from the finger's first touch (a dot when it does not move).
                     .pointerInput(step.visit, busy) {
                         if (busy) return@pointerInput
