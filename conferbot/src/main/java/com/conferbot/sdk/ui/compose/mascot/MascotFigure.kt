@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.mascot
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.graphics.Canvas
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
@@ -248,7 +249,7 @@ fun Mascot(
 ) {
     val reduced = rememberReducedMotion()
     val layers = rememberMascotLayers(accent, arm, look, bust)
-    val name = look.name.ifEmpty { MascotArt.DEFAULT_NAMES[look.shape] ?: "Mascot" }
+    val name = look.name.ifEmpty { MascotArt.DEFAULT_NAMES[look.shape] ?: I18n.t("sdk.mascot.name") }
     MascotMoodFigure(
         layers = layers,
         look = look,
