@@ -24,7 +24,11 @@ data class QueueStatus(
     val position: Int?,
     val ahead: Int?,
     val agentsOnline: Int?,
-    val estimateLabel: String?
+    val estimateLabel: String?,
+    /** The server's estimate bucket (under_minute, about_1 ... longer), worded here. */
+    val estimateBucket: String? = null,
+    /** The routed team's usual first reply (embed-server replyTimeService): {bucket, phrase, wait}. */
+    val typical: Map<String, Any?>? = null
 )
 
 data class HandoverWaiting(
@@ -73,7 +77,36 @@ object LiveChat {
         raw ?: return null
         val status = (raw["status"] as? String)?.takeIf { it == "waiting" || it == "busy" } ?: return null
         val estimate = raw["estimate"] as? Map<*, *>
-        return QueueStatus(status, num(raw["position"]), num(raw["ahead"]), num(raw["agentsOnline"]), str(estimate?.get("label")))
+        @Suppress("UNCHECKED_CAST")
+        val typical = (raw["typical"] as? Map<*, *>)?.let { it as Map<String, Any?> }
+        return QueueStatus(status, num(raw["position"]), num(raw["ahead"]), num(raw["agentsOnline"]), str(estimate?.get("label")), estimate?.get("bucket") as? String, typical)
+    }
+
+    // The server's estimate buckets (embed-server liveChat/queueService), worded here (web queueCard.ts ESTIMATE_WORDS).
+    private val ESTIMATE_WORDS = mapOf(
+        "under_minute" to "queue.estimate.underMinute",
+        "about_1" to "queue.estimate.about1",
+        "about_2" to "queue.estimate.about2",
+        "about_3" to "queue.estimate.about3",
+        "few" to "queue.estimate.few",
+        "longer" to "queue.estimate.longer"
+    )
+
+    /** The wait card's lines under the headline: the estimate (or the usual wait, or a calm promise), and the usual wait again under a live estimate. */
+    data class WaitLines(val estimate: String, val typical: String)
+
+    /**
+     * The wait card's lines (web queueCard.ts estimateText and the card's
+     * third line): the live estimate in the visitor's language, else the usual
+     * wait ("Typical wait: a few minutes", ReplyTime.typicalWait), else a calm
+     * promise; then the usual wait again under a live estimate, when it says
+     * something else.
+     */
+    fun waitCardLines(q: QueueStatus?, typical: String?): WaitLines {
+        val estimate = if (q != null && q.status == "waiting" && q.estimateLabel != null) {
+            q.estimateBucket?.let { ESTIMATE_WORDS[it] }?.let { t(it) } ?: q.estimateLabel
+        } else typical ?: t("queue.soon")
+        return WaitLines(estimate, if (typical != null && estimate != typical) typical else "")
     }
 
     /** "1st", "2nd", "3rd", "11th" */
