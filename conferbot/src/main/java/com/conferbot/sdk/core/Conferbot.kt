@@ -1745,9 +1745,34 @@ object Conferbot {
                 addMessageToRecord(RecordItem.BotMessage(id = "flow-${ui.nodeId}-${System.nanoTime()}", time = java.util.Date(), text = text))
             }
         }
+        // The visitor's reply to a step card (its own line: "Agreed to Terms").
+        scope.launch {
+            nodeFlowEngine?.visitorLines?.collect { line ->
+                // A signature's line carries its link; the bubble just says so.
+                val text = if (line.startsWith("Signed: ")) "Signed" else line
+                if (text.isNotBlank()) addMessageToRecord(RecordItem.UserInputResponse(id = "step-reply-${System.nanoTime()}", time = java.util.Date(), text = text))
+            }
+        }
+        // The question is said once per visit to the step, not again when an
+        // answer is refused or the card moves on a stage (an OTP's code).
+        var askedVisit: String? = null
         scope.launch {
             nodeFlowEngine?.currentUIState?.collectLatest { uiState ->
                 if (uiState == null) return@collectLatest
+                uiState.step?.let { st ->
+                    // A card: once per visit. A typed question: once per question
+                    // (ask-multiple asks several in one visit).
+                    val at = if (com.conferbot.sdk.core.flow.FlowStepCards.cardStep(uiState) != null) "${st.visit}"
+                        else "${st.visit}|${(uiState as? NodeUIState.TextInput)?.questionText}"
+                    if (askedVisit == at) return@collectLatest
+                    askedVisit = at
+                }
+                // A step drawn by its own card: its question as the bot's line above it.
+                com.conferbot.sdk.core.flow.FlowStepCards.cardStep(uiState)?.let { st ->
+                    val q = com.conferbot.sdk.core.flow.FlowStepCards.question(st)?.let { com.conferbot.sdk.core.nodes.handlers.FlowKit.shownText(it) }
+                    if (!q.isNullOrBlank()) addMessageToRecord(RecordItem.BotMessage(id = "flow-q-${System.nanoTime()}", time = java.util.Date(), text = stripHtml(q)))
+                    return@collectLatest
+                }
 
                 val botMessage: RecordItem.BotMessage? = when (uiState) {
                     is NodeUIState.Message -> RecordItem.BotMessage(
@@ -2685,6 +2710,17 @@ object Conferbot {
      *
      * @param response The user's response (String, Int, List, or other type depending on node)
      */
+    /**
+     * Answer the waiting step from its own card, in the spec's shape (build it
+     * with core/flow/FlowStepAnswer). Unlike [submitNodeResponse] nothing is
+     * guessed from the answer: the visitor's bubble is the step's own reply
+     * ("Agreed to Terms", "Verified: a@b.io"), and a refused answer leaves
+     * the card in place with its reason.
+     */
+    fun answerStep(response: Any) {
+        nodeFlowEngine?.submitStepResponse(response)
+    }
+
     fun submitNodeResponse(response: Any) {
         // Web widget parity: persist the choice question in the transcript
         // before the answer, so it does not vanish when the node advances.
@@ -2697,6 +2733,9 @@ object Conferbot {
         when (val ui = nodeFlowEngine?.currentUIState?.value) {
             is NodeUIState.SingleChoice -> ui.questionText to ui.choices.map { it.text }
             is NodeUIState.MultipleChoice -> ui.questionText to ui.options.map { it.text }
+            // The image choice's and dropdown's question stays too (drawn only in the card).
+            is NodeUIState.ImageChoice -> ui.questionText to ui.images.map { it.label }
+            is NodeUIState.Dropdown -> ui.questionText to ui.options.map { it.text }
             else -> null
         }?.let { (question, choiceTexts) ->
             addMessageToRecord(RecordItem.BotMessage(
