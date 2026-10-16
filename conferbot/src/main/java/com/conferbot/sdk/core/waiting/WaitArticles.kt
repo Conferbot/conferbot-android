@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.waiting
 
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.livechat.SignalTimer
 
 /**
@@ -35,16 +36,17 @@ object WaitArticles {
     /** "That solved it" waits this long for the server's answer. */
     const val SOLVE_TIMEOUT_MS = 8000L
 
-    const val LABEL = "While you wait"
-    const val TITLE = "While you wait, this might help"
+    // The card's words (web wait.*, handover.articlesTitle, queue.leftHelped), read in the active language.
+    val LABEL: String get() = t("wait.label")
+    val TITLE: String get() = t("wait.title")
     /** Once nobody is waiting any more (web handover.articlesTitle). */
-    const val SETTLED_TITLE = "Articles that might help"
-    const val READ = "Read"
-    const val SOLVED = "That solved it"
-    const val DONE = "Glad that helped. You have left the queue."
+    val SETTLED_TITLE: String get() = t("handover.articlesTitle")
+    val READ: String get() = t("common.read")
+    val SOLVED: String get() = t("wait.solved")
+    val DONE: String get() = t("wait.done")
     /** The line drawn for a queue left this way (web queue.leftHelped). */
-    const val LEFT_HELPED = "You left the queue. Glad that helped."
-    /** What the record keeps (web special.ts leave()). */
+    val LEFT_HELPED: String get() = t("queue.leftHelped")
+    /** What the record keeps (web special.ts leave()): English, for the team. */
     const val RECORD_TEXT = "Resolved while waiting"
 
     // ------------------------------------------------------------ help centre
