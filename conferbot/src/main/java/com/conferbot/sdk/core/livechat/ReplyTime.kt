@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -31,19 +33,20 @@ data class ReplyTimeInfo(
 )
 
 object ReplyTime {
-    const val ONLINE = "Online"
+    /** "Online", in the active language (web status.online). */
+    val ONLINE: String get() = t("status.online")
     private const val SEP = " · "
 
-    /** "The team typically replies <phrase>" */
-    val PHRASES = mapOf(
-        "under_minute" to "in under a minute",
-        "few_minutes" to "in a few minutes",
-        "under_15_minutes" to "in under 15 minutes",
-        "under_hour" to "in under an hour",
-        "few_hours" to "in a few hours",
-        "day" to "within a day",
-        "few_days" to "in a few days"
-    )
+    private val BUCKETS = listOf("under_minute", "few_minutes", "under_15_minutes", "under_hour", "few_hours", "day", "few_days")
+
+    /** "The team typically replies <phrase>", per bucket, read in the active language (web reply.phrase.*). */
+    val PHRASES: Map<String, String> get() = BUCKETS.associateWith { t("reply.phrase.$it") }
+
+    /**
+     * The locale times are written in: the one asked for, else the widget's
+     * language and region ("en-US" for English, as the web).
+     */
+    private fun localeOr(locale: Locale?): Locale = locale ?: if (I18n.language == I18n.EN) Locale.US else I18n.locale
 
     /** customizations.replyTime as the server sends it; null when absent. */
     fun of(raw: Any?): ReplyTimeInfo? {
@@ -76,22 +79,30 @@ object ReplyTime {
      * When the team is back, in the visitor's time: "at 9 AM" (today),
      * "tomorrow 9:30 AM", "Monday 9 AM", "Mon, Oct 12 9 AM".
      */
-    fun backWhen(backAt: String?, now: Date = Date(), locale: Locale = Locale.US, tz: TimeZone = TimeZone.getDefault()): String {
+    fun backWhen(backAt: String?, now: Date = Date(), locale: Locale? = null, tz: TimeZone = TimeZone.getDefault()): String {
         if (backAt.isNullOrBlank()) return ""
         val d = parseIso(backAt) ?: return ""
+        val locale = localeOr(locale)
+        val english = locale.language == "en"
         val cal = Calendar.getInstance(tz, locale).apply { time = d }
         fun fmt(p: String) = SimpleDateFormat(p, locale).apply { timeZone = tz }.format(d)
-        val time = if (cal.get(Calendar.MINUTE) != 0) fmt("h:mm a") else fmt("h a")
+        // English "9 AM" / "9:30 AM"; other languages their own short time ("09:30").
+        val time = when {
+            !english -> java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, locale).apply { timeZone = tz }.format(d)
+            cal.get(Calendar.MINUTE) != 0 -> fmt("h:mm a")
+            else -> fmt("h a")
+        }
         fun dayStart(x: Date): Long = Calendar.getInstance(tz, locale).apply {
             this.time = x
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
         val days = Math.round((dayStart(d) - dayStart(now)) / 86_400_000.0)
         return when {
-            days <= 0 -> "at $time"
-            days == 1L -> "tomorrow $time"
+            days <= 0 -> t("reply.atTime", "time" to time)
+            days == 1L -> "${t("reply.tomorrow")} $time"
             days < 7 -> "${fmt("EEEE")} $time"
-            else -> "${fmt("EEE, MMM d")} $time"
+            english -> "${fmt("EEE, MMM d")} $time"
+            else -> "${fmt("EEE d MMM")} $time"
         }
     }
 
@@ -105,23 +116,23 @@ object ReplyTime {
         rt: ReplyTimeInfo?,
         agent: Boolean = false,
         now: Date = Date(),
-        locale: Locale = Locale.US,
+        locale: Locale? = null,
         tz: TimeZone = TimeZone.getDefault()
     ): String? {
         if (rt == null || rt.mode == "hide" || !rt.handover || agent) return null
         if (rt.state == "away" || rt.state == "offline") {
             val whenBack = backWhen(rt.backAt, now, locale, tz)
             val words = when {
-                whenBack.isNotEmpty() -> "team back $whenBack"
-                rt.leaveMessage == false -> "team away right now"
-                else -> "team replies by email"
+                whenBack.isNotEmpty() -> t("reply.teamBack", "when" to whenBack)
+                rt.leaveMessage == false -> t("reply.teamAwayNow")
+                else -> t("reply.teamByEmail")
             }
             return ONLINE + SEP + words
         }
         val fixed = if (rt.mode == "fixed") rt.text?.trim().orEmpty() else ""
         if (fixed.isNotEmpty()) return fixed
         val words = rt.bucket?.let { PHRASES[it] } ?: rt.phrase.orEmpty()
-        return if (words.isNotEmpty()) "Typically replies $words" else null
+        return if (words.isNotEmpty()) t("reply.typicallyShort", "phrase" to words) else null
     }
 
     /**
@@ -135,7 +146,7 @@ object ReplyTime {
         agentBot: Boolean = false,
         hidden: Boolean = false,
         now: Date = Date(),
-        locale: Locale = Locale.US,
+        locale: Locale? = null,
         tz: TimeZone = TimeZone.getDefault()
     ): String? {
         if (hidden) return null
@@ -145,22 +156,22 @@ object ReplyTime {
 
     // ------------------------------------------------------------ the home card (web homeLine, homePeople)
 
-    /** The home card's words (web ts/i18n/en.ts reply.*). */
+    /** The home card's words (web replyTime.ts STRINGS, reply.*), read in the active language. */
     object Home {
-        fun typically(phrase: String) = "The team typically replies $phrase"
-        fun teamReplies(phrase: String) = "team replies $phrase"
-        const val ANSWERS_INSTANTLY = "Answers instantly"
-        const val ANSWERS_ALWAYS = "Answers instantly, day or night"
-        const val AWAY = "We're away right now"
-        fun back(whenBack: String) = "back $whenBack"
-        const val OFFLINE = "The team is offline"
-        const val BY_EMAIL = "we'll reply by email"
-        const val OFFLINE_NOW = "The team is offline right now"
-        fun usually(phrase: String) = "Usually replies $phrase"
-        const val USUALLY_INSTANTLY = "Usually replies instantly"
-        fun teamBackAt(whenBack: String) = "Team back $whenBack"
-        const val TEAM_REPLIES_BY_EMAIL = "Team replies by email"
-        const val TEAM_AWAY_RIGHT_NOW = "Team away right now"
+        fun typically(phrase: String) = t("reply.typically", "phrase" to phrase)
+        fun teamReplies(phrase: String) = t("reply.teamReplies", "phrase" to phrase)
+        val ANSWERS_INSTANTLY: String get() = t("reply.answersInstantly")
+        val ANSWERS_ALWAYS: String get() = t("reply.answersAlways")
+        val AWAY: String get() = t("reply.away")
+        fun back(whenBack: String) = t("reply.back", "when" to whenBack)
+        val OFFLINE: String get() = t("reply.offline")
+        val BY_EMAIL: String get() = t("reply.byEmail")
+        val OFFLINE_NOW: String get() = t("reply.offlineNow")
+        fun usually(phrase: String) = t("reply.usually", "phrase" to phrase)
+        val USUALLY_INSTANTLY: String get() = t("reply.usuallyInstantly")
+        fun teamBackAt(whenBack: String) = t("reply.teamBackAt", "when" to whenBack)
+        val TEAM_REPLIES_BY_EMAIL: String get() = t("reply.teamRepliesByEmail")
+        val TEAM_AWAY_RIGHT_NOW: String get() = t("reply.teamAwayRightNow")
     }
 
     /** "Online" in the separator the lines use. */
@@ -179,7 +190,7 @@ object ReplyTime {
         rt: ReplyTimeInfo?,
         agent: Boolean = false,
         now: Date = Date(),
-        locale: Locale = Locale.US,
+        locale: Locale? = null,
         tz: TimeZone = TimeZone.getDefault()
     ): HomeLine? {
         if (rt != null && rt.mode == "hide") return if (agent) null else HomeLine(hide = true)
@@ -188,7 +199,7 @@ object ReplyTime {
         val words = fixedOf(rt).ifEmpty { phraseOf(rt) }
         if (agent) {
             // The AI answers whatever the hour; say when people are around.
-            if (rt.state == "away") return HomeLine(Home.ANSWERS_INSTANTLY + (if (whenBack.isNotEmpty()) SEP + "team back $whenBack" else ""), ReplyTone.AWAY)
+            if (rt.state == "away") return HomeLine(Home.ANSWERS_INSTANTLY + (if (whenBack.isNotEmpty()) SEP + t("reply.teamBack", "when" to whenBack) else ""), ReplyTone.AWAY)
             if (rt.state == "offline" || words.isEmpty()) return null
             return HomeLine(Home.ANSWERS_INSTANTLY + SEP + fixedOf(rt).ifEmpty { Home.teamReplies(words) }, ReplyTone.ONLINE)
         }
@@ -216,7 +227,7 @@ object ReplyTime {
         rt: ReplyTimeInfo?,
         agent: Boolean = false,
         now: Date = Date(),
-        locale: Locale = Locale.US,
+        locale: Locale? = null,
         tz: TimeZone = TimeZone.getDefault()
     ): ReplyLine {
         val line = homeLine(rt, agent, now, locale, tz)
