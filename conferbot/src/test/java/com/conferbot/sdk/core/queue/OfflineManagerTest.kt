@@ -79,7 +79,7 @@ class OfflineManagerTest {
     @Test
     fun `initialize starts network monitoring`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
 
         // When
         offlineManager.initialize()
@@ -92,7 +92,7 @@ class OfflineManagerTest {
     @Test
     fun `initialize does nothing when disabled`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = false)
+        offlineManager = manager(enabled = false)
 
         // When
         offlineManager.initialize()
@@ -105,7 +105,7 @@ class OfflineManagerTest {
     @Test
     fun `initialize only runs once`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
 
         // When
         offlineManager.initialize()
@@ -119,8 +119,8 @@ class OfflineManagerTest {
     @Test
     fun `isEnabled returns correct value`() {
         // Given
-        val enabledManager = OfflineManager(context, enabled = true)
-        val disabledManager = OfflineManager(context, enabled = false)
+        val enabledManager = manager(enabled = true)
+        val disabledManager = manager(enabled = false)
 
         // Then
         assertThat(enabledManager.isEnabled()).isTrue()
@@ -132,7 +132,7 @@ class OfflineManagerTest {
     @Test
     fun `queueMessage adds message when enabled`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -149,7 +149,7 @@ class OfflineManagerTest {
     @Test
     fun `queueMessage does not add message when disabled`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = false)
+        offlineManager = manager(enabled = false)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -166,7 +166,7 @@ class OfflineManagerTest {
     @Test
     fun `queueMessage updates pending message count`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -183,7 +183,7 @@ class OfflineManagerTest {
     @Test
     fun `hasPendingMessages returns true when queue has messages`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         offlineManager.queueMessage(createTestMessage("msg-1"))
         advanceUntilIdle()
@@ -195,7 +195,7 @@ class OfflineManagerTest {
     @Test
     fun `hasPendingMessages returns false when queue is empty`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -208,7 +208,7 @@ class OfflineManagerTest {
     @Test
     fun `isOnline reflects network status`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -220,7 +220,7 @@ class OfflineManagerTest {
     @Test
     fun `network status change updates isOnline`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setListener(listener)
         offlineManager.initialize()
         advanceUntilIdle()
@@ -240,7 +240,7 @@ class OfflineManagerTest {
     @Test
     fun `listener notified of online status changes`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setListener(listener)
         offlineManager.initialize()
         advanceUntilIdle()
@@ -260,7 +260,7 @@ class OfflineManagerTest {
     @Test
     fun `queue is processed when coming back online`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         offlineManager.setMessageSender(messageSender)
         advanceUntilIdle()
@@ -289,7 +289,7 @@ class OfflineManagerTest {
     @Test
     fun `listener notified when queue synced`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setListener(listener)
         offlineManager.setMessageSender(messageSender)
         offlineManager.initialize()
@@ -318,7 +318,7 @@ class OfflineManagerTest {
     @Test
     fun `processQueue does nothing when offline`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         var sendCount = 0
         offlineManager.setMessageSender {
             sendCount++
@@ -347,7 +347,7 @@ class OfflineManagerTest {
     @Test
     fun `processQueue does nothing when queue is empty`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         var sendCount = 0
         offlineManager.setMessageSender {
             sendCount++
@@ -368,7 +368,7 @@ class OfflineManagerTest {
     fun `processQueue sends messages when online`() = runTest {
         // Given
         val sentMessages = mutableListOf<QueuedMessage>()
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setMessageSender { message ->
             sentMessages.add(message)
             true
@@ -394,7 +394,7 @@ class OfflineManagerTest {
     @Test
     fun `isSyncing is true during queue processing`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setMessageSender { message ->
             // Verify syncing state during processing
             assertThat(offlineManager.isSyncing.value).isTrue()
@@ -417,7 +417,7 @@ class OfflineManagerTest {
     @Test
     fun `isSyncing StateFlow emits correct values`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setMessageSender { true }
         offlineManager.initialize()
         advanceUntilIdle()
@@ -446,7 +446,7 @@ class OfflineManagerTest {
     @Test
     fun `listener notified when message fails`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setListener(listener)
         offlineManager.setMessageSender { false } // Always fail
         offlineManager.initialize()
@@ -467,7 +467,7 @@ class OfflineManagerTest {
     @Test
     fun `sendMessage returns false when no sender configured`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         // Don't set message sender
         offlineManager.initialize()
         advanceUntilIdle()
@@ -486,7 +486,7 @@ class OfflineManagerTest {
     @Test
     fun `exception in message sender is handled`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setMessageSender { throw RuntimeException("Network error") }
         offlineManager.initialize()
         advanceUntilIdle()
@@ -507,7 +507,7 @@ class OfflineManagerTest {
     @Test
     fun `clearQueue removes all pending messages`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -532,7 +532,7 @@ class OfflineManagerTest {
     @Test
     fun `clearSessionQueue removes only messages for specific session`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -554,7 +554,7 @@ class OfflineManagerTest {
     @Test
     fun `shutdown stops network monitoring`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.initialize()
         advanceUntilIdle()
 
@@ -569,7 +569,7 @@ class OfflineManagerTest {
     @Test
     fun `shutdown does nothing when not initialized`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         // Don't initialize
 
         // When
@@ -585,7 +585,7 @@ class OfflineManagerTest {
     @Test
     fun `pendingMessageCount StateFlow updates correctly`() = runTest {
         // Given
-        offlineManager = OfflineManager(context, enabled = true)
+        offlineManager = manager(enabled = true)
         offlineManager.setMessageSender { true }
         offlineManager.initialize()
         advanceUntilIdle()
@@ -605,8 +605,7 @@ class OfflineManagerTest {
             offlineManager.processQueue()
             advanceUntilIdle()
 
-            // After processing, count should decrease
-            skipItems(1) // Skip intermediate updates
+            // After processing, count should reach 0 (intermediate counts may be conflated)
             assertThat(expectMostRecentItem()).isEqualTo(0)
 
             cancelAndIgnoreRemainingEvents()
@@ -614,6 +613,17 @@ class OfflineManagerTest {
     }
 
     // ==================== HELPER METHODS ====================
+
+    /**
+     * The manager on the test dispatcher, so advanceUntilIdle drives its work, with a
+     * mocked NetworkRequest because android.net.NetworkRequest.Builder is a JVM stub.
+     */
+    private fun manager(enabled: Boolean) = OfflineManager(
+        context,
+        enabled,
+        NetworkMonitor(context) { mockk<NetworkRequest>(relaxed = true) },
+        testDispatcher
+    )
 
     private fun setupOnlineState() {
         val network = mockk<Network>()
