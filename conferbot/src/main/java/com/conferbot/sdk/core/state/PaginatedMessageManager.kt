@@ -196,6 +196,22 @@ class PaginatedMessageManager(
     }
 
     /**
+     * Remove messages from memory and storage: the rows a rewind ("Edit" on an
+     * answer) cut, so a restored chat matches the server's record (#88).
+     */
+    suspend fun removeMessages(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        try {
+            repository.removeMessages(ids)
+            val gone = ids.toSet()
+            _messages.value = _messages.value.filterNot { it.id in gone }
+            _totalMessageCount.value = repository.totalMessageCount
+        } catch (e: Exception) {
+            _error.value = "Failed to remove messages: ${e.message}"
+        }
+    }
+
+    /**
      * Clear old messages from memory (keep only recent)
      */
     suspend fun clearOldMessages(keepLast: Int = config.maxMemoryMessages) {
