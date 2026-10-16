@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.customization
 
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.customization.Keyframes.jsNum
 import kotlin.math.floor
 import kotlin.math.max
@@ -44,14 +45,9 @@ object LauncherIdleCall {
     /** A greeting on screen gets this long alone before the mascot may call. */
     const val GREETING_FIRST_MS = 15000L
 
-    /** The bubble's line per style (i18n en idle.*). */
-    val LINES = mapOf(
-        "psst" to "Psst!",
-        "peek" to "Hey, over here!",
-        "wave" to "Hi there!",
-        "knock" to "Knock knock!",
-        "tap" to "Got a question?",
-    )
+    /** The bubble's line per style, read in the active language (web i18n idle.*). */
+    val LINES: Map<String, String>
+        get() = listOf("psst", "peek", "wave", "knock", "tap").associateWith { t("idle.$it") }
 
     fun normalize(value: Any?): String = (value as? String)?.takeIf { it in MODES } ?: "off"
 
