@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -137,12 +138,12 @@ fun FilePickerButton(
     ) {
         Icon(
             imageVector = Icons.Default.AttachFile,
-            contentDescription = "Select file",
+            contentDescription = I18n.t("sdk.file.selectTitle"),
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = if (allowMultiple) "Select Files" else "Select File"
+            text = if (allowMultiple) I18n.t("sdk.file.selectMany") else I18n.t("sdk.file.selectTitle")
         )
     }
 }
@@ -231,18 +232,18 @@ fun FilePickerArea(
             ) {
                 Icon(
                     imageVector = Icons.Default.CloudUpload,
-                    contentDescription = "Upload",
+                    contentDescription = I18n.t("sdk.file.upload"),
                     modifier = Modifier.size(40.dp),
                     tint = if (enabled) primaryColor else Color.Gray
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap to upload file",
+                    text = I18n.t("sdk.file.tapToUpload"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (enabled) theme.colors.onSurface else Color.Gray
                 )
                 Text(
-                    text = "Max ${maxSizeMb}MB",
+                    text = I18n.t("sdk.file.maxSize", "mb" to maxSizeMb),
                     style = MaterialTheme.typography.bodySmall,
                     color = theme.colors.onSurfaceVariant
                 )
@@ -301,7 +302,7 @@ fun SelectedFileChip(
             IconButton(onClick = onRemove) {
                 Icon(
                     imageVector = Icons.Default.Folder, // Using folder as close icon placeholder
-                    contentDescription = "Remove file",
+                    contentDescription = I18n.t("sdk.file.remove", "name" to file.name),
                     tint = theme.colors.error
                 )
             }
