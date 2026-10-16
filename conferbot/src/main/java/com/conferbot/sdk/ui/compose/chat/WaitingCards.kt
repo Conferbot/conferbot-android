@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -295,7 +296,7 @@ private fun RpsView(b: Board.Rps, look: GamesLook, reduced: Boolean, act: (GameI
             Text("VS", style = look.text(11.sp, FontWeight.Bold, look.muted).copy(letterSpacing = 0.9.sp))
             Big(b.bot, "bot")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = "Pick your hand" }) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = I18n.t("games.rps.pick") }) {
             b.hands.forEach { h ->
                 Tile(look, Modifier.weight(1f).alpha(if (b.busy) 0.6f else 1f), enabled = !b.busy, label = h.name, onClick = { act(GameInput.Rps(h.hand)) }) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
@@ -312,13 +313,13 @@ private fun RpsView(b: Board.Rps, look: GamesLook, reduced: Boolean, act: (GameI
 @Composable
 private fun TttView(b: Board.Ttt, look: GamesLook, act: (GameInput) -> Unit) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Column(Modifier.widthIn(max = 210.dp).semantics { contentDescription = "Tic-tac-toe board" }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.widthIn(max = 210.dp).semantics { contentDescription = I18n.t("games.ttt.board") }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             for (r in 0 until 3) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (col in 0 until 3) {
                     val i = r * 3 + col
                     val c = b.cells[i]
                     val inLine = i in b.line
-                    val label = "Row ${r + 1}, column ${col + 1}, " + when (c) { "X" -> "yours"; "O" -> "the bot's"; else -> "empty" }
+                    val label = I18n.t("games.ttt.cell", "row" to r + 1, "col" to col + 1, "state" to when (c) { "X" -> I18n.t("games.ttt.yours"); "O" -> I18n.t("games.ttt.bots"); else -> I18n.t("games.ttt.empty") })
                     Tile(
                         look,
                         Modifier.weight(1f).aspectRatio(1f).alpha(if (b.over && !inLine) 0.5f else 1f),
@@ -340,7 +341,7 @@ private fun TttView(b: Board.Ttt, look: GamesLook, act: (GameInput) -> Unit) {
 
 @Composable
 private fun MemoryView(b: Board.Memory, look: GamesLook, act: (GameInput) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = "Memory cards" }) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.semantics { contentDescription = I18n.t("games.memory.cards") }) {
         b.cards.chunked(4).forEachIndexed { r, row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEachIndexed { k, c ->
@@ -353,7 +354,7 @@ private fun MemoryView(b: Board.Memory, look: GamesLook, act: (GameInput) -> Uni
                             .then(if (c.matched) Modifier.border(1.5.dp, lerp(look.card, look.accent, 0.45f), RoundedCornerShape(12.dp)) else Modifier),
                         enabled = !c.matched,
                         color = if (c.up) (if (c.matched) look.soft else look.fill) else look.accent,
-                        label = "Card ${i + 1}, ${if (c.up) c.face else "face down"}${if (c.matched) ", matched" else ""}",
+                        label = I18n.t(if (c.matched) "games.memory.cardMatched" else "games.memory.card", "n" to i + 1, "face" to if (c.up) c.face else I18n.t("games.memory.faceDown")),
                         onClick = { act(GameInput.Memory(i)) }
                     ) {
                         if (c.up) Text(c.face, style = look.text(24.sp))
@@ -378,7 +379,7 @@ private fun ChoiceView(b: Board.Choice, look: GamesLook, act: (GameInput) -> Uni
             Text(
                 it,
                 style = look.text(40.sp, line = 46.sp).copy(textAlign = TextAlign.Center, letterSpacing = 3.sp),
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Emoji: $it" }
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = I18n.t("games.emoji.label", "emoji" to it) }
             )
         }
         Text(
@@ -481,7 +482,7 @@ private fun ScrambleView(b: Board.Scramble, look: GamesLook, reduced: Boolean, a
         Text(b.hint, style = look.text(30.sp, line = 34.sp).copy(textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
         Row(
             Modifier.fillMaxWidth().graphicsLayer { translationX = shakeAt(nudge.value).dp.toPx() }
-                .semantics { contentDescription = "Your word, tap a letter to take it back" },
+                .semantics { contentDescription = I18n.t("games.scramble.slots") },
             horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)
         ) {
             b.letters.indices.forEach { i ->
@@ -496,7 +497,7 @@ private fun ScrambleView(b: Board.Scramble, look: GamesLook, reduced: Boolean, a
                         .background(if (solvedLook) look.accent else if (b.revealed) look.fill else if (filled) look.soft else Color.Transparent)
                         .then(if (solvedLook || b.revealed) Modifier else Modifier.border(1.5.dp, if (filled) lerp(look.card, look.accent, 0.55f) else look.line, shape))
                         .clickable(enabled = filled && !b.solved, role = Role.Button) { act(GameInput.Slot(i)) }
-                        .semantics { contentDescription = if (filled) "Space ${i + 1}, ${b.letters[t!!]}" else "Space ${i + 1}, empty" },
+                        .semantics { contentDescription = if (filled) I18n.t("games.scramble.space", "n" to i + 1, "letter" to b.letters[t!!]) else I18n.t("games.scramble.spaceEmpty", "n" to i + 1) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -506,14 +507,14 @@ private fun ScrambleView(b: Board.Scramble, look: GamesLook, reduced: Boolean, a
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().semantics { contentDescription = "Letters" }, horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
+        Row(Modifier.fillMaxWidth().semantics { contentDescription = I18n.t("games.scramble.letters") }, horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
             b.letters.forEachIndexed { i, letter ->
                 val used = i in b.placed
                 Tile(
                     look,
                     Modifier.size(width = 36.dp, height = 40.dp).alpha(if (used) 0.2f else 1f).graphicsLayer { val s = if (used) 0.9f else 1f; scaleX = s; scaleY = s },
                     enabled = !used && !b.solved,
-                    label = "Letter $letter",
+                    label = I18n.t("games.scramble.letter", "letter" to letter),
                     onClick = { act(GameInput.Tile(i)) }
                 ) { Text(letter, style = look.text(16.sp, FontWeight.Bold)) }
             }
