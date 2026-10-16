@@ -25,6 +25,9 @@ import java.util.TimeZone
  *     body loads on open.
  *  4. Drafts never show: an article without an id, or one that says it is
  *     anything but published, is dropped.
+ *  5. An article the server picked for a wait (`queue-help`) opens anyway:
+ *     in the help centre while it is on, else fetched by id
+ *     (`get-kb-article`) and shown on its own (RN getKBArticle, iOS #83; #75).
  *
  * Where the data comes from: socket `fetched-chatbot-data` carries
  * `knowledgeBaseData: {recentArticles, categories}` without the bodies. A
@@ -52,6 +55,20 @@ object HelpCentre {
     /** Rule 3: may this article open in the help centre? */
     fun canOpen(customizations: Map<String, Any?>?, data: KnowledgeBaseData?, articleId: String?): Boolean =
         visible(customizations, data) && !articleId.isNullOrBlank()
+
+    /** Where an article the server picked for a wait opens (rule 5). */
+    enum class WaitArticleRoute { HELP_CENTRE, BY_ID, NOWHERE }
+
+    /** Rule 5: the help centre while it is on, else fetched by id; nothing without an id. */
+    fun waitArticleRoute(customizations: Map<String, Any?>?, data: KnowledgeBaseData?, articleId: String?): WaitArticleRoute = when {
+        articleId.isNullOrBlank() -> WaitArticleRoute.NOWHERE
+        canOpen(customizations, data, articleId) -> WaitArticleRoute.HELP_CENTRE
+        else -> WaitArticleRoute.BY_ID
+    }
+
+    /** The `get-kb-article` payload: the bot's own published article by id. */
+    fun articleRequest(chatbotId: String?, articleId: String): Map<String, Any?> =
+        mapOf("chatbotId" to chatbotId.orEmpty(), "articleId" to articleId)
 
     /**
      * `knowledgeBaseData` from `fetched-chatbot-data`. Empty while the help
