@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.waiting
 
+import com.conferbot.sdk.core.helpcentre.HelpCentre
 import com.conferbot.sdk.core.livechat.HandoverSocket
 import com.conferbot.sdk.core.livechat.HandoverState
 import com.conferbot.sdk.core.livechat.SignalTimer
@@ -10,6 +11,18 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** A card and where it sits: after the record item [after] (null: at the end). */
 data class PlacedCard<T>(val card: T, val after: String?)
+
+/**
+ * An article the server picked for a wait, fetched by id (`get-kb-article`)
+ * and shown on its own while the help centre is off or does not list it
+ * (#75). [article] is null while it loads; [failed]: it could not be loaded.
+ */
+data class WaitArticleView(
+    val id: String,
+    val title: String?,
+    val article: com.conferbot.sdk.models.KnowledgeBaseArticle? = null,
+    val failed: Boolean = false
+)
 
 /**
  * While the visitor waits for a person, as the web widget has it: the help
@@ -44,6 +57,8 @@ class WaitingExtras(
     private val reducedMotion: () -> Boolean = { false },
     /** A chat that can draw the cards is on screen (the Compose chat). */
     private val canDraw: () -> Boolean = { true },
+    /** The bot's id, for an article fetched by id. */
+    private val botId: () -> String? = { null },
     private val timer: SignalTimer,
     /** Socket callbacks come on the socket's thread: run them where the cards live. */
     private val post: (() -> Unit) -> Unit = { it() },
@@ -157,6 +172,48 @@ class WaitingExtras(
     /** A row of the help card was opened: the article "That solved it" names. */
     fun opened(item: WaitArticles.HelpItem) = waitHelp.open(item.id)
 
+    private val _article = MutableStateFlow<WaitArticleView?>(null)
+    /** The article fetched by id and shown on its own, or null (#75). */
+    val article: StateFlow<WaitArticleView?> = _article.asStateFlow()
+    private var articleSeq = 0
+
+    /**
+     * An article the help centre cannot open (off, or not in its data): ask
+     * the server for the bot's published article by id and show it on its
+     * own (RN useWaitingExtras.openArticle, getKBArticle). An answer for an
+     * article closed or replaced meanwhile is dropped.
+     */
+    fun openArticleById(id: String, title: String? = null) {
+        if (id.isBlank()) return
+        val seq = ++articleSeq
+        _article.value = WaitArticleView(id, title)
+        val s = socket()
+        if (s == null) {
+            _article.value = WaitArticleView(id, title, failed = true)
+            return
+        }
+        s.ask(com.conferbot.sdk.models.SocketEvents.GET_KB_ARTICLE, HelpCentre.articleRequest(botId(), id), ARTICLE_TIMEOUT_MS) { res ->
+            post {
+                if (seq != articleSeq) return@post
+                val a = HelpCentre.parseArticleReply(res)
+                val named = a?.copy(title = a.title.ifBlank { title.orEmpty() })
+                _article.value = WaitArticleView(id, named?.title ?: title, named, failed = named == null)
+            }
+        }
+    }
+
+    /** Try again on an article that could not be loaded. */
+    fun retryArticle() {
+        val a = _article.value ?: return
+        if (a.failed) openArticleById(a.id, a.title)
+    }
+
+    /** Close the article shown on its own. */
+    fun closeArticle() {
+        articleSeq++
+        _article.value = null
+    }
+
     /** An article of the bot's help centre data by id (its category's copy first), or null. */
     fun findArticle(id: String): Map<*, *>? = WaitArticles.findArticle(id, categories, recentArticles)
 
@@ -184,5 +241,12 @@ class WaitingExtras(
         g?.remove()
         _games.value = null
         _help.value = null
+        articleSeq++
+        _article.value = null
+    }
+
+    companion object {
+        /** As the help centre's own body fetch (KnowledgeBaseService). */
+        const val ARTICLE_TIMEOUT_MS = 8_000L
     }
 }
