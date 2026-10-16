@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowCalendar
 import com.conferbot.sdk.core.flow.FlowInputs
 import com.conferbot.sdk.core.flow.FlowInputs.EN
@@ -28,7 +29,8 @@ import com.conferbot.sdk.core.state.RecordEntry
 abstract class BaseAskHandler : BaseNodeHandler() {
     protected abstract val inputType: NodeUIState.TextInput.InputType
     protected abstract val shape: String
-    protected open val placeholder: String = "Type your answer..."
+    // The composer's hints in the active language (web i18n composer.*).
+    protected open val placeholder: String get() = I18n.t("composer.answer")
 
     protected fun ui(nodeData: Map<String, Any?>, nodeId: String) = NodeUIState.TextInput(
         questionText = FlowKit.shownText(nodeData["questionText"]),
@@ -74,7 +76,7 @@ class AskNameNodeHandler : BaseAskHandler() {
     override val nodeType = NodeTypes.ASK_NAME
     override val inputType = NodeUIState.TextInput.InputType.NAME
     override val shape = "user-ask-name-response"
-    override val placeholder = "Your name"
+    override val placeholder: String get() = I18n.t("composer.name")
 
     override suspend fun after(value: String, nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         ChatState.setUserMetadata("name", value)
@@ -101,7 +103,7 @@ class AskEmailNodeHandler : BaseAskHandler() {
     override val nodeType = NodeTypes.ASK_EMAIL
     override val inputType = NodeUIState.TextInput.InputType.EMAIL
     override val shape = "user-ask-email-response"
-    override val placeholder = "name@company.com"
+    override val placeholder: String get() = I18n.t("composer.email")
 
     override fun problem(value: String, nodeData: Map<String, Any?>): String? {
         if (!FlowInputs.isValidEmail(value)) {
@@ -128,7 +130,7 @@ class AskPhoneNodeHandler : BaseAskHandler() {
     override val nodeType = NodeTypes.ASK_PHONE
     override val inputType = NodeUIState.TextInput.InputType.PHONE
     override val shape = "user-ask-phone-number-response"
-    override val placeholder = "Phone number"
+    override val placeholder: String get() = I18n.t("composer.phone")
 
     override fun problem(value: String, nodeData: Map<String, Any?>): String? =
         if (FlowInputs.isValidPhone(value)) null else FlowInputs.phoneErrorText(nodeData)
@@ -149,7 +151,7 @@ class AskNumberNodeHandler : BaseAskHandler() {
     override val nodeType = NodeTypes.ASK_NUMBER
     override val inputType = NodeUIState.TextInput.InputType.NUMBER
     override val shape = "user-ask-number-response"
-    override val placeholder = "Enter a number"
+    override val placeholder: String get() = I18n.t("composer.number")
 
     override fun problem(value: String, nodeData: Map<String, Any?>): String? = FlowInputs.numberProblem(value, nodeData)
 
@@ -175,7 +177,7 @@ class AskLocationNodeHandler : BaseAskHandler() {
     override val nodeType = NodeTypes.ASK_LOCATION
     override val inputType = NodeUIState.TextInput.InputType.LOCATION
     override val shape = "user-ask-location-response"
-    override val placeholder = "City or address"
+    override val placeholder: String get() = I18n.t("composer.location")
 }
 
 /** ask-custom-question-node: any text. */
@@ -342,7 +344,7 @@ class CalendarNodeHandler : BaseNodeHandler() {
         val record: Map<String, Any?>
         if (!showTime) {
             val date = FlowCalendar.longDate(FlowCalendar.noonInZone(dateString, botZone), botZone)
-            val localDate = FlowCalendar.longDate(FlowCalendar.noonInZone(dateString, visitorZone), visitorZone)
+            val localDate = FlowCalendar.longDate(FlowCalendar.noonInZone(dateString, visitorZone), visitorZone, FlowCalendar.visitorLocale())
             value = localDate.ifEmpty { date }
             record = linkedMapOf("date" to value, "selectedDate" to dateString, "botTimeZone" to botZone, "visitorTimeZone" to visitorZone, "showTimeSelection" to false)
             FlowKit.userSay(value)
@@ -352,7 +354,7 @@ class CalendarNodeHandler : BaseNodeHandler() {
             val botDate = FlowCalendar.noonInZone(dateString, botZone)
             val visitorDate = FlowCalendar.noonInZone(FlowCalendar.dayKeyInZone(botDate, botZone), visitorZone)
             val date = FlowCalendar.longDate(botDate, botZone)
-            val localDate = FlowCalendar.longDate(visitorDate, visitorZone)
+            val localDate = FlowCalendar.longDate(visitorDate, visitorZone, FlowCalendar.visitorLocale())
             val visitorStart = FlowCalendar.hhmmInZone(FlowCalendar.wallTimeInZone(dateString, slot.start, botZone), visitorZone)
             val visitorEnd = FlowCalendar.hhmmInZone(FlowCalendar.wallTimeInZone(dateString, slot.end, botZone), visitorZone)
             val timeSlotSelected = FlowCalendar.slotLabel(slot)
@@ -419,7 +421,7 @@ class AskMultipleQuestionsNodeHandler : BaseNodeHandler() {
         val q = qs.getOrNull(index) ?: emptyMap()
         flowContext().typing(2000)
         ChatState.setVariable(indexKey(nodeId), index)
-        val label = if (qs.size > 1) "Question ${index + 1} of ${qs.size}\n" else ""
+        val label = if (qs.size > 1) I18n.t("node.questionOf", "n" to index + 1, "total" to qs.size) + "\n" else ""
         FlowKit.botSay("$label${FlowKit.shownText(q["questionText"])}")
         val qid = Js.str(q["id"] ?: index)
         ChatState.addRecord(
