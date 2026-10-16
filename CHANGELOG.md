@@ -6,15 +6,9 @@ This is the only changelog for the SDK (the old copy in `docs/` was merged in he
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!--
-  Proposed next version: 2.0.0. The breaking changes below (Firebase no longer
-  bundled, the XML chat no longer built from the SDK's layouts, NodeResult's
-  cases and KnowledgeBaseArticle.content) need a major bump under semver.
-  Bump VERSION_NAME in gradle.properties and the publication version in
-  conferbot/build.gradle when cutting the release; do not tag before that.
--->
-
 ## [Unreleased]
+
+## [2.0.0] - 2026-10-16
 
 Everything since 1.0.0: the SDK now behaves like the Conferbot web widget, from the
 launcher to the AI agent, the handover and the help centre. `docs/PARITY.md` tracks each
