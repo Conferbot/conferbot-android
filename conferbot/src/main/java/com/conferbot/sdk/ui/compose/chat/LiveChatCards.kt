@@ -228,7 +228,11 @@ fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = { Conferbot.lea
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     CardTitle(LiveChat.queueLine(queue))
-                    CardSub(LiveChat.queueSubline(queue))
+                    // The estimate, else the usual wait, else a calm promise (web queueCard.ts).
+                    val map by Conferbot.serverCustomizationMap.collectAsState()
+                    val lines = LiveChat.waitCardLines(queue, com.conferbot.sdk.core.livechat.ReplyTime.typicalWait(com.conferbot.sdk.core.livechat.ReplyTime.of(map["replyTime"]), queue?.typical))
+                    CardSub(lines.estimate)
+                    if (lines.typical.isNotEmpty()) CardSub(lines.typical)
                 }
                 if (onCancel != null) {
                     Text(I18n.t("common.cancel"), color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.clickable(onClick = onCancel).padding(6.dp))
