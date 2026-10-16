@@ -10,7 +10,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.conferbot.sdk.core.agent.AgentBot
+import com.conferbot.sdk.core.customization.Customizations
 import com.conferbot.sdk.core.customization.Greeting
+import com.conferbot.sdk.core.customization.MascotArt
+import com.conferbot.sdk.core.customization.MascotMotion
 import com.conferbot.sdk.core.state.ChatState
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -29,7 +32,14 @@ data class GreetingCardData(
     val firstShow: Boolean,
     val click: String,
     val linkUrl: String,
+    /** The owner's mascot greets in place of the avatar (mascotInGreeting), in the launcher's colour; null for the avatar. */
+    val mascot: GreetingMascot? = null,
+    /** How the card and its figure move (mascotMotion): lively (default), subtle or off. */
+    val motion: String = MascotMotion.DEFAULT,
 )
+
+/** The mascot on the greeting card: the owner's look and the colour it is drawn in when they chose none. */
+data class GreetingMascot(val look: MascotArt.Look, val accent: String)
 
 /**
  * The greeting card's life, as the web runs it (ts/visibility/greeting.ts):
@@ -128,11 +138,14 @@ class GreetingState internal constructor(private val prefs: android.content.Shar
         val shows = stored.shows.toMutableMap()
         shows[g.key] = ((shows[g.key] ?: emptyList()).filter { now - it < NINETY_DAYS } + now).takeLast(20)
         write(stored.copy(shownAt = now, shows = shows, last = g.key))
-        val head = Greeting.head(c)
+        val head0 = Greeting.head(c).let { h -> if (agentBot != null) h.copy(name = agentBot.displayName.ifEmpty { h.name }) else h }
+        // The owner's mascot greets in place of the avatar, by its name (firstImpression.ts).
+        val look = MascotArt.lookOf(c)
+        val withMascot = c["mascotInGreeting"] == true
         card = GreetingCardData(
             style = Greeting.normalizeStyle(c["greetingStyle"]),
             text = g.text,
-            head = if (agentBot != null) head.copy(name = agentBot.displayName.ifEmpty { head.name }) else head,
+            head = if (withMascot) head0.copy(avatar = null, name = look.name.ifEmpty { head0.name }) else head0,
             starters = g.starters.ifEmpty { agentBot?.starters ?: emptyList() }.take(3),
             bubble = Greeting.bubble(c),
             accent = Greeting.accent(c),
@@ -140,6 +153,8 @@ class GreetingState internal constructor(private val prefs: android.content.Shar
             firstShow = !session.typed,
             click = g.click,
             linkUrl = g.linkUrl,
+            mascot = if (withMascot) GreetingMascot(look, Customizations.mascotAccent(c)) else null,
+            motion = MascotMotion.normalize(c["mascotMotion"]),
         )
         session.typed = true
     }
