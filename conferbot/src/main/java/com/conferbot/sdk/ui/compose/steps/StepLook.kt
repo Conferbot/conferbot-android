@@ -56,12 +56,14 @@ data class StepLook(
     val line: Color,
     /** Options' corner radius and the message text size. */
     val radius: Dp,
-    val fontSize: TextUnit
+    val fontSize: TextUnit,
+    /** The chat's font (the owner's, else the theme's; core/customization/OwnerFont.kt). */
+    val font: androidx.compose.ui.text.font.FontFamily? = null
 ) {
-    val body get() = TextStyle(fontSize = fontSize, color = text, lineHeight = fontSize * 1.4f)
-    val bold get() = TextStyle(fontSize = fontSize, color = text, fontWeight = FontWeight.SemiBold, lineHeight = fontSize * 1.35f)
-    val hint get() = TextStyle(fontSize = 12.sp, color = muted, lineHeight = 16.sp)
-    val label get() = TextStyle(fontSize = 12.sp, color = muted, fontWeight = FontWeight.SemiBold)
+    val body get() = TextStyle(fontFamily = font, fontSize = fontSize, color = text, lineHeight = fontSize * 1.4f)
+    val bold get() = TextStyle(fontFamily = font, fontSize = fontSize, color = text, fontWeight = FontWeight.SemiBold, lineHeight = fontSize * 1.35f)
+    val hint get() = TextStyle(fontFamily = font, fontSize = 12.sp, color = muted, lineHeight = 16.sp)
+    val label get() = TextStyle(fontFamily = font, fontSize = 12.sp, color = muted, fontWeight = FontWeight.SemiBold)
 
     companion object {
         val ERROR = Color(0xFFB42318)
@@ -91,7 +93,8 @@ fun rememberStepLook(): StepLook {
             muted = lookColor(tokens?.muted) ?: Color(0xFF6B7280),
             line = lookColor(tokens?.line) ?: Color(0x1F0F172A),
             radius = if (loaded) look.optionRadius.dp else 10.dp,
-            fontSize = if (loaded) look.fontSize.sp else 14.sp
+            fontSize = if (loaded) look.fontSize.sp else 14.sp,
+            font = theme.typography.fontFamily
         )
     }
 }
@@ -136,7 +139,7 @@ fun StepButton(
     ) {
         Text(
             label,
-            style = TextStyle(fontSize = style.fontSize, fontWeight = FontWeight.SemiBold),
+            style = TextStyle(fontFamily = style.font, fontSize = style.fontSize, fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
         )
@@ -166,7 +169,7 @@ fun StepOption(
     ) {
         Text(
             label,
-            style = TextStyle(fontSize = style.fontSize, fontWeight = FontWeight.Medium),
+            style = TextStyle(fontFamily = style.font, fontSize = style.fontSize, fontWeight = FontWeight.Medium),
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
         )
     }
@@ -177,7 +180,7 @@ fun StepOption(
 fun StepLink(label: String, style: StepLook, enabled: Boolean = true, onClick: () -> Unit) {
     Text(
         label,
-        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) style.accent else style.muted),
+        style = TextStyle(fontFamily = style.font, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) style.accent else style.muted),
         modifier = Modifier.clickable(enabled = enabled, onClick = onClick).padding(vertical = 4.dp)
     )
 }
@@ -192,7 +195,7 @@ fun StepLabel(text: String, style: StepLook) {
 @Composable
 fun StepStatus(style: StepLook, error: String?, hint: String? = null) {
     when {
-        !error.isNullOrEmpty() -> Text(error, style = TextStyle(fontSize = 12.5.sp, color = StepLook.ERROR, lineHeight = 17.sp))
+        !error.isNullOrEmpty() -> Text(error, style = TextStyle(fontFamily = style.font, fontSize = 12.5.sp, color = StepLook.ERROR, lineHeight = 17.sp))
         !hint.isNullOrEmpty() -> Text(hint, style = style.hint)
     }
 }
@@ -224,7 +227,7 @@ fun StepField(
         onValueChange = onValueChange,
         enabled = enabled,
         singleLine = true,
-        textStyle = TextStyle(fontSize = 15.sp, color = style.text),
+        textStyle = TextStyle(fontFamily = style.font, fontSize = 15.sp, color = style.text),
         cursorBrush = SolidColor(style.accent),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         // Next goes to the card's next field; the rest close the keyboard and act.
@@ -245,7 +248,7 @@ fun StepField(
                     .padding(horizontal = 12.dp, vertical = 11.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                if (value.isEmpty()) Text(placeholder, style = TextStyle(fontSize = 15.sp, color = style.muted.copy(alpha = 0.8f)))
+                if (value.isEmpty()) Text(placeholder, style = TextStyle(fontFamily = style.font, fontSize = 15.sp, color = style.muted.copy(alpha = 0.8f)))
                 inner()
             }
         }
