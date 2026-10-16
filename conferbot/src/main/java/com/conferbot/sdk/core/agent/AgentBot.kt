@@ -71,12 +71,23 @@ data class AIReplyExtras(
         get() = sources.isEmpty() && actions.isEmpty() && card == null && resultCard == null && actionRequest == null
 }
 
-/** A visitor's vote on one AI answer. */
-data class AnswerFeedback(val helpful: Boolean, val reason: String? = null)
 
 object AgentBotParser {
     const val DEFAULT_AGENT_NAME = "AI Assistant"
     const val DEFAULT_GREETING = "Hi! How can I help you today?"
+
+    /**
+     * How long the "writing a reply" dots may wait for the AI (web
+     * agentListeners.ts AWAITING_REPLY_MAX_MS): the AI path stays silent when
+     * the provider fails twice, so without a ceiling they would run forever.
+     */
+    const val AWAIT_REPLY_MS = 45_000L
+
+    /** Said when that ceiling is hit, so the dots do not just vanish (web chat.replyTimeout). */
+    const val REPLY_TIMEOUT_TEXT = "That took too long. Try again, or ask for a human."
+
+    /** The notice's id: an on-screen line, not part of the conversation's record (as on the web). */
+    fun replyTimeoutId(now: Long = System.currentTimeMillis()) = "reply-timeout-$now"
     const val MAX_SOURCES = 3
     val FEEDBACK_REASONS = listOf("wrong" to "Wrong", "outdated" to "Outdated", "unanswered" to "Didn't answer", "other" to "Other")
 
