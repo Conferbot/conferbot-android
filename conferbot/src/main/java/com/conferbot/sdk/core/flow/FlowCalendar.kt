@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.flow
 
+import com.conferbot.sdk.core.i18n.I18n
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -102,13 +103,28 @@ object FlowCalendar {
     /** "HH:MM" of an instant on a zone's clock. */
     fun hhmmInZone(epochMs: Long, timeZone: String): String = parts(epochMs, zone(timeZone)).time
 
-    /** "Tuesday, October 20, 2026" */
-    fun longDate(epochMs: Long, timeZone: String): String {
+    /**
+     * "Tuesday, October 20, 2026"; in another [locale] its full date
+     * ("Dienstag, 20. Oktober 2026"). The bot's date stays en-US.
+     */
+    fun longDate(epochMs: Long, timeZone: String, locale: Locale? = null): String {
+        if (locale != null && locale.language != "en") {
+            runCatching {
+                return java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL, locale).apply { this.timeZone = zone(timeZone) }.format(Date(epochMs))
+            }
+        }
         val p = parts(epochMs, zone(timeZone))
         return "${DAY_NAMES[p.weekday]}, ${MONTHS[p.month - 1]} ${p.day}, ${p.year}"
     }
 
-    /** The weekday name of a day on the bot's clock. */
+    /**
+     * The locale a visitor's own date is written in: the widget's (web
+     * displayStep.ts formattedVisitorDate uses widgetLocale()), null (en-US)
+     * for English. The bot's date stays en-US, as the web keeps it.
+     */
+    fun visitorLocale(): Locale? = if (I18n.language == I18n.EN) null else I18n.locale
+
+    /** The weekday name of a day on the bot's clock (the owner's day names, weeklyHours, are English: kept so). */
     fun dayNameInZone(epochMs: Long, timeZone: String): String = DAY_NAMES[parts(epochMs, zone(timeZone)).weekday]
 
     /** The date a day before "YYYY-MM-DD". */
