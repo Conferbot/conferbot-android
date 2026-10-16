@@ -1,5 +1,8 @@
 package com.conferbot.sdk.core.waiting
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18nGames
+
 /** A source of "random" numbers in [0, 1): Math.random, or a fixed sequence in tests. */
 typealias Rng = () -> Double
 
@@ -7,8 +10,10 @@ typealias Rng = () -> Double
  * Waiting games: the rules and the words, with no UI, so they can be tested
  * on their own. Ported from the React Native SDK's src/core/gamesLogic.ts
  * (the web widget's conferbot-widget src/ts/chat/games/logic.ts, every rule
- * as it is, and src/ts/chat/games/content.ts, the English lists). Every
- * random choice takes an [Rng] so tests can pin it.
+ * as it is, and src/ts/chat/games/content.ts: the quiz and scramble per
+ * language from core/i18n/I18nGames.kt, the emoji riddles English wordplay).
+ * Words are the web's "games.*" keys, read with t(). Every random choice
+ * takes an [Rng] so tests can pin it.
  */
 object GamesLogic {
 
@@ -28,33 +33,22 @@ object GamesLogic {
 
     fun <T> pick(items: List<T>, rng: Rng = random): T = items[Math.floor(rng() * items.size).toInt() % items.size]
 
-    // ---------------------------------------------------------------- content (web content.ts, English)
+    // ---------------------------------------------------------------- content (web content.ts)
 
     data class Trivia(val q: String, val a: String, val wrong: List<String>)
     data class Riddle(val e: String, val a: String, val wrong: List<String>)
     data class Word(val w: String, val hint: String)
 
-    val TRIVIA: List<Trivia> = listOf(
-        Trivia("Which planet is known as the Red Planet?", "Mars", listOf("Venus", "Jupiter")),
-        Trivia("How many legs does a spider have?", "8", listOf("6", "10")),
-        Trivia("What is the largest ocean on Earth?", "Pacific", listOf("Atlantic", "Indian")),
-        Trivia("Which animal is called the ship of the desert?", "Camel", listOf("Horse", "Elephant")),
-        Trivia("How many continents are there?", "7", listOf("5", "6")),
-        Trivia("What do bees make?", "Honey", listOf("Silk", "Butter")),
-        Trivia("Which instrument has 88 keys?", "Piano", listOf("Guitar", "Violin")),
-        Trivia("Mix blue and yellow paint and you get...", "Green", listOf("Purple", "Orange")),
-        Trivia("How many minutes are there in a day?", "1,440", listOf("1,200", "2,400")),
-        Trivia("Which is the fastest land animal?", "Cheetah", listOf("Horse", "Greyhound")),
-        Trivia("What is the hardest natural substance?", "Diamond", listOf("Gold", "Granite")),
-        Trivia("Which gas do plants take in from the air?", "Carbon dioxide", listOf("Oxygen", "Helium")),
-        Trivia("How many sides does a hexagon have?", "6", listOf("5", "8")),
-        Trivia("What is the tallest animal?", "Giraffe", listOf("Elephant", "Ostrich")),
-        Trivia("Where does the sun rise?", "In the east", listOf("In the west", "In the north")),
-        Trivia("Water boils at sea level at how many degrees Celsius?", "100", listOf("90", "120")),
-        Trivia("Which is the smallest prime number?", "2", listOf("1", "3")),
-        Trivia("What is a baby kangaroo called?", "A joey", listOf("A kit", "A cub"))
-    )
+    /** The English quiz (web content.ts TRIVIA; every language in core/i18n/I18nGames.kt). */
+    val TRIVIA: List<Trivia> get() = I18nGames.triviaOf("en")
 
+    /** The quiz in a language, English for any other (web content.ts triviaFor). */
+    fun triviaFor(lang: String): List<Trivia> = I18nGames.triviaOf(lang)
+
+    /** The scramble words in a language, English for any other (web content.ts wordsFor). */
+    fun wordsFor(lang: String): List<Word> = I18nGames.wordsOf(lang)
+
+    /** The emoji riddles: English wordplay, offered in English only (web gamesForLanguage). */
     val RIDDLES: List<Riddle> = listOf(
         Riddle("☀️🌻", "Sunflower", listOf("Daisy", "Sunrise", "Sunscreen")),
         Riddle("⭐🐟", "Starfish", listOf("Goldfish", "Swordfish", "Shooting star")),
@@ -74,32 +68,20 @@ object GamesLogic {
         Riddle("🌊🏄", "Surfing", listOf("Swimming", "Sailing", "Beach day"))
     )
 
-    val WORDS: List<Word> = listOf(
-        Word("PLANET", "🪐"),
-        Word("BANANA", "🍌"),
-        Word("ROCKET", "🚀"),
-        Word("MUFFIN", "🧁"),
-        Word("TURTLE", "🐢"),
-        Word("PENCIL", "✏️"),
-        Word("PICNIC", "🧺"),
-        Word("DRAGON", "🐉"),
-        Word("COOKIE", "🍪"),
-        Word("GALAXY", "🌌"),
-        Word("JUNGLE", "🌴"),
-        Word("KITTEN", "🐱"),
-        Word("WAFFLE", "🧇"),
-        Word("BRIDGE", "🌉"),
-        Word("PUZZLE", "🧩")
-    )
+    /** The English scramble words (web content.ts WORDS). */
+    val WORDS: List<Word> get() = I18nGames.wordsOf("en")
 
     val MEMORY_FACES: List<String> = listOf("🍕", "🚀", "🌵", "🐙", "🎈", "🍩", "🦊", "🌈", "⚽", "🎧", "🍉", "🐢", "🦄", "🍦")
 
     // ---------------------------------------------------------------- RPS
 
-    enum class Hand(val id: String, val emoji: String, val label: String) {
-        ROCK("rock", "✊", "Rock"),
-        PAPER("paper", "✋", "Paper"),
-        SCISSORS("scissors", "✌️", "Scissors");
+    enum class Hand(val id: String, val emoji: String) {
+        ROCK("rock", "✊"),
+        PAPER("paper", "✋"),
+        SCISSORS("scissors", "✌️");
+
+        /** The hand's name in the active language (web ui.ts handName, games.rps.*). */
+        val label: String get() = t("games.rps.$id")
 
         val beats: Hand get() = when (this) { ROCK -> SCISSORS; PAPER -> ROCK; SCISSORS -> PAPER }
     }
@@ -280,10 +262,10 @@ object GamesLogic {
             if (out.size >= count) break
             val others = shuffle(items.filter { o -> o !== it }, rng).map { o -> o.title }.take(2)
             if (it.desc.isNotEmpty() && it.desc.lowercase() != it.title.lowercase() && others.size == 2) {
-                out.add(asQuestion("Which of our articles helps with: \"${it.desc}\"", it.title, others, "kb", rng))
+                out.add(asQuestion(t("games.quiz.kbWhich", "desc" to it.desc), it.title, others, "kb", rng))
             } else if (it.cat.isNotEmpty() && cats.size >= 3) {
                 val wrong = shuffle(cats.filter { c -> c != it.cat }, rng).take(2)
-                out.add(asQuestion("Where in our help centre would you find \"${it.title}\"?", it.cat, wrong, "kb", rng))
+                out.add(asQuestion(t("games.quiz.kbWhere", "title" to it.title), it.cat, wrong, "kb", rng))
             }
         }
         return out
@@ -292,9 +274,9 @@ object GamesLogic {
     /** The quiz: help-centre questions first, topped up with trivia. */
     fun buildQuiz(trivia: List<Trivia>, kb: List<QuizQuestion>, rng: Rng = random, count: Int = 3): List<QuizQuestion> {
         val out = kb.take(count).toMutableList()
-        for (t in shuffle(trivia, rng)) {
+        for (one in shuffle(trivia, rng)) {
             if (out.size >= count) break
-            out.add(asQuestion(t.q, t.a, t.wrong.take(2), "trivia", rng))
+            out.add(asQuestion(one.q, one.a, one.wrong.take(2), "trivia", rng))
         }
         return out
     }
@@ -303,13 +285,14 @@ object GamesLogic {
     fun quizScore(questions: List<QuizQuestion>, picks: List<Int>): Int =
         questions.indices.count { picks.getOrNull(it) == questions[it].answer }
 
+    /** The verdicts in the active language (web logic.ts, games.verdict.*). */
     object Verdict {
-        const val PERFECT = "Perfect score! 🏆"
-        const val TOUGH = "Tough round - have another go? 🙈"
-        const val CLOSE = "So close! 🌟"
-        const val NOT_BAD = "Not bad at all 👍"
-        const val NICE = "Nicely done 👍"
-        val all = listOf(PERFECT, TOUGH, CLOSE, NOT_BAD, NICE)
+        val PERFECT: String get() = t("games.verdict.perfect")
+        val TOUGH: String get() = t("games.verdict.tough")
+        val CLOSE: String get() = t("games.verdict.close")
+        val NOT_BAD: String get() = t("games.verdict.notBad")
+        val NICE: String get() = t("games.verdict.nice")
+        val all: List<String> get() = listOf(PERFECT, TOUGH, CLOSE, NOT_BAD, NICE)
     }
 
     fun quizVerdict(score: Int, total: Int): String =
@@ -326,7 +309,7 @@ object GamesLogic {
     fun reactionCounts(ms: Long): Boolean = ms >= REACTION_MIN_MS
 
     fun reactionVerdict(ms: Long): String =
-        if (ms < 250) "Lightning fast ⚡" else if (ms < 350) "Sharp reflexes 🎯" else if (ms < 500) Verdict.NICE else "Slow and steady 🐢"
+        t(if (ms < 250) "games.reaction.fast" else if (ms < 350) "games.reaction.sharp" else if (ms < 500) "games.verdict.nice" else "games.reaction.steady")
 
     fun average(xs: List<Long>): Long = if (xs.isEmpty()) 0L else Math.round(xs.sum().toDouble() / xs.size)
 
