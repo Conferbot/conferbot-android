@@ -44,7 +44,7 @@ class NetworkMonitorTest {
         every { connectivityManager.activeNetwork } returns null
         every { connectivityManager.getNetworkCapabilities(any()) } returns null
 
-        networkMonitor = NetworkMonitor(context)
+        networkMonitor = monitor()
     }
 
     @After
@@ -78,7 +78,7 @@ class NetworkMonitorTest {
         every { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) } returns false
 
         // When
-        val monitor = NetworkMonitor(context)
+        val monitor = monitor()
 
         // Then
         assertThat(monitor.isCurrentlyOnline()).isTrue()
@@ -100,7 +100,7 @@ class NetworkMonitorTest {
         every { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) } returns false
 
         // When
-        val monitor = NetworkMonitor(context)
+        val monitor = monitor()
 
         // Then
         assertThat(monitor.isCurrentlyOnline()).isTrue()
@@ -494,6 +494,9 @@ class NetworkMonitorTest {
     }
 
     // ==================== HELPER METHODS ====================
+
+    /** android.net.NetworkRequest.Builder is a stub on the JVM, so the request is a mock. */
+    private fun monitor() = NetworkMonitor(context) { mockk<NetworkRequest>(relaxed = true) }
 
     private fun setupCapabilities(
         capabilities: NetworkCapabilities,
