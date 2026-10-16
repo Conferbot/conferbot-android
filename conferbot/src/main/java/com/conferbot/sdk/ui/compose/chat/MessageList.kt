@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -272,7 +273,7 @@ fun PaginatedMessageList(
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Scroll to bottom",
+                    contentDescription = I18n.t("sdk.chat.scrollToBottom"),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -331,7 +332,7 @@ private fun LoadingMoreIndicator(modifier: Modifier = Modifier) {
                 color = theme.colors.primary
             )
             Text(
-                text = "Loading older messages...",
+                text = I18n.t("sdk.chat.loadingOlder"),
                 style = TextStyle(fontFamily = theme.typography.fontFamily, fontSize = theme.typography.captionSize),
                 color = theme.colors.onSurfaceVariant
             )
@@ -349,7 +350,7 @@ private fun LoadMoreHint(totalCount: Int, loadedCount: Int, modifier: Modifier =
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "Scroll up to load $remaining more messages",
+            text = I18n.tPlural("sdk.chat.scrollUpMore", remaining),
             style = TextStyle(fontFamily = theme.typography.fontFamily, fontSize = theme.typography.captionSize),
             color = theme.colors.onSurfaceVariant
         )
