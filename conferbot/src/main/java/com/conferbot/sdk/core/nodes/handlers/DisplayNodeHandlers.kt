@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowInputs
 import com.conferbot.sdk.core.flow.FlowText
 import com.conferbot.sdk.core.flow.Js
@@ -138,7 +139,7 @@ class NavigateNodeHandler : BaseNodeHandler() {
     private fun options(data: Map<String, Any?>) = Js.list(data["navigateOptions"]).mapNotNull { Js.map(it) }
         .filter { Js.str(it["navigateText"]).trim().isNotEmpty() }
 
-    private fun doneLabel(data: Map<String, Any?>) = Js.str(data["doneNavigatingText"]).trim().ifEmpty { "Done" }
+    private fun doneLabel(data: Map<String, Any?>) = Js.str(data["doneNavigatingText"]).trim().ifEmpty { I18n.t("common.done") }
 
     private fun ui(data: Map<String, Any?>, nodeId: String): NodeUIState {
         val choices = options(data).mapIndexed { i, o ->
