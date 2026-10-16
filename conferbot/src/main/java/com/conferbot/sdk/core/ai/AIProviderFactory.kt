@@ -216,7 +216,22 @@ object AIProviderFactory {
         for (provider in chain) {
             val config = configs[provider.name] ?: configs["default"]
 
-            if (config == null || !provider.isConfigured(config)) {
+            // Why each provider was passed over, as executeWithFallback reports it.
+            if (config == null) {
+                errors.add(AIProviderException(
+                    message = "No configuration found for ${provider.displayName}",
+                    provider = provider.name,
+                    isRetryable = false
+                ))
+                continue
+            }
+
+            if (!provider.isConfigured(config)) {
+                errors.add(AIProviderException(
+                    message = "${provider.displayName} is not properly configured (missing API key)",
+                    provider = provider.name,
+                    isRetryable = false
+                ))
                 continue
             }
 
