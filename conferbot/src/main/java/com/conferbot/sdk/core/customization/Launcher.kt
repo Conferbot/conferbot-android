@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.customization
 
+import com.conferbot.sdk.core.i18n.t
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -163,7 +164,7 @@ object Launcher {
             ink = ink,
             glow = str(c["headerBgColor"]).ifEmpty { solid },
             style = style,
-            label = normalizeLabel(c["launcherLabel"]).ifEmpty { DEFAULT_LABEL },
+            label = normalizeLabel(c["launcherLabel"]).ifEmpty { t("home.chatWithUs") },
             avatar = avatar,
             mascot = LauncherMascotLook(
                 look = MascotArt.lookOf(c),
