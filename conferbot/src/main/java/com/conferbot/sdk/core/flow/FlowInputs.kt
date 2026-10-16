@@ -1,37 +1,54 @@
 package com.conferbot.sdk.core.flow
 
+import com.conferbot.sdk.core.i18n.I18n
+
 /**
  * Checks on what the visitor types or picks, ported from the web widget
  * (conferbot-widget/src/ts/chat/nodeKit.ts, nodeLogic.ts, utils/emailTypos.ts)
- * with its English messages (ts/i18n/en.ts), by way of RN src/core/flow/inputs.ts.
+ * with its messages (ts/i18n) in the active language, by way of RN
+ * src/core/flow/inputs.ts.
  */
 object FlowInputs {
-    /** English texts the steps say (web i18n en.ts). */
+    /** The steps' plain texts by key (web i18n: validation.*, upload.*, common.*). */
+    private val EN_KEYS = listOf(
+        "validation.email", "validation.phone", "validation.numberLike", "validation.link",
+        "validation.number", "validation.url", "upload.tapRetry", "common.skipped", "common.done", "common.somethingWrong",
+    )
+
+    /**
+     * The texts the steps say, in the active language at each read (the name
+     * stays from when they were English only).
+     */
     object EN {
-        const val emailInvalid = "Please enter a valid email address"
-        fun emailTypo(email: String) = "Did you mean $email? Press Enter to send it, or edit it."
-        const val phoneInvalid = "Please enter a valid phone number"
-        const val numberLike = "Please enter a number, like 42"
-        fun numberBetween(min: Any?, max: Any?) = "Please enter a number between ${show(min)} and ${show(max)}"
-        fun numberMin(min: Any?) = "Please enter ${show(min)} or more"
-        fun numberMax(max: Any?) = "Please enter ${show(max)} or less"
-        const val link = "Please enter a link, like example.com"
-        fun uploadOverSize(mb: Double) = "That file is over ${Js.num(mb)} MB - choose a smaller one."
-        fun uploadNotAllowed(types: String) = "That file can't be sent here - choose $types."
-        const val uploadRetry = "That didn't upload - tap to try again."
-        const val skipped = "Skipped"
-        const val done = "Done"
-        const val somethingWrong = "Something went wrong. Please try again."
+        val emailInvalid: String get() = I18n.t("validation.email")
+        fun emailTypo(email: String) = I18n.t("validation.emailTypo", "email" to email)
+        val phoneInvalid: String get() = I18n.t("validation.phone")
+        val numberLike: String get() = I18n.t("validation.numberLike")
+        fun numberBetween(min: Any?, max: Any?) = I18n.t("validation.numberBetween", "min" to show(min), "max" to show(max))
+        fun numberMin(min: Any?) = I18n.t("validation.numberMin", "min" to show(min))
+        fun numberMax(max: Any?) = I18n.t("validation.numberMax", "max" to show(max))
+        val link: String get() = I18n.t("validation.link")
+        val numberInvalid: String get() = I18n.t("validation.number")
+        val urlInvalid: String get() = I18n.t("validation.url")
+        fun uploadOverSize(mb: Double) = I18n.t("upload.overSize", "mb" to Js.num(mb))
+        fun uploadNotAllowed(types: String) = I18n.t("upload.notAllowed", "types" to types)
+        val uploadRetry: String get() = I18n.t("upload.tapRetry")
+        val skipped: String get() = I18n.t("common.skipped")
+        val done: String get() = I18n.t("common.done")
+        val somethingWrong: String get() = I18n.t("common.somethingWrong")
         private fun show(v: Any?) = if (v is Double) Js.num(v) else Js.str(v)
     }
 
     /**
      * The owner's own error text, or the default when they left it empty or kept
-     * the stock English (web i18n ownerTextOr).
+     * the stock English (web i18n ownerTextOr). [fallback] is drawn in the
+     * active language; its English is stock too.
      */
     fun ownerTextOr(value: Any?, fallback: String, stockEnglish: List<String> = emptyList()): String {
         val v = if (value is String) FlowText.plainText(value) else ""
-        if (v.isEmpty() || (listOf(fallback) + stockEnglish).any { FlowText.plainText(it) == v }) return fallback
+        val key = EN_KEYS.firstOrNull { I18n.t(it) == fallback }
+        val stock = listOf(fallback) + listOfNotNull(key?.let { I18n.tFor(I18n.EN, it) }) + stockEnglish
+        if (v.isEmpty() || stock.any { FlowText.plainText(it) == v }) return fallback
         return value as String
     }
 
@@ -156,14 +173,14 @@ object FlowInputs {
     fun fileTypesWords(types: Any?): String {
         val list = Js.list(types).map { Js.str(it).trim().lowercase() }.filter { it.isNotEmpty() }.map { x ->
             if (x.endsWith("/")) when (x) {
-                "image/" -> "images"
-                "video/" -> "videos"
+                "image/" -> I18n.t("file.images")
+                "video/" -> I18n.t("file.videos")
                 else -> x.replace("/", "")
             } else x.replace(Regex("^\\."), "").replace(Regex("^application/"), "").uppercase()
         }.map { if (it == "JPEG") "JPG" else it }
         val unique = list.distinct()
         if (unique.isEmpty()) return ""
-        return if (unique.size == 1) unique[0] else "${unique.dropLast(1).joinToString(", ")} or ${unique.last()}"
+        return if (unique.size == 1) unique[0] else "${unique.dropLast(1).joinToString(", ")} ${I18n.t("common.or")} ${unique.last()}"
     }
 
     data class PickedFile(val name: String?, val type: String?, val size: Double?)
