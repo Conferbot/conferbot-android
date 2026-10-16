@@ -59,6 +59,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -296,7 +298,7 @@ object Conferbot {
      */
     private fun applyLook() {
         val raw = rawCustomizationJson ?: return
-        val themed = com.conferbot.sdk.core.customization.WidgetTheme.withThemePalette(rawCustomizationMap, prefersDark)
+        val themed = personalized(com.conferbot.sdk.core.customization.WidgetTheme.withThemePalette(rawCustomizationMap, prefersDark))
         val widgetTheme = com.conferbot.sdk.core.customization.WidgetTheme.resolve(themed, prefersDark)
         _serverCustomizationMap.value = themed
         _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(themed, theme = widgetTheme)
@@ -305,6 +307,20 @@ object Conferbot {
         }
         parseServerCustomizations(json, widgetTheme)
     }
+
+    /**
+     * "Hi {{first_name|there}}": the app's user and a name the chat asked
+     * for fill the owner's texts - the greeting card and the home screen
+     * (core/customization/Personalize.kt, web ownerLayout.ts).
+     */
+    private fun personalized(c: Map<String, Any?>): Map<String, Any?> =
+        com.conferbot.sdk.core.customization.Personalize.customizations(
+            c,
+            com.conferbot.sdk.core.customization.Personalize.visitorVars(
+                com.conferbot.sdk.core.customization.Personalize.userContext(user?.metadata, user?.name),
+                ChatState.getUserMetadata("name")
+            )
+        )
 
     /** True once the bot's own settings arrived (the screens keep their host-app look until then). */
     val hasServerCustomizations: Boolean get() = _serverCustomizationMap.value.isNotEmpty()
@@ -492,11 +508,62 @@ object Conferbot {
                     com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(ChatState.record.value)
                 )
             },
-            // The portal is drawn over the chat: leaving it shows the chat.
-            openChat = {},
+            // A request that is the chat on screen: the conversation (past the home screen).
+            openChat = { home.showChat() },
             post = { fn -> scope.launch { fn() } }
         )
     }
+
+    // ========== Home screen ==========
+    // What the chat opens on when the owner has it on (enableInitialPage):
+    // the view (home, conversation, help centre), "Welcome back", the help
+    // centre's data and the server's search inside articles (core/home; web
+    // ts/home/). The home's requests card reads again when it comes into view.
+    private val homeStore = object : com.conferbot.sdk.core.home.HomeStore {
+        private fun prefs() = appContext?.getSharedPreferences("conferbot_home", Context.MODE_PRIVATE)
+        override fun read(key: String): String? = prefs()?.getString(key, null)
+        override fun write(key: String, value: String) { prefs()?.edit()?.putString(key, value)?.apply() }
+    }
+
+    val home: com.conferbot.sdk.core.home.HomeExtras by lazy {
+        com.conferbot.sdk.core.home.HomeExtras(
+            botId = { botId },
+            customizations = { _serverCustomizationMap.value },
+            chatSessionId = { _chatSessionId.value },
+            store = { homeStore },
+            socket = { socketClient?.let { RequestsSocketAdapter(it) } },
+            connected = { socketClient?.isConnected == true },
+            // A question from the home goes out once the chat has a session.
+            send = { text ->
+                scope.launch {
+                    kotlinx.coroutines.withTimeoutOrNull(8_000) { _chatSessionId.first { it != null } }
+                    sendMessage(text)
+                }
+            },
+            onHomeShown = { requests.onHomeShown() },
+            timer = mainTimer,
+            post = { fn -> scope.launch { fn() } }
+        )
+    }
+
+    /** The view the open chat shows: the home screen, the conversation or the help centre. */
+    val homeView: StateFlow<com.conferbot.sdk.core.home.HomeView> by lazy {
+        combine(_serverCustomizationMap, home.chosen) { c, _ -> home.viewFor(c) }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, home.view())
+    }
+
+    /** Back to the home screen (nothing when the owner has none). */
+    fun showHome() = home.showHome()
+
+    /** To the conversation; with [text], asked there as the visitor. */
+    fun showChat(text: String? = null) = home.showChat(text)
+
+    /** The help centre, on one topic (its category id) or its list. */
+    fun showHelp(categoryId: String? = null) = home.showHelp(categoryId)
+
+    /** The AI agent as the home screen offers it (null for a flow bot). */
+    internal fun homeAgent(bot: AgentBot? = _agentBot.value): com.conferbot.sdk.core.home.HomeAgent? =
+        bot?.let { com.conferbot.sdk.core.home.HomeAgent(it.displayName, it.starters, it.avatar) }
 
     /** "Your requests": the list, or one request by its id (the chat menu's item, or an app's own button). */
     fun openRequests(requestId: String? = null) = requests.open(requestId)
@@ -509,6 +576,8 @@ object Conferbot {
 
     /** When the list is read: connected, the chat shown or hidden, and the chats the visitor wrote in remembered. */
     private fun startRequests() {
+        // A name a flow asked for: "Welcome back, Jamie" (web _setUserMetaData "name").
+        scope.launch { ChatState.userMetadata.collect { home.rememberName(it.name) } }
         requests.attach()
         scope.launch { _isConnected.collect { if (it) requests.onConnected() } }
         scope.launch { _isChatVisible.drop(1).collect { requests.onChatShown() } }
@@ -1542,7 +1611,11 @@ object Conferbot {
                 }
             },
             scope.launch {
-                kotlinx.coroutines.flow.combine(_record, _isChatVisible) { r, v -> r to v }.collect { (r, v) ->
+                // The home screen and the help centre are not the conversation (web
+                // index.ts: the home screen must not count agent messages as seen).
+                kotlinx.coroutines.flow.combine(_record, _isChatVisible, homeView) { r, v, view ->
+                    r to (v && view == com.conferbot.sdk.core.home.HomeView.CHAT)
+                }.collect { (r, v) ->
                     liveChat.reportReceipts(r, v)
                 }
             }
@@ -1595,6 +1668,8 @@ object Conferbot {
             )
             // ...and as sent, for the while-you-wait articles and the quiz.
             waiting.setKnowledgeBase(kbData)
+            // ...and for the home screen's cards and its ask box.
+            home.setKnowledgeBase(kbData)
 
             // Parse elements array: elements is an array with one object containing nodes and edges
             val elementsArray = chatbotData.optJSONArray("elements")
@@ -1611,8 +1686,9 @@ object Conferbot {
             @Suppress("UNCHECKED_CAST")
             (chatbotMap["customizations"] as? Map<String, Any?>)?.let {
                 rawCustomizationMap = it
-                _serverCustomizationMap.value = it
-                _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(it)
+                val filled = personalized(it)
+                _serverCustomizationMap.value = filled
+                _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(filled)
             }
             liveChat.setChatbotData(chatbotMap)
 
@@ -2298,6 +2374,10 @@ object Conferbot {
         // of being sent (core/waiting/WaitingGames.kt, web games/wire.ts).
         if (waiting.interceptPlay(text)) return
 
+        // What the visitor types in a live or agent chat is what they came
+        // for, for "Welcome back" (web special.ts _handleHumanHandoverInputSubmit).
+        if (_isLiveChatMode.value || _agentBot.value != null) home.rememberText(text)
+
         // Track user message in analytics
         ChatAnalytics.trackUserMessage(
             messageLength = text.length,
@@ -2431,6 +2511,8 @@ object Conferbot {
     fun identify(user: ConferBotUser) {
         this.user = user
         ChatState.visitorContext = user.toVisitorContext()
+        // Their name in the owner's texts ("Hi {{first_name|there}}").
+        if (rawCustomizationJson != null) applyLook()
         // Signed in: their verified requests from any device.
         if (_isInitialized.value) requests.onConnected()
     }
@@ -2736,6 +2818,7 @@ object Conferbot {
         handover.reset()
         waiting.reset()
         requests.reset()
+        home.reset()
         _talkToPersonRetired.value = false
         _record.value = emptyList()
         _chatSessionId.value = null
