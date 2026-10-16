@@ -261,6 +261,15 @@ class LiveChatExtras(
         queuePoll = null
     }
 
+    /** Back from a blip while waiting: asked at once, the poll going on from there (#94). */
+    fun askQueueNow() {
+        scope.launch {
+            if (queuePoll?.isActive != true) return@launch
+            stopQueuePoll()
+            startQueuePoll()
+        }
+    }
+
     // When the handover's max wait runs out (ms since the epoch) while a
     // flow's handover waits for a person: the wait card counts down to it.
     private val _waitEndsAt = MutableStateFlow<Long?>(null)
