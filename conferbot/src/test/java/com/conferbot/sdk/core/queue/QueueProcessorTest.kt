@@ -3,7 +3,9 @@ package com.conferbot.sdk.core.queue
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import io.mockk.*
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.*
@@ -29,7 +31,8 @@ class QueueProcessorTest {
         Dispatchers.setMain(testDispatcher)
         messageQueue = OfflineMessageQueue()
         callback = mockk(relaxed = true)
-        processor = QueueProcessor(messageQueue, callback, testScope)
+        // Its own scope on the test scheduler: destroy() cancels it, not the test's scope
+        processor = QueueProcessor(messageQueue, callback, CoroutineScope(testDispatcher + SupervisorJob()))
     }
 
     @After
@@ -212,14 +215,12 @@ class QueueProcessorTest {
         val message = createTestMessage("msg-1")
         messageQueue.enqueue(message)
 
-        var lastCallTime = 0L
+        var lastCallTime: Long? = null // the first send is at virtual time 0
         val delays = mutableListOf<Long>()
 
         coEvery { callback.sendMessage(any()) } answers {
             val currentTime = testScheduler.currentTime
-            if (lastCallTime > 0) {
-                delays.add(currentTime - lastCallTime)
-            }
+            lastCallTime?.let { delays.add(currentTime - it) }
             lastCallTime = currentTime
             false
         }
