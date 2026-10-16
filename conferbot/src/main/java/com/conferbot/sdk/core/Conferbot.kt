@@ -114,7 +114,7 @@ object Conferbot {
     private const val TAG = "ConferBot"
 
     /** How long the "writing a reply" dots may wait for the AI. */
-    const val AWAIT_REPLY_MS = 45_000L
+    const val AWAIT_REPLY_MS = AgentBotParser.AWAIT_REPLY_MS
 
     // Configuration
     private var apiKey: String? = null
@@ -379,7 +379,10 @@ object Conferbot {
             socket = { socketClient },
             sessionId = { _chatSessionId.value },
             addMessage = { addMessageToRecord(it) },
-            continueFlow = { nodeFlowEngine?.continueAfterHandover() }
+            continueFlow = { nodeFlowEngine?.continueAfterHandover() },
+            postTranscriptEmail = { sid, email ->
+                apiClient?.sendTranscriptEmail(sid, email) ?: com.conferbot.sdk.core.livechat.EmailTranscript.Result(false)
+            }
         )
     }
 
@@ -549,8 +552,13 @@ object Conferbot {
             socketClient = SocketClient(
                 apiKey = apiKey,
                 botId = botId,
-                socketUrl = socketUrl ?: ConferBotEndpoints.socketUrl
-            )
+                socketUrl = socketUrl ?: ConferBotEndpoints.socketUrl,
+                // The visitor as the records name it: the server refuses a
+                // blocked one at the handshake (web core/socket.ts).
+                visitorId = user?.id ?: getOrCreateVisitorId(context.applicationContext)
+            ).also { client ->
+                client.onVisitorBlocked = { scope.launch { onVisitorBlocked(mapOf("handshake" to true)) } }
+            }
 
             // Initialize Node Flow Engine
             socketClient?.let { client ->
@@ -727,6 +735,8 @@ object Conferbot {
         socketClient?.on(SocketEvents.AGENT_LEFT, Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
             if (!isOwnSession(data)) return@Listener
+            // No reply is coming, so no "took too long" notice either (web endAwaitingReply).
+            setAwaitingReply(false)
             val agent = _currentAgent.value
             // An AI handing the visitor to the team is not leaving them: the
             // Connecting line, not "<name> left the chat"; an AI pausing an
@@ -757,8 +767,27 @@ object Conferbot {
         handover.setupListeners()
         watchLiveChat()
 
+        // Blocked by the workspace mid-chat (the handshake's refusal comes
+        // through SocketClient.onVisitorBlocked).
+        socketClient?.on("visitor-blocked", Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject
+            if (!isOwnSession(data)) return@Listener
+            val map = data?.let { jsonObjectToMap(it) }
+            scope.launch { onVisitorBlocked(map) }
+        })
+
         // Chat ended
-        socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener {
+        socketClient?.on(SocketEvents.CHAT_ENDED, Emitter.Listener { args ->
+            val data = args.firstOrNull() as? JSONObject
+            if (!isOwnSession(data)) return@Listener
+            setAwaitingReply(false)
+            // The same end again (an agent's double click, an AI close racing
+            // a person's): one "Chat has ended" line and one survey, not two
+            // (web endedSinceLastLive).
+            if (com.conferbot.sdk.core.livechat.LiveEvents.endedSinceLastLive(
+                    com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(ChatState.record.value)
+                )
+            ) return@Listener
             _currentAgent.value = null
             _isLiveChatMode.value = false
             _isAgentTyping.value = false
@@ -766,8 +795,10 @@ object Conferbot {
             ChatState.setAgentTyping(false)
 
             // Add "Chat has ended" system message
+            // Its own id per end: under one id a second live chat's end
+            // merged into the first one's entry (web agentListeners.ts).
             val endedMessage = RecordItem.SystemMessage(
-                id = "chat-ended-${System.currentTimeMillis()}",
+                id = com.conferbot.sdk.core.livechat.LiveEvents.eventId("agent-chat-ended"),
                 time = java.util.Date(),
                 text = "Chat has ended",
                 kind = "agent-chat-ended"
@@ -1002,11 +1033,40 @@ object Conferbot {
 
     private fun setAwaitingReply(on: Boolean) {
         awaitReplyJob?.cancel()
+        awaitReplyJob = null
         _awaitingReply.value = on
         if (on) awaitReplyJob = scope.launch {
             delay(AWAIT_REPLY_MS)
+            awaitReplyJob = null
             _awaitingReply.value = false
+            // Say so, instead of silently dropping the dots (web
+            // agentListeners.ts): on screen only, not in the record.
+            val notice = RecordItem.SystemMessage(id = AgentBotParser.replyTimeoutId(), time = java.util.Date(), text = AgentBotParser.REPLY_TIMEOUT_TEXT)
+            _record.update { it + notice }
         }
+    }
+
+    /**
+     * Blocked by the workspace (visitor-blocked, or the handshake's refusal):
+     * "This conversation has been closed.", the wait and the flow over, no
+     * input and no new chat (web _applyVisitorBlock, LiveEvents).
+     */
+    private fun onVisitorBlocked(data: Map<String, Any?>?) {
+        setAwaitingReply(false)
+        _suggestions.value = emptyList()
+        liveChat.block(data)
+        handover.blocked()
+        _currentAgent.value = null
+        _isAgentTyping.value = false
+    }
+
+    /**
+     * "Start a new chat" once a chat has closed: a fresh conversation, as
+     * the chat menu's Restart Chat.
+     */
+    fun startNewChat() {
+        clearHistory()
+        scope.launch { initializeSession() }
     }
 
     /**
@@ -1223,22 +1283,32 @@ object Conferbot {
     }
 
     /** "Helpful?" on an AI answer: kept on the message, sent to the server. */
-    fun sendAnswerFeedback(agentMessageId: String, helpful: Boolean, reason: String? = null) {
-        val feedback = AnswerFeedback(helpful, reason?.takeIf { !helpful })
+    fun sendAnswerFeedback(agentMessageId: String, helpful: Boolean, reason: String? = null) =
+        sendAnswerFeedback(agentMessageId, AnswerFeedback(helpful, reason?.takeIf { !helpful }))
+
+    /**
+     * A vote on an AI answer (core/agent/AnswerFeedback.kt): kept on the
+     * message and on its record entry (`feedback`, as the web keeps it, so
+     * the conversation's record says how it was rated), and sent as
+     * ai-answer-feedback.
+     */
+    fun sendAnswerFeedback(agentMessageId: String, feedback: AnswerFeedback) {
         _record.value = _record.value.map {
             if (it is RecordItem.AgentMessage && it.id == agentMessageId) it.copy(feedback = feedback) else it
         }
         scope.launch {
             _record.value.firstOrNull { it.id == agentMessageId }?.let { messageManager?.addMessage(it) }
         }
-        val payload = JSONObject().apply {
-            put("chatSessionId", _chatSessionId.value)
-            put("agentMessageId", agentMessageId)
-            put("helpful", helpful)
-            feedback.reason?.let { put("reason", it) }
-        }
-        socketClient?.emitWithAck("ai-answer-feedback", payload, 10_000L)
+        val at = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        ChatState.setEntryField(agentMessageId, "feedback", com.conferbot.sdk.core.agent.Helpful.entryFeedback(feedback, at))
+        socketClient?.emitWithAck("ai-answer-feedback", JSONObject(com.conferbot.sdk.core.agent.Helpful.payload(_chatSessionId.value, agentMessageId, feedback)), 10_000L)
     }
+
+    // "Ask another way": the composer takes the focus (a counter the input watches).
+    private val _composerFocus = MutableStateFlow(0)
+    val composerFocus: StateFlow<Int> = _composerFocus.asStateFlow()
+    fun focusComposer() { _composerFocus.value = _composerFocus.value + 1 }
 
     /**
      * The visitor's Confirm / Not now on an action the AI is about to take.
