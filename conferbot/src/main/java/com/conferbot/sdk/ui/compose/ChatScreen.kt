@@ -122,7 +122,21 @@ private fun ConferBotChatScreenContent(
         }
     }
     val canAttach = isLiveChatMode && (com.conferbot.sdk.core.livechat.LiveChat.visitorUploadsOn(customizationMap) || fileRequestedBy != null)
-    val repliesOff = lockedBy != null || !inputEnabled
+    val blocked by live.blocked.collectAsState()
+    val mailOpen by live.mailOpen.collectAsState()
+    val mailSentTo by live.mailSentTo.collectAsState()
+    val serverRecord by com.conferbot.sdk.core.state.ChatState.record.collectAsState()
+    // Blocked, or the live chat ended with nothing going on: the closed
+    // state (core/livechat/LiveEvents.kt), with a new chat for an ended one.
+    val closed = remember(serverRecord, blocked, currentUIState, isProcessing, isLiveChatMode, currentAgent) {
+        com.conferbot.sdk.core.livechat.LiveEvents.closedStateOf(
+            com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(serverRecord),
+            blocked = blocked,
+            stepWaiting = currentUIState != null || isProcessing,
+            live = isLiveChatMode && currentAgent != null
+        )
+    }
+    val repliesOff = lockedBy != null || !inputEnabled || closed?.inputOff == true
 
     // The bot's settings as the web applies them (core/customization).
     val look by Conferbot.customizations.collectAsState()
@@ -183,7 +197,9 @@ private fun ConferBotChatScreenContent(
                 isSyncing = isSyncingQueue,
                 serverCustomization = serverCustomization,
                 look = look.takeIf { hasLook },
-                statusText = statusText
+                statusText = statusText,
+                // The conversation to the visitor's inbox (web chat menu, emailTranscript.ts).
+                onEmailChat = if (sessionId != null && blocked == null) ({ live.openEmailTranscript() }) else null
             )
         },
         modifier = modifier
@@ -264,11 +280,11 @@ private fun ConferBotChatScreenContent(
                     paginationState = paginationState,
                     isLoadingMore = isLoadingMore,
                     onLoadMore = { Conferbot.loadMoreMessages() },
-                    currentUIState = if (!isFlowComplete) currentUIState else null,
+                    currentUIState = if (!isFlowComplete && blocked == null) currentUIState else null,
                     onNodeResponse = { response -> Conferbot.submitNodeResponse(response) },
                     modifier = Modifier.weight(1f),
-                    footer = { LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }) },
-                    footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo)
+                    footer = { LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }, closed = closed) },
+                    footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo, mailOpen, mailSentTo, closed?.kind)
                 )
 
                 lockedBy?.let { SystemLine("This conversation has been locked") }
@@ -282,7 +298,11 @@ private fun ConferBotChatScreenContent(
                     onTypingChanged = { isTyping -> Conferbot.sendTypingStatus(isTyping) },
                     serverCustomization = serverCustomization,
                     enabled = !repliesOff,
-                    placeholder = if (repliesOff) "Replies are turned off for now" else "Type a message...",
+                    placeholder = when {
+                        closed?.inputOff == true -> closed.text
+                        repliesOff -> "Replies are turned off for now"
+                        else -> "Type a message..."
+                    },
                     onAttach = if (canAttach) ({ pickFile.launch("*/*") }) else null
                 )
                 }
