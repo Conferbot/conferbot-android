@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowInputs
 import com.conferbot.sdk.core.flow.FlowText
 import com.conferbot.sdk.core.flow.Js
@@ -96,7 +97,7 @@ class YesOrNoChoiceNodeHandler : BaseNodeHandler() {
 
     private fun options(data: Map<String, Any?>): List<Map<String, Any?>> {
         val list = Js.list(data["options"]).mapNotNull { Js.map(it) }
-        return list.ifEmpty { listOf(mapOf("id" to "1", "label" to "Yes"), mapOf("id" to "2", "label" to "No")) }
+        return list.ifEmpty { listOf(mapOf("id" to "1", "label" to I18n.t("sdk.common.yes")), mapOf("id" to "2", "label" to I18n.t("sdk.common.no"))) }
     }
 
     private fun ui(data: Map<String, Any?>, nodeId: String) = NodeUIState.SingleChoice(
@@ -124,7 +125,8 @@ class YesOrNoChoiceNodeHandler : BaseNodeHandler() {
 
 /** What the faces have always recorded (web nodeKit FACE_VALUES). */
 internal val FACE_VALUES = listOf("😡", "😐", "😊", "😀", "😁")
-private val FACE_LABELS = listOf("Very unhappy", "Unhappy", "Neutral", "Happy", "Very happy")
+/** The faces' words in the visitor's language (web nodeKit faceLabels). */
+private val FACE_LABELS: List<String> get() = (1..5).map { I18n.t("rating.face.$it") }
 
 internal fun ratingCount(ratingType: Any?): Int {
     if (ratingType == "smiley") return 5
@@ -132,12 +134,12 @@ internal fun ratingCount(ratingType: Any?): Int {
     return Math.max(1, Math.min(10, if (Js.isFinite(n) && n != 0.0) n.toInt() else 5))
 }
 
-/** What each score means (web nodeKit ratingWords, English). */
+/** What each score means, in the visitor's language (web nodeKit ratingWords). */
 internal fun ratingWords(ratingType: Any?, n: Int): List<String> = when {
     ratingType == "smiley" -> FACE_LABELS
-    n == 3 -> listOf("Bad", "Okay", "Great")
-    n == 5 -> listOf("Terrible", "Bad", "Okay", "Good", "Amazing")
-    else -> (1..n).map { "$it out of $n" }
+    n == 3 -> listOf("rating.bad", "rating.okay", "rating.great").map { I18n.t(it) }
+    n == 5 -> listOf("rating.terrible", "rating.bad", "rating.okay", "rating.good", "rating.amazing").map { I18n.t(it) }
+    else -> (1..n).map { I18n.t("rating.outOf", "n" to it, "max" to n) }
 }
 
 /** The value a rating button records: stars, or the face. */
@@ -307,6 +309,7 @@ class NCheckOptionsNodeHandler : BaseNodeHandler() {
     }
 }
 
+/** What a card step without path buttons records (English, as the web stores it); drawn as common.continue. */
 internal const val CAROUSEL_CONTINUE = "Continue"
 
 internal data class CarouselButton(val id: String, val label: String, val action: String, val href: String)
@@ -339,7 +342,7 @@ internal fun carouselChoices(cards: List<CarouselCard>): List<NodeUIState.Single
             out.add(NodeUIState.SingleChoice.Choice(id = b.id, text = label, imageUrl = c.image.ifEmpty { null }, targetPort = if (b.action == "link") b.href else "source-${b.id}"))
         }
     }
-    if (cards.none { c -> c.buttons.any { it.action == "path" } }) out.add(NodeUIState.SingleChoice.Choice(id = "continue", text = CAROUSEL_CONTINUE, targetPort = "source"))
+    if (cards.none { c -> c.buttons.any { it.action == "path" } }) out.add(NodeUIState.SingleChoice.Choice(id = "continue", text = I18n.t("common.continue"), targetPort = "source"))
     return out
 }
 
@@ -388,7 +391,7 @@ class CarouselNodeHandler : BaseNodeHandler() {
                 "selectedCardId" to card?.id, "selectedButtonId" to button?.id
             )
         )
-        FlowKit.userSay(text)
+        FlowKit.userSay(if (button != null) text else I18n.t("common.continue"))
         if (button != null) ChatState.fillAnswerVariable(nodeId, text)
         return NodeResult.Proceed(if (button != null) "source-${button.id}" else "source")
     }
