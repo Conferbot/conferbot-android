@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.customization
 
+import com.conferbot.sdk.core.i18n.t
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -145,5 +146,5 @@ object MascotMoods {
 
     /** "Pip is typing" when the owner named their mascot (chatChrome.ts typingBubbleHtml), else "Typing". */
     fun typingLabel(style: String, mascotName: String): String =
-        if (style == "mascot" && mascotName.isNotEmpty()) "$mascotName is typing" else "Typing"
+        if (style == "mascot" && mascotName.isNotEmpty()) t("typing.named", "name" to mascotName) else t("typing.typing")
 }
