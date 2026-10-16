@@ -18,6 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,10 +101,19 @@ internal fun MonthPicker(
 /** Times as options to pick, in a box that scrolls when there are many. */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun TimeOptions(style: StepLook, times: List<String>, label: (String) -> String, picked: String?, enabled: Boolean, onPick: (String) -> Unit) {
+private fun TimeOptions(style: StepLook, times: List<String>, label: (String) -> String, picked: String?, enabled: Boolean, taken: Set<String> = emptySet(), onPick: (String) -> Unit) {
     Box(Modifier.heightIn(max = 168.dp).verticalScroll(rememberScrollState())) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            times.forEach { tm -> StepOption(label(tm), style, picked = tm == picked, enabled = enabled) { onPick(tm) } }
+            times.forEach { tm ->
+                // Already booked: shown greyed out, not pickable (web displayStep.ts calendar-node).
+                val booked = tm in taken
+                val words = label(tm)
+                StepOption(
+                    words, style,
+                    modifier = if (booked) Modifier.alpha(0.45f).semantics { contentDescription = t("sdk.calendar.slotBooked", "time" to words) } else Modifier,
+                    picked = tm == picked, enabled = enabled && !booked
+                ) { onPick(tm) }
+            }
         }
     }
 }
@@ -178,7 +189,9 @@ fun CalendarStep(ui: NodeUIState.Calendar, step: NodeUIState.StepInfo, style: St
         }
         if (ui.showTimeSelection && day != null) {
             Text(t("calendar.chooseSlot"), style = style.hint)
-            TimeOptions(style, slots.filter { it.date == day }.mapNotNull { it.time }, { it }, null, !busy) { send(FlowStepAnswer.calendar(day!!, it)) }
+            val daySlots = slots.filter { it.date == day }
+            val taken = daySlots.filter { !it.available }.mapNotNull { it.time }.toSet()
+            TimeOptions(style, daySlots.mapNotNull { it.time }, { it }, null, !busy, taken) { send(FlowStepAnswer.calendar(day!!, it)) }
         }
         if (!ui.timezone.isNullOrEmpty() && ui.showTimeSelection) Text(ui.timezone, style = style.hint)
         StepStatus(style, step.error)
