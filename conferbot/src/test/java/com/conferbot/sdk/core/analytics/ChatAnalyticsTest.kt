@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.analytics
 
+import android.os.Build
 import com.conferbot.sdk.services.SocketClient
 import com.google.common.truth.Truth.assertThat
 import io.mockk.*
@@ -589,7 +590,8 @@ class ChatAnalyticsTest {
         // Then
         assertThat(deviceInfo.deviceType).isEqualTo("mobile")
         assertThat(deviceInfo.osVersion).isNotEmpty()
-        assertThat(deviceInfo.sdkVersion).isGreaterThan(0)
+        // The platform's API level; android.jar's stub reads 0 on the JVM, a device reads its level
+        assertThat(deviceInfo.sdkVersion).isEqualTo(Build.VERSION.SDK_INT)
         assertThat(deviceInfo.deviceModel).isNotEmpty()
         assertThat(deviceInfo.manufacturer).isNotEmpty()
         assertThat(deviceInfo.language).isNotEmpty()
