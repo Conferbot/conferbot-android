@@ -26,6 +26,27 @@ class LiveChatTest {
     }
 
     @Test
+    fun `keeps the estimate bucket and the team's usual wait (web queueCard ts)`() {
+        val q = LiveChat.queueStatusOf(mapOf("status" to "waiting", "position" to 2, "estimate" to mapOf("label" to "2 min", "bucket" to "about_2"), "typical" to mapOf("bucket" to "few_minutes")))!!
+        assertThat(q.estimateBucket).isEqualTo("about_2")
+        assertThat(q.typical).isEqualTo(mapOf("bucket" to "few_minutes"))
+    }
+
+    @Test
+    fun `words the wait card as the web - the estimate, else the usual wait, else a calm promise`() {
+        val live = LiveChat.queueStatusOf(mapOf("status" to "waiting", "position" to 2, "estimate" to mapOf("label" to "2 min", "bucket" to "about_2")))
+        // The server's bucket in the visitor's words, the usual wait under it.
+        assertThat(LiveChat.waitCardLines(live, "Typical wait: a few minutes")).isEqualTo(LiveChat.WaitLines("About 2 min", "Typical wait: a few minutes"))
+        // An unknown bucket keeps the server's label.
+        assertThat(LiveChat.waitCardLines(LiveChat.queueStatusOf(mapOf("status" to "waiting", "estimate" to mapOf("label" to "7 min", "bucket" to "new"))), null)).isEqualTo(LiveChat.WaitLines("7 min", ""))
+        // No estimate: the usual wait takes its place, shown once.
+        assertThat(LiveChat.waitCardLines(LiveChat.queueStatusOf(mapOf("status" to "waiting", "position" to 1)), "Typical wait: a few minutes"))
+            .isEqualTo(LiveChat.WaitLines("Typical wait: a few minutes", ""))
+        // Nothing known: the calm promise.
+        assertThat(LiveChat.waitCardLines(null, null).estimate).isEqualTo("Our team will be with you soon")
+    }
+
+    @Test
     fun `writes ordinals`() {
         assertThat(listOf(1, 2, 3, 4, 11, 12, 13, 21, 22, 101, 111).map(LiveChat::ordinal))
             .containsExactly("1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st", "111th").inOrder()
