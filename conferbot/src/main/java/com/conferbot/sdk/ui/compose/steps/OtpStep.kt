@@ -26,7 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.flow.FlowRich
-import com.conferbot.sdk.core.flow.FlowRich.t
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.flow.Js
 import com.conferbot.sdk.core.nodes.NodeUIState
