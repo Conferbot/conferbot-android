@@ -329,6 +329,7 @@ private fun ConferBotChatScreenContent(
                 if (!com.conferbot.sdk.core.flow.FlowStepCards.hidesComposer(if (!isFlowComplete) currentUIState else null)) ChatBottomBar(
                     onSendMessage = { text -> Conferbot.sendMessage(text) },
                     onTypingChanged = { isTyping -> Conferbot.sendTypingStatus(isTyping) },
+                    onDraft = { Conferbot.updateVisitorDraft(it) },
                     serverCustomization = serverCustomization,
                     enabled = !repliesOff,
                     placeholder = when {
