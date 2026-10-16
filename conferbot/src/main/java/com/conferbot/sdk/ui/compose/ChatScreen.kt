@@ -220,7 +220,8 @@ private fun ConferBotChatScreenContent(
                 }
 
                 AnimatedVisibility(
-                    visible = errorMessage != null,
+                    // A step card says why it refused an answer on itself.
+                    visible = errorMessage != null && com.conferbot.sdk.core.flow.FlowStepCards.cardStep(currentUIState)?.error != errorMessage,
                     enter = fadeIn(tween(animations.statusBannerDuration)) +
                             slideInVertically(tween(animations.statusBannerDuration)),
                     exit = fadeOut(tween(animations.statusBannerDuration)) +
@@ -274,8 +275,9 @@ private fun ConferBotChatScreenContent(
                 agentLost?.let { SystemLine("$it's connection dropped. Hang on, they should be right back.") }
                 QuickActionsStrip()
 
-                // Unified input + footer — one seamless bottom bar
-                ChatBottomBar(
+                // Unified input + footer — one seamless bottom bar; none under
+                // a step card that takes the typing itself (OTP, address, signature).
+                if (!com.conferbot.sdk.core.flow.FlowStepCards.hidesComposer(if (!isFlowComplete) currentUIState else null)) ChatBottomBar(
                     onSendMessage = { text -> Conferbot.sendMessage(text) },
                     onTypingChanged = { isTyping -> Conferbot.sendTypingStatus(isTyping) },
                     serverCustomization = serverCustomization,
