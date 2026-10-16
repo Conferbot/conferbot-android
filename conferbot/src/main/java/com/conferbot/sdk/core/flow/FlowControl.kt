@@ -35,7 +35,7 @@ object FlowControl {
 
     /** Fill {var} placeholders from the lookup ("" for unknown ones). */
     fun fillText(text: Any?, lookup: VariableLookup): String =
-        Regex("\\$?\\{(\\w+)}").replace(Js.str(text)) { m ->
+        Regex("\\$?\\{(\\w+)\\}").replace(Js.str(text)) { m ->
             val v = lookup(m.groupValues[1])
             when (v) {
                 null -> ""
@@ -75,7 +75,7 @@ object FlowControl {
     fun startLoop(data: Map<String, Any?>?, lookup: VariableLookup): LoopState {
         val cap = loopCap(data)
         if (data?.get("mode") == "each") {
-            val key = clean(data["listVariable"]).replace(Regex("^\\{|}$"), "")
+            val key = clean(data["listVariable"]).replace(Regex("^\\{|\\}$"), "")
             val items = listOf(if (key.isNotEmpty()) lookup(key) else null)
             return LoopState(0, Math.min(items.size, cap), items.take(cap), items.size > cap)
         }
