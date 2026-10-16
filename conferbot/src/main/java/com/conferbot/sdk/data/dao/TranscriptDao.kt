@@ -39,4 +39,8 @@ interface TranscriptDao {
 
     @Query("DELETE FROM transcript_entries WHERE timestamp < :olderThan")
     suspend fun deleteOldEntries(olderThan: Long)
+
+    /** The session's newest [count] entries (in the order they were saved): a rewind's cut. */
+    @Query("DELETE FROM transcript_entries WHERE id IN (SELECT id FROM transcript_entries WHERE sessionId = :sessionId ORDER BY id DESC LIMIT :count)")
+    suspend fun deleteNewest(sessionId: String, count: Int)
 }
