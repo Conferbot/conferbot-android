@@ -221,7 +221,8 @@ Server values always win. Per attribute the resolution order is:
 |-----------|------------------|
 | FAB color | `widgetIconBgColor` > `headerBgColor` > `config.backgroundColor` > default brand blue |
 | Shape, size, offsets | As the web draws it on a phone: `launcherShape` (speech bubble by default, circle, squircle, tab, peek), `mobileWidgetSize` else `widgetSize`, `mobileOffsetBottom` / `mobileOffsetSide` else 16dp |
-| Style | `launcherStyle`: icon, the bot's avatar with an online dot, or the label pill on tablets (phones show the round button, as the web does); an uploaded `widgetIconImage` always wins |
+| Style | `launcherStyle`: icon, the bot's avatar with an online dot, the label pill on tablets (phones show the round button, as the web does), or your mascot (below); an uploaded `widgetIconImage` always wins |
+| Mascot | The mascot you design in the dashboard: one of 27 characters (`mascotShape`) with its eyes (`mascotEyes`), accessory (`mascotAccessory`), colour (`mascotColor`, else the launcher's) and name (`mascotName`). The `mascot` launcher style shows its head over a soft light button at `mascotLauncherScale`% (70-150, 112 by default), blinking now and then, and hopping with a big smile when a reply arrives while the chat is closed. `mascotInGreeting` puts it on the greeting card in place of the avatar, by its name, waving twice; `mascotMotion` sets how the card and its figure move: lively (the card springs up, the figure pops, waves, the Online dot pings, the words fade up, at most three small gestures, then still), subtle (a rise and one tilt) or off. Opened from the card, the figure hands off to the launcher as the card collapses; its x makes it bow. The idle call sends your mascot out. With the phone's animations off it stands still (a happy one keeps its smile). No glows or bevel (not drawn on mobile) |
 | Colour | Solid or left-to-right gradient; icon ink turns dark on a light launcher; a soft glow in the header colour |
 | Greeting card | The web's greeting card, 12dp above the launcher: `chatIconCta` / `chatIconCtaText`, `greetingRules` (the ones that fit an app: audience, signed in, schedule, visits, chatted, limits; the smart greetings included), `greetingDelay`, `greetingFrequency` (page = rests 5 min after a close, session, visitor every N days), `greetingClickAction` (open, send, link) and `greetingStyle` (card, note, imessage by default, postcard, sticky, typewriter, glass, notification, neon, voice, aurora). Suggested questions come from the rule or the AI agent. A signed-in visitor (`identify` / `user`) gets no sales greeting, as on the web |
 | Icons and motion | All 56 dashboard launcher icons, drawn as on the web, moving as on the web: an idle moment about 2s after the launcher shows and a few more after (`launcherAnimation` subtle / lively; off stops it), a reaction when a message arrives while the chat is closed, and the ripple rings. Nothing moves while the chat is open, after it was opened, or with the phone's animations turned off |
@@ -370,6 +371,13 @@ Conferbot.showHelp(categoryId)    // the help centre, on one topic or its list
 HomeScreenView(onClose = { /* close */ })  // com.conferbot.sdk.ui.compose.home
 ```
 
+The web's home has no mascot. To put yours on your own home, or anywhere in your app (moods: idle, wave, think, happy):
+
+```kotlin
+HomeScreenView(mascot = { m -> Mascot(m.look, m.accent, size = 56f, mood = "wave") })
+Mascot(Conferbot.customizations.value.mascot, Conferbot.customizations.value.mascotAccent)  // com.conferbot.sdk.ui.compose.mascot
+```
+
 The XML chat opens on the conversation (no home screen there yet).
 
 ### How bot flows run
@@ -383,6 +391,7 @@ The flow engine runs a bot the way the web widget does. It passes the shared flo
 - The GPT, AI and knowledge-base steps ask Conferbot's server, which holds the owner's AI key. The app never needs one.
 - Card numbers, IDs and passwords a visitor types are masked in the answers and the record, unless the bot's `redactSensitive` setting is off.
 - Typing dots last as long as on the web: longer for longer messages.
+- The typing bubble follows `typingStyle`: dots, wave, shimmer, a pencil writing a line, or your mascot swaying by three thought dots ("Pip is typing" when you named it). The XML chat shows dots.
 
 ### Step cards (Compose)
 
