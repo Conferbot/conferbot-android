@@ -188,4 +188,34 @@ class GreetingTest {
         assertThat(Greeting.decide(anon - "greetingRules", new)!!.text).isEqualTo("Hi there 👋")
         assertThat(Greeting.decide(anon, new)!!.text).isEqualTo("Pricing for your team?")
     }
+
+    @Test
+    fun `the mascot greets in place of the avatar, by its name, moving as the owner chose (#81)`() {
+        val c = mapOf<String, Any?>(
+            "chatIconCta" to true,
+            "chatIconCtaText" to "Hi there",
+            "avatar" to "https://cdn.x/a.png",
+            "botName" to "Acme bot",
+            "widgetIconBgColor" to "#123456",
+            "mascotShape" to "fox",
+            "mascotName" to "Pip",
+            "mascotInGreeting" to true,
+            "mascotMotion" to "subtle",
+        )
+        val g = Greeting.decide(c, new)!!
+        val state = com.conferbot.sdk.ui.compose.GreetingState(null, "bot-mascot-test")
+        state.show(c, g, null)
+        val card = state.card!!
+        assertThat(card.head.avatar).isNull()
+        assertThat(card.head.name).isEqualTo("Pip")
+        assertThat(card.mascot).isEqualTo(com.conferbot.sdk.ui.compose.GreetingMascot(MascotArt.Look(shape = "fox", name = "Pip"), "#123456"))
+        assertThat(card.motion).isEqualTo("subtle")
+        // Unnamed, it keeps the bot's name; without mascotInGreeting, the avatar and lively motion.
+        state.show(c - "mascotName", g, null)
+        assertThat(state.card!!.head.name).isEqualTo(Greeting.head(c).name)
+        state.show(c - "mascotInGreeting" - "mascotMotion", g, null)
+        assertThat(state.card!!.mascot).isNull()
+        assertThat(state.card!!.head.avatar).isEqualTo("https://cdn.x/a.png")
+        assertThat(state.card!!.motion).isEqualTo("lively")
+    }
 }
