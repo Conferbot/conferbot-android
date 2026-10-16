@@ -1160,19 +1160,48 @@ object ChatState {
 
     /**
      * Puts a saved state back in place, the session kept (RN ChatState.restore).
-     * The answers and the visitor's details are saved again; the stored
-     * transcript and record are append-only and keep what came after.
+     * The answers and the visitor's details are saved again, and the stored
+     * transcript, record and answers are cut to the snapshot (#88): a restart
+     * brings back the conversation as rewound, not what the rewind removed.
      */
     fun restore(s: Snapshot) {
+        val dropped = transcriptDroppedBy(_transcript.value, s.transcript)
         _answerVariables.value = s.answerVariables.map { it.copy() }.toMutableList()
         _variables.value = s.variables.toMutableMap()
         _userMetadata.value = copyMetadata(s.userMetadata)
         _transcript.value = s.transcript.toMutableList()
         _record.value = s.record.map(::copyEntry).toMutableList()
         _currentIndex.value = s.currentIndex
-        persistAnswerVariables()
+        persistRewind(dropped)
         persistUserMetadata()
         persistCurrentIndex()
+    }
+
+    /**
+     * How many of [current]'s newest entries came after [kept] (a prefix of
+     * it, give or take the oldest ones trimmed from memory since); -1 when
+     * nothing is kept, so the stored transcript goes whole.
+     */
+    internal fun transcriptDroppedBy(current: List<TranscriptEntry>, kept: List<TranscriptEntry>): Int {
+        val last = kept.lastOrNull() ?: return -1
+        val at = current.indexOfLast { it == last }
+        return if (at >= 0) current.size - 1 - at else current.size
+    }
+
+    /** The stored conversation cut to the rewound state (Room). */
+    private fun persistRewind(transcriptDropped: Int) {
+        val sessionId = _chatSessionId ?: return
+        if (!autoPersistEnabled || sessionRepository == null) return
+        val records = _record.value.map(::copyEntry)
+        val answers = _answerVariables.value.toList()
+
+        scope.launch {
+            try {
+                sessionRepository?.rewind(sessionId, transcriptDropped, records, answers)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to persist the rewind", e)
+            }
+        }
     }
 
     // ========== Reset ==========
