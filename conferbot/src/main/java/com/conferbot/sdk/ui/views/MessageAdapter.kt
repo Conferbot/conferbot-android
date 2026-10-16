@@ -1734,10 +1734,14 @@ class MessageAdapter(
         override fun bind(message: RecordItem) {
             if (message is RecordItem.AgentMessage) {
                 agentName.text = message.agentDetails.name
-                // Lists, bold and tappable links (utils/ChatMarkdown.kt).
+                // Lists, bold, tables and tappable links (utils/ChatMarkdown.kt).
                 messageText.text = com.conferbot.sdk.ui.views.ChatMarkdownSpans.toSpanned(message.text)
                 messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 timeText.text = formatTime(message.time)
+                // The AI's fallback reply: the same bubble, italic at 85% (web isFallback).
+                val fallback = message.extras?.isFallback == true
+                messageText.setTypeface(null, if (fallback) android.graphics.Typeface.ITALIC else android.graphics.Typeface.NORMAL)
+                messageText.alpha = if (fallback) 0.85f else 1f
             }
             // An agent - person or AI - speaks in the bot's colours, as on the web.
             if (XmlLook.loaded) {
