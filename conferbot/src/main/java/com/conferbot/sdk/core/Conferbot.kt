@@ -382,7 +382,9 @@ object Conferbot {
             continueFlow = { nodeFlowEngine?.continueAfterHandover() },
             postTranscriptEmail = { sid, email ->
                 apiClient?.sendTranscriptEmail(sid, email) ?: com.conferbot.sdk.core.livechat.EmailTranscript.Result(false)
-            }
+            },
+            // queue-status's help: the server's pick for the help card.
+            onQueueStatus = { waiting.onQueueStatus(it) }
         )
     }
 
@@ -395,11 +397,68 @@ object Conferbot {
             socket = { socketClient?.let { HandoverSocketAdapter(it) } },
             flow = { nodeFlowEngine },
             host = handoverHost,
-            timer = object : com.conferbot.sdk.core.livechat.SignalTimer {
-                override fun set(ms: Long, fn: () -> Unit): Any = scope.launch { delay(ms); fn() }
-                override fun clear(handle: Any) { (handle as? Job)?.cancel() }
+            timer = mainTimer,
+            // Where a wait for a person begins and ends: the help card 6s in.
+            waitHooks = object : com.conferbot.sdk.core.livechat.WaitHooks {
+                override fun start() = waiting.startWait()
+                override fun end() = waiting.endWait()
             }
         )
+    }
+
+    private val mainTimer = object : com.conferbot.sdk.core.livechat.SignalTimer {
+        override fun set(ms: Long, fn: () -> Unit): Any = scope.launch { delay(ms); fn() }
+        override fun clear(handle: Any) { (handle as? Job)?.cancel() }
+    }
+
+    // ========== While you wait ==========
+    // The help card 6s into a wait for a person (or the server's queue-help
+    // pick with "That solved it") and the waiting games 2.5s after the
+    // waiting signal (core/waiting). Screen-only: never saved or recorded.
+    @Volatile private var waitingCardsShown = 0
+
+    /** A chat that draws the while-you-wait cards is on screen (the Compose chat). */
+    internal fun setWaitingCardsShown(on: Boolean) {
+        waitingCardsShown = (waitingCardsShown + if (on) 1 else -1).coerceAtLeast(0)
+    }
+
+    val waiting: com.conferbot.sdk.core.waiting.WaitingExtras by lazy {
+        com.conferbot.sdk.core.waiting.WaitingExtras(
+            socket = { socketClient?.let { HandoverSocketAdapter(it) } },
+            sessionId = { _chatSessionId.value },
+            customizations = { _serverCustomizationMap.value },
+            record = { ChatState.getRecordForServer() },
+            joined = { handover.phase() == com.conferbot.sdk.core.livechat.HandoverPhase.JOINED },
+            lastItemId = { _record.value.lastOrNull()?.id },
+            leftQueueHelped = { handover.leftQueueHelped() },
+            reducedMotion = {
+                appContext?.let {
+                    runCatching { android.provider.Settings.Global.getFloat(it.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
+                } ?: false
+            },
+            // The XML chat draws no cards: there "play" is sent as words.
+            canDraw = { waitingCardsShown > 0 },
+            timer = mainTimer,
+            post = { fn -> scope.launch { fn() } }
+        ).also { w ->
+            listOf(
+                com.conferbot.sdk.core.livechat.HandoverSignals.WAITING_FOR_HUMAN_EVENT,
+                com.conferbot.sdk.core.livechat.HandoverSignals.HUMAN_JOINED_EVENT,
+                com.conferbot.sdk.core.livechat.HandoverSignals.WAIT_OVER_EVENT
+            ).forEach { name -> handover.onWidgetSignal(name) { w.signal(it) } }
+        }
+    }
+
+    /**
+     * A row of the while-you-wait card: an article opens in the chat's help
+     * centre (a page opens in the browser, from the card).
+     */
+    fun openWaitHelpItem(item: com.conferbot.sdk.core.waiting.WaitArticles.HelpItem) {
+        waiting.opened(item)
+        if (item.kind == "article") {
+            val known = waiting.findArticle(item.id)?.get("title") as? String
+            openHelpArticle(item.id, known ?: item.title, fromChat = true)
+        }
     }
 
     private class HandoverSocketAdapter(private val client: SocketClient) : com.conferbot.sdk.core.livechat.HandoverSocket {
@@ -765,6 +824,7 @@ object Conferbot {
         setupAgentBotListeners()
         liveChat.setupListeners()
         handover.setupListeners()
+        waiting.setupListeners()
         watchLiveChat()
 
         // Blocked by the workspace mid-chat (the handshake's refusal comes
@@ -1458,10 +1518,13 @@ object Conferbot {
             val chatbotData = data.optJSONObject("chatbotData") ?: data
 
             // The help centre: categories and recent articles, no bodies.
+            val kbData = data.optJSONObject("knowledgeBaseData")?.let { jsonObjectToMap(it) }
             _knowledgeBase.value = com.conferbot.sdk.core.helpcentre.HelpCentre.parse(
-                data.optJSONObject("knowledgeBaseData")?.let { jsonObjectToMap(it) },
+                kbData,
                 chatbotData.optJSONObject("customizations")?.let { jsonObjectToMap(it) }
             )
+            // ...and as sent, for the while-you-wait articles and the quiz.
+            waiting.setKnowledgeBase(kbData)
 
             // Parse elements array: elements is an array with one object containing nodes and edges
             val elementsArray = chatbotData.optJSONArray("elements")
@@ -2161,6 +2224,10 @@ object Conferbot {
             return
         }
 
+        // Waiting for a person: "play" or "games" opens the games menu instead
+        // of being sent (core/waiting/WaitingGames.kt, web games/wire.ts).
+        if (waiting.interceptPlay(text)) return
+
         // Track user message in analytics
         ChatAnalytics.trackUserMessage(
             messageLength = text.length,
@@ -2595,6 +2662,7 @@ object Conferbot {
     fun clearHistory() {
         liveChat.reset()
         handover.reset()
+        waiting.reset()
         _talkToPersonRetired.value = false
         _record.value = emptyList()
         _chatSessionId.value = null
