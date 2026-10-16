@@ -379,6 +379,8 @@ private fun ConferBotChatScreenContent(
         }
         // "Your requests" over the whole chat (or the home), its header too, while open; Back steps back.
         com.conferbot.sdk.ui.compose.requests.RequestsPortalView()
+        // A wait's article the help centre cannot open, fetched by id and shown on its own (#75).
+        com.conferbot.sdk.ui.compose.chat.WaitArticleSheet()
     }
 }
 
