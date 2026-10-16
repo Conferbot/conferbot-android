@@ -37,7 +37,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
-- **Push notifications** - FCM token registration, notification handling, and in-app banners
+- **Push notifications** - optional FCM: the token registered per conversation, a tap opens its conversation
 - **Knowledge base** - searchable help center screen with categories, articles, and ratings
 - **File uploads** - image and file attachments with validation and progress
 - **Analytics** - UTM attribution, interactions, goals, and CSAT/NPS ratings
@@ -452,7 +452,7 @@ ConferBotConfig(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `enableNotifications` | `Boolean` | `true` | Enable FCM push notification handling |
+| `enableNotifications` | `Boolean` | `true` | Notification handling and the `conferbot_messages` channel |
 | `enableOfflineMode` | `Boolean` | `true` | Queue messages while offline |
 | `autoConnect` | `Boolean` | `true` | Connect the socket automatically on initialize |
 | `reconnectionAttempts` | `Int?` | `null` (5) | Max socket reconnection attempts |
@@ -644,31 +644,67 @@ Conferbot.initialize(
 
 ## Push Notifications
 
-Deliver agent responses when the app is in the background using Firebase Cloud Messaging.
+When an agent or the AI replies while the visitor is not in the chat (the app is in the background or closed), the Conferbot server sends an FCM push. Firebase is optional: the SDK only compiles against `firebase-messaging` and declares no `FirebaseMessagingService`, so push stays off until your app adds Firebase and hands the SDK a token.
 
-1. Add Firebase to your app (the SDK already depends on `firebase-messaging-ktx`; you need `google-services.json` and the `com.google.gms.google-services` plugin).
-2. Register the FCM token after a session starts (token refreshes are forwarded automatically once notifications are initialized):
+1. Add Firebase Messaging to your app (`google-services.json`, the `com.google.gms.google-services` plugin, `implementation 'com.google.firebase:firebase-messaging-ktx'`).
+2. Pass the token to the SDK. It is registered with the current conversation (`POST /api/v1/mobile/push/register` with `chatSessionId` and `tokenType`), again for each new conversation, tried again as the conversation goes on while the server does not have it yet, and unregistered on logout (`identify(null)` or another user), `clearHistory()` or `unregisterPush()`.
 
 ```kotlin
-FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-    if (task.isSuccessful) {
-        Conferbot.registerPushToken(task.result)
-    }
+FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+    Conferbot.setPushToken(token, PushTokenType.FCM)
 }
 ```
 
-3. Forward incoming payloads from your `FirebaseMessagingService`:
+3. Receive messages. If Conferbot is your only FCM sender, declare the SDK's service in your manifest (it forwards new tokens and messages):
+
+```xml
+<service
+    android:name="com.conferbot.sdk.notifications.ConferbotNotificationService"
+    android:exported="false">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+    </intent-filter>
+</service>
+```
+
+With your own `FirebaseMessagingService` (only one service gets the messages), forward instead:
 
 ```kotlin
+override fun onNewToken(token: String) {
+    Conferbot.setPushToken(token, PushTokenType.FCM)
+}
+
 override fun onMessageReceived(message: RemoteMessage) {
-    if (Conferbot.handlePushNotification(message.data)) return
-    // Handle your own notifications
+    // Arrived in the foreground: counted unread and shown, unless that conversation is on screen.
+    if (Conferbot.handlePushNotification(message.data, open = false)) return
+    // Your own notifications
 }
 ```
 
-`handlePushNotification()` returns `true` only for Conferbot payloads, so your other notifications are untouched.
+4. Open taps. In the background Android shows the server's notification itself and a tap starts your launcher activity with the data as extras:
 
-Additional controls: `unregisterPushToken()` (on logout), `handleNotificationTap(data)`, `setCurrentActivity(activity)` for in-app banners, `setNotificationChatActivity(MyChatActivity::class.java)` for custom deep links, `updateNotificationSettings(NotificationSettings)`, `addNotificationListener(listener)`, `cancelAllNotifications()`.
+```kotlin
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    Conferbot.handlePushIntent(intent)
+}
+
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    Conferbot.handlePushIntent(intent)
+}
+```
+
+A tap opens `ChatActivity` (or your `setNotificationChatActivity` class) on its conversation: the chat when it is the conversation on the device, else that conversation in "Your requests". A tap before `initialize()` is opened once the SDK is ready.
+
+- `setPushToken(token, type)`: `type` is `PushTokenType.FCM` or `APNS`; without it a 64-character hex token is taken as APNs. `setPushToken(null)` unregisters; a new token replaces the old one.
+- `handlePushNotification(data, open = true)` returns `true` only for a Conferbot message of this bot (data `source: "conferbot"`, `type: "conferbot_message"`, `botId`, `chatSessionId`, `messageId`, `senderType`, `senderName`, `body`), so your other notifications are untouched. `ConferbotPush.parse(data)` / `ConferbotPush.isConferbotPush(data)` read one without the SDK.
+- The server sends on the channel `conferbot_messages` (`PushContract.CHANNEL_ID`), which the SDK creates when `enableNotifications` is on (the default); notifications the SDK shows use it too. One notification per conversation (collapse key / tag = the conversation). Set your own `com.google.firebase.messaging.default_notification_icon` for the ones Android shows.
+- `registerPushToken(token)` and `unregisterPushToken()` still work: they are `setPushToken(token)` and `unregisterPush()`.
+
+Server side: sending is off until the workspace's embed-server has `MOBILE_PUSH_ENABLED=true` and the FCM / APNs credentials (embed-server `docs/mobile-push.md`). The credentials are platform-wide for now: pushes reach only apps built on Conferbot's Firebase project and bundle id. Your own app's Firebase project needs per-workspace credentials, which are not built yet (embed-server #197); until then its tokens register but FCM refuses its pushes (`SENDER_ID_MISMATCH`).
+
+Additional controls: `setCurrentActivity(activity)` for in-app banners, `setNotificationChatActivity(MyChatActivity::class.java)` for custom deep links, `updateNotificationSettings(NotificationSettings)`, `addNotificationListener(listener)`, `cancelAllNotifications()`.
 
 ## Advanced
 
@@ -863,9 +899,10 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `restorePersistedSession` | `suspend restorePersistedSession(): SessionRestoreResult` | Restore the persisted session |
 | `clearHistory` | `clearHistory()` | Clear local messages and persisted session |
 | `resetUnreadCount` | `resetUnreadCount()` | Zero the unread badge |
-| `registerPushToken` | `registerPushToken(token: String)` | Register an FCM token |
-| `unregisterPushToken` | `unregisterPushToken()` | Remove the registered token |
-| `handlePushNotification` | `handlePushNotification(data: Map<String, String>): Boolean` | Route an FCM payload; true if handled |
+| `setPushToken` | `setPushToken(token: String?, type: PushTokenType? = null)` | Register the device's token with each conversation; `null` unregisters |
+| `unregisterPush` | `unregisterPush()` | Stop this device's pushes (kept for the next conversation) |
+| `handlePushNotification` | `handlePushNotification(data: Map<String, String>, open: Boolean = true): Boolean` | A Conferbot push of this bot: open its conversation, or (`open = false`) count and show it |
+| `handlePushIntent` | `handlePushIntent(intent: Intent?): Boolean` | A tapped push's launcher intent |
 | `handleNotificationTap` | `handleNotificationTap(data: Map<String, String>)` | Handle a notification tap intent |
 | `updateNotificationSettings` | `updateNotificationSettings(settings: NotificationSettings)` | Configure notification behavior |
 | `initKnowledgeBaseService` | `initKnowledgeBaseService(): KnowledgeBaseService?` | Get/create the KB service |
