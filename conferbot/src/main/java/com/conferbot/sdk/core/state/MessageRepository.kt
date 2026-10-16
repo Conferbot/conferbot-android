@@ -324,6 +324,22 @@ class MessageRepository(
     }
 
     /**
+     * Remove messages (memory and disk): what "Edit" on an answer cut from the
+     * conversation, so a restart does not bring it back (#88).
+     */
+    suspend fun removeMessages(ids: Collection<String>) = mutex.withLock {
+        if (ids.isEmpty()) return@withLock
+        withContext(Dispatchers.IO) {
+            val gone = ids.toSet()
+            gone.forEach { messageCache.remove(it) }
+            messageIds.removeAll(gone)
+            _totalMessageCount = messageIds.size
+            saveMessagesToDisk(loadAllMessagesFromDisk().filterNot { it.id in gone })
+            saveIndex()
+        }
+    }
+
+    /**
      * Clear all data (memory and disk)
      */
     suspend fun clearAll() = mutex.withLock {
