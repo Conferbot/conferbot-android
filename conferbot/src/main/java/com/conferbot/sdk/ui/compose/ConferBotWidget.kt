@@ -259,8 +259,11 @@ fun ConferBotWidget(
     )
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    // A "send" greeting or a suggested question goes out once the chat has a session.
+    // A "send" greeting or a suggested question goes out once the chat has a
+    // session, past the home screen to the conversation (web
+    // firstImpression.ts openConversation).
     val sendWhenReady: (String) -> Unit = { text ->
+        Conferbot.showChat()
         scope.launch {
             delay(400)
             kotlinx.coroutines.withTimeoutOrNull(8_000) { Conferbot.chatSessionId.first { it != null } }
