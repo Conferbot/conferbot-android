@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
@@ -61,7 +62,13 @@ fun ChatHeader(
      */
     statusText: String = "Online",
     /** "Email me this chat" in the menu: shown when given (a session, a visitor not blocked). */
-    onEmailChat: (() -> Unit)? = null
+    onEmailChat: (() -> Unit)? = null,
+    /**
+     * "Your requests" in the menu ("Your requests · New reply" when a team
+     * reply is unread): shown when given, once the visitor has a request.
+     */
+    requestsLabel: String? = null,
+    onRequests: (() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -227,6 +234,13 @@ fun ChatHeader(
                         onClick = { showMenu = false; onEmailChat() },
                         leadingIcon = {
                             Icon(Icons.Default.Email, null, Modifier.size(18.dp))
+                        }
+                    )
+                    if (requestsLabel != null && onRequests != null) DropdownMenuItem(
+                        text = { Text(requestsLabel, fontSize = 14.sp) },
+                        onClick = { showMenu = false; onRequests() },
+                        leadingIcon = {
+                            Icon(Icons.Default.Inbox, null, Modifier.size(18.dp))
                         }
                     )
                     DropdownMenuItem(
