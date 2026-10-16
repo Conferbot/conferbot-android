@@ -1,123 +1,117 @@
 # Conferbot Android SDK
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.conferbot/android-sdk)](https://central.sonatype.com/artifact/com.conferbot/android-sdk)
-[![Android](https://img.shields.io/badge/Android-5.0%2B-green.svg)](https://developer.android.com)
+[![JitPack](https://jitpack.io/v/Conferbot/conferbot-android.svg)](https://jitpack.io/#Conferbot/conferbot-android)
+[![Android](https://img.shields.io/badge/Android-5.0%2B%20(API%2021)-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9%2B-blue.svg)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-The official Android SDK for integrating [Conferbot](https://conferbot.com) into Kotlin and Java applications. Supports XML Views, Jetpack Compose, and headless (custom UI) patterns.
+Add your [Conferbot](https://conferbot.com) chatbot to a native Android app. The chat looks and behaves like the Conferbot web widget: your dashboard settings, the bot's flows, the AI agent, handover to your team, the help centre and "Your requests". It works with Jetpack Compose and with XML Views, or you can build your own UI on the SDK's state.
 
-## See it in action
+## Quickstart video
 
-The complete flow recorded live on an Android emulator against production: open the floating widget, bot loads with server theming, welcome message with GIF, name captured through the input bar, choice selection with the transcript kept intact (selected chip stays highlighted, the rest disabled), and follow-up nodes.
-
+<!-- TODO(video): replace VIDEO_ID with the walkthrough's YouTube id and add docs/media/quickstart.gif (a short clip of it). -->
 <p align="center">
-  <img src="docs/demo.gif" width="300" alt="Conferbot Android SDK - live chat demo" />
+  <a href="https://youtu.be/VIDEO_ID">
+    <img src="docs/media/quickstart.gif" width="320" alt="Adding Conferbot to an Android app (video walkthrough)" />
+  </a>
 </p>
 
-<p align="center"><a href="docs/demo.mp4">HD video (MP4)</a></p>
+<p align="center"><a href="https://youtu.be/VIDEO_ID">Watch the full walkthrough on YouTube</a></p>
 
 <p align="center">
-  <img src="docs/screenshots/chat-compose.png" width="280" alt="Jetpack Compose Chat" />
-  <img src="docs/screenshots/choice-node.png" width="280" alt="Choice Node" />
-  <img src="docs/screenshots/themed-chat.png" width="280" alt="Themed Chat" />
+  <img src="docs/screenshots/chat-compose.png" width="240" alt="Jetpack Compose chat" />
+  <img src="docs/screenshots/choice-node.png" width="240" alt="Choice step" />
+  <img src="docs/screenshots/themed-chat.png" width="240" alt="Themed chat" />
 </p>
 
-## Features
-
-- **Floating chat widget (FAB)** - the same bubble-in-the-corner experience as the Conferbot web widget, driven by your dashboard customizations
-- **Drop-in chat UI** - full-screen Activity for XML apps, composables for Compose apps
-- **Headless SDK** - every piece of state exposed as Kotlin `StateFlow` for fully custom UIs
-- **Real-time messaging** - Socket.IO powered communication with the Conferbot flow engine
-- **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
-- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", help articles and games while the visitor waits, and "Your requests" to follow and answer their conversations with the team
-- **Home screen** - when the owner turns it on, the chat opens on the web widget's home: a greeting, "Ask anything", "Talk to us" with the team's reply time, your requests, help articles and your customer logos
-- **Sounds, fonts and human touches** - the owner's message sounds and sound packs, their Google font, the bot's tapbacks and confetti, "Edit" on the latest answer, auto-open and the agent's typing preview, as on the web widget
-- **Widget languages** - the SDK's own words (buttons, hints, errors, handover lines, queue card, help centre, step cards, home, requests, games, dates and times) in English, Dutch, French, German or Spanish, chosen as the web widget chooses
-- **Offline support** - message queueing with automatic retry when connectivity returns
-- **Session persistence** - chat history survives app restarts via Room
-- **Message pagination** - efficient loading of large conversation histories
-- **Push notifications** - optional FCM: the token registered per conversation, a tap opens its conversation
-- **Knowledge base** - searchable help center screen with categories, articles, and ratings
-- **File uploads** - image and file attachments with validation and progress
-- **Analytics** - UTM attribution, interactions, goals, and CSAT/NPS ratings
+**Contents:** [Requirements](#requirements) · [Install](#install) · [Get your bot ID](#get-your-bot-id) · [Add the chat](#add-the-chat) · [Sign users in](#sign-users-in) · [Push notifications](#push-notifications) · [Customising](#customising) · [Help centre and Your requests](#help-centre-and-your-requests) · [API reference](#api-reference) · [Troubleshooting](#troubleshooting) · [Contributing and testing](#contributing-and-testing)
 
 ## Requirements
 
-| Requirement | Minimum |
-|-------------|---------|
-| Android     | 5.0 (API 21) |
-| Kotlin      | 1.9 |
-| Java        | 17 (SDK compiles with `jvmTarget 17`) |
-| Compile SDK | 34 |
+| | Minimum | Notes |
+|---|---|---|
+| Android | 5.0 (API 21) | `minSdk 21` |
+| Compile SDK | 34 | the SDK's AndroidX dependencies need `compileSdk 34` |
+| Kotlin | 1.9 | the SDK is built with Kotlin 1.9.0 |
+| JDK | 17 | the SDK targets JVM 17; Android Gradle Plugin 8.x |
+| Jetpack Compose | optional | the SDK brings its own Compose libraries (BOM 2023.10.01). An XML app needs no Compose setup; a Compose app needs Compose 1.5 or newer |
+| Firebase | optional | only for push notifications, see [Push notifications](#push-notifications) |
 
-## Installation
+Permissions: the SDK's manifest adds `INTERNET`, `ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `VIBRATE`, `WAKE_LOCK` and `FOREGROUND_SERVICE`; you do not need to declare them.
 
-Add the Maven Central repository (if not already present) and the SDK dependency. The published coordinates are `com.conferbot:android-sdk:1.0.0`.
+## Install
 
-**Settings or project-level `build.gradle`:**
+The SDK is published on [JitPack](https://jitpack.io/#Conferbot/conferbot-android) as `com.github.Conferbot:conferbot-android`.
+
+**1. Add the JitPack repository** in `settings.gradle`:
 
 ```gradle
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://jitpack.io' }
     }
 }
 ```
 
-**App-level `build.gradle`:**
+Kotlin DSL (`settings.gradle.kts`):
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+```
+
+**2. Add the dependency** in your app module's `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'com.conferbot:android-sdk:1.0.0'
+    implementation 'com.github.Conferbot:conferbot-android:1.0.0'
 }
 ```
-
-Or with Kotlin DSL:
 
 ```kotlin
 dependencies {
-    implementation("com.conferbot:android-sdk:1.0.0")
+    implementation("com.github.Conferbot:conferbot-android:1.0.0")
 }
 ```
 
-Sync your Gradle files after adding the dependency. To build against a local checkout instead, include the `:conferbot` module in your `settings.gradle`.
+> This guide describes the code on `main` (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). Until the next version is tagged, use `main-SNAPSHOT` or a commit hash as the version to get it from JitPack. Version 1.0.0 is the last tagged release.
 
-## Getting Your API Key and Bot ID
+To build against a local checkout instead, add `include(":conferbot")` with `project(":conferbot").projectDir = file("path/to/conferbot-android/conferbot")` to `settings.gradle` and depend on `project(":conferbot")`.
 
-You need two credentials to use the SDK:
+**Minified builds:** the SDK ships its own consumer ProGuard / R8 rules. Nothing to add.
 
-1. **Log in** to the [Conferbot Dashboard](https://app.conferbot.com)
-2. **Create or select a bot** from the dashboard
-3. **Find your Bot ID**: Go to **Bot Settings** > **General** - the Bot ID is displayed at the top
-4. **API Key**: any placeholder works (e.g. `conf_test_key`); the bot ID is the credential
+## Get your bot ID
 
-Just evaluating? The public demo bot ID `691c970890527a0468f9b2c9` works without a Conferbot account (any non-empty API key works, e.g. `conf_test_key`; the bot ID is the credential).
+1. Sign in to the [Conferbot dashboard](https://app.conferbot.com) and open your bot.
+2. Go to the **Share** tab. Under **Mobile apps**, pick **Android**: the snippet there has your bot ID filled in. (The bot ID is the 24-character id of the bot; in the inbox, a bot's menu also has **Copy chatbot ID**.)
+3. **Publish** the bot in the flow builder. Draft flows are not served to the SDK.
 
-## Quick Start
+The `apiKey` argument is a placeholder for now: any non-empty value works (the dashboard's snippet uses `conf_test_key`). The bot ID is what identifies your bot.
 
-### Initialize the SDK
+Just trying it out? The public demo bot `691c970890527a0468f9b2c9` works without an account.
 
-Call `Conferbot.initialize()` once, in your `Application` class:
+## Add the chat
+
+### 1. Initialize once, in your `Application`
 
 ```kotlin
 import android.app.Application
 import com.conferbot.sdk.core.Conferbot
-import com.conferbot.sdk.models.ConferBotConfig
 
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-
         Conferbot.initialize(
             context = this,
-            apiKey = "YOUR_API_KEY",
-            botId = "YOUR_BOT_ID",
-            config = ConferBotConfig(
-                enableNotifications = true,
-                enableOfflineMode = true
-            )
+            apiKey = "conf_test_key",
+            botId = "YOUR_BOT_ID"
         )
     }
 }
@@ -132,389 +126,112 @@ Register it in `AndroidManifest.xml`:
 </application>
 ```
 
-Note: `initialize()` throws `IllegalStateException` if called twice. Call `Conferbot.disconnect()` before re-initializing (for example with a different bot).
+`initialize()` throws `IllegalStateException` when it is called twice. To switch bots, call `Conferbot.disconnect()` first.
 
-### Pattern 1: Activity Launch (XML apps)
+### 2a. Jetpack Compose
 
-Open a full-screen chat Activity with a single call:
+The floating launcher, as on the web: a button in the corner, the greeting card, the unread badge, and the chat in a sheet. Its shape, colour, icon, position and greeting come from your dashboard.
 
 ```kotlin
-import com.conferbot.sdk.core.Conferbot
+import androidx.compose.runtime.Composable
+import com.conferbot.sdk.ui.compose.ConferBotWidgetScope
 
-Conferbot.openChat(this)
+@Composable
+fun MyApp() {
+    ConferBotWidgetScope {
+        MyMainScreen() // your content; the launcher floats over it
+    }
+}
 ```
 
-This creates a session if needed and launches the built-in `ChatActivity`. It is the same chat as the Compose UI, hosted in an Activity (see [The XML chat](#the-xml-chat-chatactivity)), so an XML app gets every feature: the home screen, the help centre, "Your requests", the wait cards and games, the step cards, the typing styles, the chat menu and the post-chat redirect.
+Or place `ConferBotWidget()` yourself, last in a `Box` that fills the screen.
 
-### The XML chat (ChatActivity)
-
-`ChatActivity` hosts the Compose chat (`ConferBotChatScreen`, the screen `ConferBotWidget` opens) in a `ComposeView`. There is one implementation of the chat, so the XML and the Compose chat look and behave the same. The SDK brings the Compose libraries it uses; your app needs no Compose setup of its own (no Compose compiler, no `buildFeatures.compose`).
-
-What stays as it was:
-
-- `Conferbot.openChat(context)`, the Activity's class name, its manifest entry, `com.conferbot.ACTION_OPEN_CHAT` (a notification tap: its notifications are cancelled and `handleNotificationTap` gets the data in `conferbot_notification_data`) and the `conferbot://chat` deep link.
-- `setNotificationChatActivity(...)`, `setCurrentActivity(...)` and in-app banners.
-- `ConferBotCustomization` passed to `initialize()`: `primaryColor` (header, buttons, links), `botBubbleColor`, `userBubbleColor`, `bubbleRadius`, `fontFamily` (a font resource) and `headerTitle` theme the chat until the bot's settings arrive; the bot's own settings win after that, as before.
-- The open and close sounds, the chat counting as on screen while the Activity is resumed, the unread count cleared when it opens.
-- `MessageAdapter` and `NodeInteractionListener` are still public for an app that draws its own `RecyclerView` chat, but `ChatActivity` no longer uses them.
-
-Migrating from an SDK before this change:
-
-- The chat no longer inflates `activity_chat.xml`, `view_chat_header.xml`, `view_typing_indicator.xml` or `view_connection_status.xml`. An app that overrode those layouts, or their ids, colours or drawables, to restyle the chat sees the SDK's chat instead. Use `ConferBotCustomization` (above), the dashboard's settings, or embed `ConferBotChatView` / `ConferBotThemedChatScreen` in your own Activity with a `ConferbotTheme`.
-- `enableAvatar` and `avatarUrl` in `ConferBotCustomization` were not read by the old XML chat and still are not; the header shows the bot's logo from its settings.
-- Back from the conversation returns to the home screen when the owner has one; Back on the home screen closes the Activity.
-- The Activity's theme is still `Theme.AppCompat.Light.NoActionBar` with `adjustResize`; the chat follows the phone's dark mode until the bot's theme arrives.
-
-### Pattern 2: Jetpack Compose
-
-Embed the chat screen in any composable:
+A full-screen chat that you open yourself:
 
 ```kotlin
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import com.conferbot.sdk.ui.compose.ConferBotChatScreen
 
 @Composable
 fun SupportScreen() {
     var showChat by remember { mutableStateOf(false) }
-
-    Button(onClick = { showChat = true }) {
-        Text("Chat with us")
-    }
-
     if (showChat) {
-        ConferBotChatScreen(
-            onDismiss = { showChat = false }
-        )
+        ConferBotChatScreen(onDismiss = { showChat = false })
+    } else {
+        Button(onClick = { showChat = true }) { Text("Chat with us") }
     }
 }
 ```
 
-### Pattern 3: Floating Widget (FAB)
+### 2b. XML Views
 
-The closest equivalent to the Conferbot web widget: a floating bubble in the bottom corner of the screen. Tapping it opens an animated bottom-sheet chat with a scrim; tapping again (or the scrim) closes it. The bubble shows an unread badge and the bot's greeting card, and reads server customizations automatically (color, icon, size, position, offsets, greeting).
-
-```kotlin
-import com.conferbot.sdk.ui.compose.ConferBotWidget
-import com.conferbot.sdk.ui.compose.ConferBotWidgetScope
-
-// Option A: wrap your app content
-@Composable
-fun MyApp() {
-    ConferBotWidgetScope {
-        MyMainScreen()
-    }
-}
-
-// Option B: place it yourself in a Box
-@Composable
-fun MyApp() {
-    Box(Modifier.fillMaxSize()) {
-        MyMainScreen()
-        ConferBotWidget()
-    }
-}
-```
-
-Local fallback configuration (used only when the dashboard provides no value for that attribute):
+One call opens the full-screen chat (`ChatActivity`):
 
 ```kotlin
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import com.conferbot.sdk.ui.compose.ConferBotWidgetConfig
-import com.conferbot.sdk.ui.compose.WidgetPosition
-
-ConferBotWidget(
-    config = ConferBotWidgetConfig(
-        position = WidgetPosition.BOTTOM_RIGHT,  // or BOTTOM_LEFT
-        size = 50.dp,
-        offsetX = 10.dp,
-        offsetY = 10.dp,
-        backgroundColor = Color(0xFF1B55F3),
-        showUnreadBadge = true,
-        borderRadius = null                      // null = fully circular
-    )
-)
-```
-
-Server values always win. Per attribute the resolution order is:
-
-| Attribute | Resolution order |
-|-----------|------------------|
-| FAB color | `widgetIconBgColor` > `headerBgColor` > `config.backgroundColor` > default brand blue |
-| Shape, size, offsets | As the web draws it on a phone: `launcherShape` (speech bubble by default, circle, squircle, tab, peek), `mobileWidgetSize` else `widgetSize`, `mobileOffsetBottom` / `mobileOffsetSide` else 16dp |
-| Style | `launcherStyle`: icon, the bot's avatar with an online dot, the label pill on tablets (phones show the round button, as the web does), or your mascot (below); an uploaded `widgetIconImage` always wins |
-| Mascot | The mascot you design in the dashboard: one of 27 characters (`mascotShape`) with its eyes (`mascotEyes`), accessory (`mascotAccessory`), colour (`mascotColor`, else the launcher's) and name (`mascotName`). The `mascot` launcher style shows its head over a soft light button at `mascotLauncherScale`% (70-150, 112 by default), blinking now and then, and hopping with a big smile when a reply arrives while the chat is closed. `mascotInGreeting` puts it on the greeting card in place of the avatar, by its name, waving twice; `mascotMotion` sets how the card and its figure move: lively (the card springs up, the figure pops, waves, the Online dot pings, the words fade up, at most three small gestures, then still), subtle (a rise and one tilt) or off. Opened from the card, the figure hands off to the launcher as the card collapses; its x makes it bow. The idle call sends your mascot out. With the phone's animations off it stands still (a happy one keeps its smile). No glows or bevel (not drawn on mobile) |
-| Colour | Solid or left-to-right gradient; icon ink turns dark on a light launcher; a soft glow in the header colour |
-| Greeting card | The web's greeting card, 12dp above the launcher: `chatIconCta` / `chatIconCtaText`, `greetingRules` (the ones that fit an app: audience, signed in, schedule, visits, chatted, limits; the smart greetings included), `greetingDelay`, `greetingFrequency` (page = rests 5 min after a close, session, visitor every N days), `greetingClickAction` (open, send, link) and `greetingStyle` (card, note, imessage by default, postcard, sticky, typewriter, glass, notification, neon, voice, aurora). Suggested questions come from the rule or the AI agent. A signed-in visitor (`identify` / `user`) gets no sales greeting, as on the web |
-| Icons and motion | All 56 dashboard launcher icons, drawn as on the web, moving as on the web: an idle moment about 2s after the launcher shows and a few more after (`launcherAnimation` subtle / lively; off stops it), a reaction when a message arrives while the chat is closed, and the ripple rings. Nothing moves while the chat is open, after it was opened, or with the phone's animations turned off |
-| Entrance, attention, idle call | All off unless the owner turns them on, as on the web. `launcherEntrance` (classic by default; lightning, rocket, portal, ufo, drop, confetti, coin, meteor, magic, parachute, plane, egg) plays once per app session per bot: the launcher is held until the effect reveals it, and the greeting card stays hidden until it lands, then fades up 150ms later. `launcherAttention` (off; pulse, wobble, bounce, wave, float, shine, heartbeat, orbit) starts 1.5s after the launcher (or the card) shows, pauses for the icon's moments and stops once the chat is opened. `launcherIdleCall` (off; psst, peek, wave, knock, tap) sends the mascot out after `launcherIdleCallDelay` seconds (12 by default) with `launcherIdleCallText` in a bubble that opens the chat: at most twice per app session, 3 minutes apart, then 3 days of rest. Never over an open chat or with the phone's animations turned off. Glows, blurs and the mascot's bevel are not drawn |
-| Size | `widgetSize` > `config.size` |
-| Position | `widgetPosition` ("left"/"right") > `config.position` |
-| Horizontal offset | `widgetOffsetLeft`/`widgetOffsetRight` > `config.offsetX` |
-| Vertical offset | `widgetOffsetBottom` > `config.offsetY` |
-| Corner radius | `widgetBorderRadius` > `config.borderRadius` > size / 2 |
-| Icon | `widgetIconSVG` (WidgetBubbleIcon1..15) > default bubble |
-
-There is no XML-Views version of the floating bubble. In an XML app, host it in a `ComposeView`, or use `Conferbot.openChat()` from your own FAB (it opens the same chat).
-
-### Pattern 4: Headless (Custom UI)
-
-Build your own interface on top of the SDK's reactive state:
-
-```kotlin
-import androidx.compose.runtime.collectAsState
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
 import com.conferbot.sdk.core.Conferbot
 
-val messages by Conferbot.record.collectAsState()
-val isConnected by Conferbot.isConnected.collectAsState()
-val currentAgent by Conferbot.currentAgent.collectAsState()
-
-LazyColumn {
-    items(messages) { message ->
-        CustomMessageBubble(message)
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        findViewById<android.view.View>(R.id.chat_button).setOnClickListener {
+            Conferbot.openChat(this)
+        }
     }
 }
 ```
 
-Drive the conversation programmatically:
+`ChatActivity` hosts the same chat as Compose, so an XML app gets every feature: the home screen, help centre, "Your requests", the wait cards and games, step cards and the post-chat redirect. Your app needs no Compose setup for it. There is no XML version of the floating launcher; use your own button or `FloatingActionButton` with `openChat`.
+
+`ConferBotCustomization` passed to `initialize()` themes the chat until the bot's own settings arrive (see [Customising](#customising)).
+
+### 2c. Your own UI (headless)
+
+Every piece of state is a `StateFlow` on `Conferbot`:
 
 ```kotlin
+val messages by Conferbot.record.collectAsState()        // List<RecordItem>
+val connected by Conferbot.isConnected.collectAsState()
+val agent by Conferbot.currentAgent.collectAsState()       // Agent? while a person is in the chat
+
 Conferbot.sendMessage("Hello from my custom UI")
-Conferbot.sendTypingStatus(true)
 Conferbot.initiateHandover(message = "I need help with billing")
 Conferbot.endChat()
 ```
 
-### Handover to a person
+A waiting flow step is `Conferbot.currentUIState.value?.step`; answer it with `Conferbot.answerStep(FlowStepAnswer.consent(true))` and the other builders in `com.conferbot.sdk.core.flow.FlowStepAnswer`.
 
-The chat follows a handover the way the web widget does:
+### Resume the last conversation
 
-- When an AI agent passes the visitor to the team, the chat shows "Connecting you with the team…" with typing dots. The line then settles to how the wait ended: "Connected with the team", "The team couldn't join just now", "You left the queue" or "Chat ended before the team joined". A person joining after the AI shows "They can see your conversation so far".
-- The waiting card's **Cancel** leaves the queue on the server. From code, call `Conferbot.leaveQueue { left -> }`. `left` is false when a person had already picked the chat up.
-- The header keeps the bot's name and logo. Under it, "Online" carries the team's reply time ("Typically replies in a few minutes", "Online · team replies by email") until a person is in the chat.
-- "Talk to a person" shows only for an AI agent bot while nobody is coming or here. It goes once tapped.
-- After an app restart, call `restorePersistedSession()` before opening the chat. A live chat comes back live with its agent. A chat still in the queue waits again without a second request.
-
-- When the agent leaves and nobody else has the chat, it goes back to the queue: "Connecting you to another agent..." (or "Connecting you to Sales..."), and a flow on its handover step waits again. A transfer is kept in the conversation's record, not drawn, as on the web.
-- When an agent ends the chat, a flow carries on from its handover step, with the step's post-chat survey questions first when they are on. An end that arrives twice draws one "Chat has ended" line and opens one rating card.
-- Once a live chat has ended and nothing else is going on, the composer is off and the chat offers **Start a new chat** (`Conferbot.startNewChat()`).
-- A visitor the workspace blocked (`visitor-blocked`, or refused at connect: the handshake sends the visitor id) sees "This conversation has been closed.", with no input and no new chat.
-
-Listen to the waiting signals (the web widget's `cb:*` events):
+Chat history is kept on the device (Room). To pick a conversation up after the app restarts, restore it before opening the chat:
 
 ```kotlin
-val off = Conferbot.onWidgetSignal(HandoverSignals.WAITING_FOR_HUMAN_EVENT) { signal ->
-    // 20s into a wait for a person, or the server says nobody is free right now
-}
-Conferbot.onWidgetSignal(HandoverSignals.HUMAN_JOINED_EVENT) { /* a person joined */ }
-Conferbot.onWidgetSignal(HandoverSignals.WAIT_OVER_EVENT) { signal ->
-    // (signal as WidgetSignal.WaitOver).reason: unavailable, cancelled or ended
-}
-off() // stop listening
-```
-
-`HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
-
-### While you wait
-
-While the visitor waits for a person, the chat offers something to do, as the web widget does:
-
-- **Help articles, 6 seconds in.** The wait starts when a flow hands over with no AI agent on the step, when an AI agent passes the visitor on, or when a restored chat is still in the queue. Up to two articles from the help centre that match the visitor's last real question appear under "While you wait, this might help". Only when the help centre is on (`enableKnowledgeBase`). Nothing appears if the wait ends first.
-- **The server's pick.** When the server keeps a queue, it picks the help itself (`queue-help`, or the `help` on a waiting `queue-status`) and the card shows **That solved it**. A tap sends `queue-self-resolve {chatSessionId, articleId}` (the row last opened, else the first). If the server says ok, the visitor leaves the queue: "Glad that helped. You have left the queue." in the card, "You left the queue. Glad that helped." in the chat. Once the wait is over, the card stays under "Articles that might help" without the button.
-- **Games, 2.5 seconds after the waiting signal.** Seven games: rock paper scissors (first to two), tic-tac-toe (the bot takes a win, blocks, sometimes slips; the opener alternates), a quick quiz (from the help centre, topped up with trivia), memory match (six pairs, one to three stars), a reflex test (three rounds; under 100 ms counts as a lucky guess), emoji riddles (English only) and word scramble (Skip, or Reveal on the last word). The owner picks the games and the line with `waitingGames: {enabled, games, offerText}`. Unset means on with all seven.
-- **Not now** or the x stops the offers for the rest of the app session. Typing "play" or "games" while waiting opens the menu instead of sending the words.
-- **A person joins:** an unused offer goes. A game under way is saved ("Sam's here!", "Your game is saved - finish it later?", **Finish my game**). A finished game stays as its result.
-- The cards use the bot's colours and font. With the phone's animations off, nothing moves. The cards are never saved on the device or sent in the conversation's record.
-
-An article row opens the article in the chat's help centre; a page opens in the browser. An article the server picked that the help centre cannot open (the help centre is off, or does not list it) is fetched by id from the server and shown on its own over the chat, with Back to the chat and **Try again** if it could not be loaded.
-
-### AI answers
-
-- An agent's reply is drawn as the web draws it: paragraphs, lists, **bold**, _italic_, `code`, ~~strikethrough~~, links, headings (h3-h6), quotes, preformatted text and tables (they scroll sideways in Compose; the XML chat writes a table's rows as text).
-- **Helpful?** sits under the newest AI answer. A No is sent at once; then a reason, an optional comment, "Talk to a person" (only while nobody is coming or here) and "Ask another way" (the cursor goes to the composer). The rated line's thumbs change the vote, and the vote is kept on the answer in the conversation's record. Owners can turn it off with `hideAnswerFeedback`.
-- An AI fallback reply is the same bubble in italics, a little lighter.
-- When the AI has not answered after 45 seconds, the typing dots go and the chat says "That took too long. Try again, or ask for a human." (on screen only).
-- Every response record carries the phone's language (`visitorInsights.language.browser`, for example `de-DE`), so the AI answers a short message such as "ok" in the visitor's language.
-
-### Email me this chat
-
-The chat menu has **Email me this chat**. It opens one card with the visitor's email filled in when known. The server sends the whole conversation to that address only (`POST /api/v1/mobile/chat/transcript-email`, at most 5 per 15 minutes). Once sent: "Sent! Check your inbox at ..."; the address is kept as the visitor's email. `Conferbot.liveChat.openEmailTranscript()` opens the same card from your own button.
-
-### Your requests
-
-Visitors can follow their conversations with your team and answer them, as on the web widget's home screen.
-
-- **Where:** **Your requests** in the chat menu, once the visitor has one; **Your requests · New reply** when a team reply is unread. It opens over the chat; Back (and the system back) goes one step back.
-- **Whose:** only the visitor's own: a chat this device started that they wrote in (the last 30 are kept per bot), matched with their visitor id, or every verified conversation of a signed-in user whose `ConferBotUser.hash` is valid. Only conversations a person on the team handles are listed; a chat the AI answered alone is not one. A first-time visitor is asked nothing.
-- **The list:** each request's question and where it stands in plain words ("We replied", "We're on it", "Solved", "New reply from Ada · 2 hours ago"), new replies first.
-- **One request:** a banner with what happens next, the conversation (links tappable) and a reply box. A reply to a solved request opens it again. A reply that did not go says "Not sent. Try again"; a locked conversation says "This conversation is closed for replies." Team replies arrive live while it is open.
-- The screens use the bot's colours and font; with the phone's animations off, nothing slides.
-
-Your own entry and badge:
-
-```kotlin
-// Requests with a team reply not read on this device
 lifecycleScope.launch {
-    Conferbot.requestsUnread.collect { badge.text = if (it > 0) "$it" else "" }
+    if (Conferbot.hasPersistedSession()) Conferbot.restorePersistedSession()
+    Conferbot.openChat(this@MainActivity)
 }
-Conferbot.requests.requests          // StateFlow<List<RequestSummary>?>, null until read
-
-Conferbot.openRequests()             // the list
-Conferbot.openRequests(requestId)    // one request
 ```
 
-`openRequests()` opens the screens where `RequestsPortalView()` is placed: the chat (Compose and `ChatActivity`) has it; put it over your own Compose screen to open them there.
+A live chat comes back live with its agent; a chat still in the queue waits again. `Conferbot.clearHistory()` forgets the conversation.
 
-With a home screen, the home has its own **Your requests** card as well (below).
+### What the chat does
 
-### Home screen
+You do not need code for any of this; it follows the bot and the dashboard.
 
-When the owner turns on the home screen in the dashboard (**Home screen**, `enableInitialPage`), `ConferBotChatScreen` and the floating widget open on it, as the web widget does. With it off the chat opens on the conversation, as before.
+- **Flows** run as on the web: every step type the flow builder offers, with cards for consent, OTP, address, signature, matrix, ranking, slider, date and time, calendar, payment (Stripe Checkout in the browser), carousel and product cards. GPT, AI and knowledge-base steps run on Conferbot's server; the app holds no AI key.
+- **Handover to your team:** "Connecting you with the team…", the wait card with the estimate and the step's max wait, **Cancel** to leave the queue, help articles and games while the visitor waits, "Connected with the team" and the agent's replies live, the post-chat rating and **Start a new chat** when it ends.
+- **AI agent:** formatted answers, cited help articles, **Helpful?** with reasons, "Talk to a person" when allowed, the "took too long" notice after 45 seconds.
+- **Home screen** (when the owner turns it on): greeting, "Ask anything", "Talk to us" with the team's reply time, recent help articles.
+- **Chat menu:** Email me this chat, Sound on / off, Your requests.
+- **Offline:** messages are queued while the phone is offline and sent when it is back (`enableOfflineMode`, on by default).
 
-- **The top:** "Good morning" / "Good afternoon" / "Good evening" by the phone's clock, or "Welcome back, Jamie" when the visitor comes back (30 minutes after they last wrote; the device remembers their first name and their last question for 60 days). The logo and name (none with **Hide logo**), the owner's title and description, over a band in the launcher's colours.
-- **Ask anything** (`homeAskBox`, on unless turned off): for an AI agent bot it asks the agent (the chat opens and sends the question); the help articles that answer it come under it, with matches inside article text from the server. A flow bot with nothing found offers **Chat with us**.
-- **Pick up where you left off** (AI agent bots): opens the conversation still on the device, else asks the question again.
-- **Your requests:** up to two, **See all (n)** when there are more; above **Talk to us** when a reply is new. They open over the home; Back returns there.
-- **Talk to us:** the bot's avatar with the online dot and "Online" (both gone with **Hide online status**), the team's reply time ("Usually replies in a few minutes", "Team back tomorrow 9 AM"; none when the owner hides it), the team's photos, up to three of the AI agent's questions, the button (the owner's words, else "Chat with us") and the rating.
-- **Help:** recent articles (unless **Hide recent articles**), topics, **See all**; its own search when the ask box is off. An article or a topic opens the help centre; Back returns to the home.
-- **Trust:** the owner's customer logos with their line, once one has loaded.
-- **Moving around:** the chat header's ‹ and the system back go to the home; the home's cross closes the chat. Views switch in the owner's **View transition**: fade, slide, and the other kinds as a slide; with the phone's animations off, a short fade and no motion on the home.
-- **Greet by name:** `{{first_name|there}}`, `{{name}}` and `{{company}}` in the owner's texts (home title, description, button, greeting card) are filled from the `ConferBotUser` (`name`, `metadata`) or a name the chat asked for; the fallback after the bar otherwise.
+## Sign users in
 
-For your own screens:
-
-```kotlin
-Conferbot.homeView                // StateFlow<HomeView>: HOME, CHAT or HELP
-Conferbot.showHome()              // nothing when the owner has no home screen
-Conferbot.showChat("Do you ship abroad?")  // to the conversation, asking it
-Conferbot.showHelp(categoryId)    // the help centre, on one topic or its list
-
-HomeScreenView(onClose = { /* close */ })  // com.conferbot.sdk.ui.compose.home
-```
-
-The web's home has no mascot. To put yours on your own home, or anywhere in your app (moods: idle, wave, think, happy):
-
-```kotlin
-HomeScreenView(mascot = { m -> Mascot(m.look, m.accent, size = 56f, mood = "wave") })
-Mascot(Conferbot.customizations.value.mascot, Conferbot.customizations.value.mascotAccent)  // com.conferbot.sdk.ui.compose.mascot
-```
-
-`ChatActivity` opens on the home screen too when the owner has it on.
-
-### How bot flows run
-
-The flow engine runs a bot the way the web widget does. It passes the shared flow-node spec: all 156 of its cases, each produced by running the widget's own code.
-
-- The chat starts at the flow's first welcome step. A step that doesn't branch moves on along its first line. A branch with no line, a jump to a step that is gone, or the end of a path ends the chat. A step type the SDK doesn't know shows nothing and carries on.
-- Questions save their answer under the step's own variable (`answerVariable`). Text fills `{name}`, `${name}` and `{{name}}` from the answers; an unknown one shows nothing.
-- Phone numbers are saved normalised, numbers as numbers, bare links with `https://`. A refused answer says why and the step waits.
-- The rich steps are supported: consent, OTP, payment, address, date/time, slider, ranking, matrix, product card, dynamic choices, hidden fields, AI extract, AI route, knowledge-base answer and signature. So are loops and sub-flows. Payment, OTP and required consent stay gates: the flow goes on only when the server says paid or verified, or the box is ticked.
-- The GPT, AI and knowledge-base steps ask Conferbot's server, which holds the owner's AI key. The app never needs one.
-- Card numbers, IDs and passwords a visitor types are masked in the answers and the record, unless the bot's `redactSensitive` setting is off.
-- Typing dots last as long as on the web: longer for longer messages.
-- The typing bubble follows `typingStyle`: dots, wave, shimmer, a pencil writing a line, or your mascot swaying by three thought dots ("Pip is typing" when you named it).
-
-### Step cards
-
-In the Compose chat every step that waits for the visitor is answered as on the web, in a card under the bot's question, in the bot's option colours, corner radius and font size:
-
-- **Consent:** the text with its links (they open in the browser), a box to tick and Continue.
-- **OTP:** the e-mail and Send code, then six digit boxes (a pasted or suggested code fills them and verifies by itself), Resend after its countdown, Change email and Skip when allowed.
-- **Address:** suggestions as the visitor types (their words in bold), a picked address to confirm, or the address typed by hand.
-- **Signature:** a pad to sign with a finger (Undo, Clear), sent as a PNG trimmed to the ink, or the name typed when allowed, and the full name when asked.
-- **Matrix:** a grid, one pick per row or several. **Ranking:** the items moved up and down. **Slider:** the value with its unit, on the step's steps.
-- **Date / time:** a month with the allowed days and the times between the step's bounds. **Calendar:** the open days, then that day's free times.
-- **Payment:** the item and amount, Pay now (opens Stripe Checkout in the browser), I've paid once it is open, Cancel.
-- **Carousel and product card:** cards with image, title, price and description; path buttons answer, link buttons open their page, Continue when there are only links. **Navigate:** links that open their page, then Done.
-
-The visitor's bubble is the step's own reply ("Agreed to Terms", "Verified: a@b.io", "Paid $19.99"). A refused answer keeps what was entered and says why on the card. The composer is hidden under the OTP, address and signature cards, which take the typing themselves.
-
-A custom UI can answer a step the same way: build the answer with `com.conferbot.sdk.core.flow.FlowStepAnswer` (for example `FlowStepAnswer.consent(true)`, `FlowStepAnswer.otpVerify("123456")`) and pass it to `Conferbot.answerStep(answer)`. The waiting step is `Conferbot.currentUIState.value?.step` (its type, settings, what the card shows and the reason for the last refusal).
-
-`ChatActivity` draws the same cards.
-
-## Configuration
-
-### ConferBotConfig
-
-```kotlin
-ConferBotConfig(
-    enableNotifications = true,
-    enableOfflineMode = true,
-    autoConnect = true,
-    reconnectionAttempts = 5,
-    reconnectionDelay = 1000,
-    widgetLanguage = null, // "en", "nl", "fr", "de", "es" or "auto"
-    onPostChatRedirect = null, // (url) -> Boolean: true when the app handled the URL
-    disablePostChatRedirect = false
-)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `enableNotifications` | `Boolean` | `true` | Notification handling and the `conferbot_messages` channel |
-| `enableOfflineMode` | `Boolean` | `true` | Queue messages while offline |
-| `autoConnect` | `Boolean` | `true` | Connect the socket automatically on initialize |
-| `reconnectionAttempts` | `Int?` | `null` (5) | Max socket reconnection attempts |
-| `reconnectionDelay` | `Int?` | `null` (1000 ms) | Delay between reconnection attempts |
-| `aiSettings` | `AISettings` | `AISettings()` | Provider settings for GPT/LLM flow nodes |
-| `widgetLanguage` | `String?` | `null` | The language of the SDK's own words: `"en"`, `"nl"`, `"fr"`, `"de"`, `"es"` or `"auto"` (the phone's languages). Wins over the owner's setting; `null` keeps it |
-| `onPostChatRedirect` | `((String) -> Boolean)?` | `null` | The owner's post-chat redirect, before the countdown: return `true` when the app handled the URL (or wants none) and no countdown is shown (see [Redirect after chat](#redirect-after-chat)) |
-| `disablePostChatRedirect` | `Boolean` | `false` | Never follow the owner's post-chat redirect |
-
-### Redirect after chat
-
-When the owner sets a URL in Customize > Conversations > Post-chat redirect, the SDK follows it as the web widget does: once the conversation ends (the flow reaches its end, or an agent ends a chat they took over; not while a handover waits or a person is in the chat, and never for a blocked visitor) and the post-chat rating is sent or put away (or right away when there is none), a quiet line under the conversation reads "Taking you to example.com in 10s" with Cancel. A screen reader hears it once. At 0 the URL opens in the system browser (an `ACTION_VIEW` intent), never inside the chat; when nothing can open it, the line becomes a "Continue to example.com" button. It stops if the visitor cancels, starts a new chat, closes the chat or leaves the conversation for the home screen, or the app goes to the background, and it is offered only once per conversation (remembered on the device, so a restored ended chat does not count down again). Only `http(s)` addresses with a host, at most 2048 characters and without a `user:password@` part, are followed.
-
-```kotlin
-Conferbot.initialize(
-    context = this,
-    apiKey = "YOUR_API_KEY",
-    botId = "YOUR_BOT_ID",
-    config = ConferBotConfig(
-        // Open it your own way (your WebView, a deep link); true = no countdown.
-        onPostChatRedirect = { url -> openInMyApp(url); true }
-        // Or turn it off: disablePostChatRedirect = true
-    )
-)
-```
-
-The flow's end also shows the post-chat rating 1.5 seconds later when the bot has one (`csatConfig.enabled`), as an agent ending the chat does.
-
-### Widget languages
-
-The SDK draws its own words in English, Dutch, French, German or Spanish, with the web widget's wording:
-
-1. `ConferBotConfig.widgetLanguage`, when the app sets it.
-2. Otherwise the language the owner picked in the dashboard (`widgetLanguage`).
-3. "Auto" (and every bot that never chose): the first of the phone's languages the widget speaks (all of `LocaleList` on Android 7+).
-4. Otherwise English.
-
-What the owner wrote (greetings, questions, buttons, articles) is shown as written; the stock English texts a new bot starts with ("We're here to help", "Hi there 👋") are shown in the visitor's language. Dates, times and "5 min ago" follow the language too. `Conferbot.widgetLanguage` says which one is in force, and the screens redraw when it changes. The words come from the table all Conferbot SDKs share (`scripts/sync-i18n.sh` rebuilds it from the React Native SDK's `scripts/parity/i18n/strings.json`).
-
-### Endpoints and network tuning
-
-The SDK talks to `https://wdt.conferbot.com` by default. Override per-install before `initialize()` (HTTPS only):
-
-```kotlin
-import com.conferbot.sdk.utils.ConferBotEndpoints
-import com.conferbot.sdk.utils.ConferBotNetworkConfig
-
-ConferBotEndpoints.setApiBaseUrl("https://your-proxy.example.com/api/v1/mobile/")
-ConferBotEndpoints.setSocketUrl("https://your-proxy.example.com")
-
-ConferBotNetworkConfig.configure(
-    apiTimeout = 30_000L,
-    socketTimeout = 20_000L,
-    reconnectionAttempts = 5
-)
-```
-
-You can also pass `baseUrl` and `socketUrl` directly to `Conferbot.initialize()`.
-
-## Passing User Identity
-
-Attach user details so conversations in the dashboard show who you are talking to. Pass the user at initialization, or call `identify()` before the first session is created:
+When your app knows who the user is, tell the SDK before the chat opens. The dashboard then shows their name, email and your own fields, and "Your requests" lists their conversations.
 
 ```kotlin
 import com.conferbot.sdk.models.ConferBotUser
@@ -525,137 +242,69 @@ Conferbot.identify(
         name = "Jane Doe",
         email = "jane@example.com",
         phone = "+1234567890",
-        metadata = mapOf(
-            "plan" to "premium",
-            "signupDate" to "2024-01-15"
-        )
+        metadata = mapOf("plan" to "premium", "company" to "Acme"),
+        hash = hashFromYourServer // see below
     )
 )
 ```
 
-The user ID is sent when the chat session is created (`initSession(userId = user?.id)`), so identify the user **before** the chat is opened. Calling `identify()` after a session exists updates the SDK's local user but does not retroactively re-tag the running session.
+You can also pass `user = ConferBotUser(...)` to `initialize()`. The user id is attached when the conversation is created, so identify **before** the chat is opened. `name` and `metadata` also fill the owner's "greet by name" placeholders such as `Hi {{first_name|there}}`.
 
-### Signing out
+### Identity verification (the `hash`)
 
-When the user signs out, call `Conferbot.identify(null)` (on the main thread). On a shared device the next person then sees nothing of the last one's: their "Your requests" list goes at once (with the requests screens and any draft reply), an answer still on its way for them is ignored, and the list is read again for whoever is signed in now. The greeting's name falls back too. Signing a different user in works the same way.
+Without verification, anyone could put any id or email in the app and be filed as that person. To stop that, turn on **Identity verification** in your workspace settings (**Security**) and send a `hash` with the user: the HMAC-SHA256, in hex, of the user's `id` (or their email when there is no id), keyed with your workspace's identity secret.
 
-```kotlin
-Conferbot.identify(null)
+Make the hash **on your server** and send it to the app with the signed-in user. Never put the secret in the app.
+
+```js
+// Node.js, on your server
+const crypto = require("crypto");
+
+function conferbotUserHash(user) {
+  const signed = String(user.id || user.email).trim();
+  return crypto
+    .createHmac("sha256", process.env.CONFERBOT_IDENTITY_SECRET)
+    .update(signed)
+    .digest("hex");
+}
+
+// e.g. in your login or /me response:
+// res.json({ ...user, conferbotHash: conferbotUserHash(user) })
 ```
 
-The user's `name` and `metadata` (`firstName`, `company`, ...) also fill the owner's "greet by name" placeholders, such as `Hi {{first_name|there}}` (see Home screen).
+Conferbot checks the hash on every message and never stores it. A matching hash files the chat as verified. When the workspace **requires** verification, a missing or wrong hash drops the claimed name, email and id, so the chat is an anonymous visitor's; otherwise it is kept as unverified.
 
-The user (its `metadata`, then `id`, `name`, `email`, `phone`) also travels with every message record as the chat's visitor context, as the web widget's `visitorContext` does, so the dashboard shows the visitor's name, email and your own fields.
-
-### Identity verification
-
-To stop anyone posing as one of your users, turn on identity verification in your workspace and pass a `hash`: the HMAC-SHA256 (hex) of the user's `id` (or `email` when there is no id), keyed with your workspace's identity secret. Make it on your server and never ship the secret in the app.
+### Sign out
 
 ```kotlin
-Conferbot.identify(
-    ConferBotUser(id = "user-123", email = "jane@example.com", hash = hashFromYourServer)
-)
+Conferbot.identify(null) // on the main thread
 ```
 
-The server checks the hash and drops it before storing. A chat with a matching hash is filed as verified; a wrong hash is rejected, and no hash leaves it unverified.
+On a shared device the next person sees nothing of the last one's: their "Your requests" list and draft replies go at once, an answer still on its way for them is ignored, the greeting forgets their name, and the device's push token is unregistered from their conversation. Signing a different user in works the same way. `Conferbot.clearHistory()` also forgets the conversation on the device.
 
-## Theming and Flow-Builder Customizations
+## Push notifications
 
-### Server customizations apply automatically
+When an agent or the AI replies while the visitor is not in the chat, Conferbot can send a push. Firebase is **optional**: the SDK only compiles against `firebase-messaging` and declares no service, so nothing happens until your app adds Firebase and hands the SDK a token.
 
-Everything you configure in the dashboard's flow builder (**Customize** tab) is fetched with the bot data and applied by the SDK with no code: header and bubble colors, chat background (solid, gradient (linear, radial, mesh, blur), image with its mask, or one of the 13 patterns), bot name, avatar, font size, bubble radius, branding/tagline, and all floating-widget settings.
+**1. Add Firebase Cloud Messaging to your app:** `google-services.json`, the `com.google.gms.google-services` plugin, and
 
-**Widget theme**: all 27 dashboard themes (Classic, Minimal, Glass, Neo-brutal, Midnight, Aurora and the rest) apply in both the Compose and the XML chat. Each brings its surfaces, text colours, corner radii and bubble outline, as on the web widget. **Appearance** light, dark, or auto (follows the phone's dark mode, also when it changes while the chat is open); Midnight, Neon, Chalkboard, Cyberpunk and Space are always dark. **Colours** "Brand" keeps your colours; "Theme palette" swaps in the theme's own header, bubble, option, launcher and send-button colours. Your own bubble radius, option radius and chat background still win over the theme.
-
-**Font**: the owner's font (any of the dashboard's Google fonts) wins, for all text; else the theme's font, for all text ("body" themes) or only the header title ("display" themes). It is fetched from Google Fonts once, cached in the app's cache folder and drawn at each weight it has; a system font the owner picked (Georgia, Verdana...) is asked of the device by name, so a family your app bundles is picked up. Anything that cannot load keeps the platform font. Applied in the Compose chat (bubbles, the agent's formatted replies, the composer, the header, the home screen, the step cards); the XML chat keeps the platform font.
-
-**Sounds** (`messageSound` pop / chime / bubble, a `soundPack` soft / playful / retro / bubbly / premium for opening, a message, sending and closing, and the launcher sound file): the web's own tones, rendered on the phone (no sound files), at most one message sound every 0.8s. They follow the media volume and are silent when it is at 0. The Compose chat menu has Sound on / off when the bot has a sound; the choice is kept on the device.
-
-**Human touches** (`botReactions`, `celebrations`, `stallNudges`, `allowChangeAnswer`; all on unless turned off; Compose): the bot's tapback on an answer that deserves one (a wave for a name, a party for a booking or payment, a heart, thumbs up or thank-you for a score), a second of confetti for a booking, a payment or a perfect score, sparks on a star rating pick with the pick named, "No rush - ..." under a question that has waited 40s with the chat on screen and nothing typed, and "Edit" under the visitor's latest answer, which takes the conversation back to that question (only while nothing irreversible, such as a booking, a payment, a file or a person joining, happened since). No confetti or sparks when the system's animations are off; no vibration.
-
-**Auto-open** (`botAutoOpen`, `botAutoOpenDelay` seconds): the floating widget opens the chat on its own once per app launch, only before the visitor has a conversation and not within 2 minutes of them closing it.
-
-**Typing preview** (`visitorDraftPreview`, on unless turned off): while a person is chatting with the visitor, the agent sees what is being typed (`visitor-draft`, at most every 300ms, never for a password field).
-
-**Calendar**: slots already booked (the bot's bookings) show greyed out and cannot be picked; a day with every slot taken is not offered.
-
-**Waiting for a person**: the wait card says the live estimate in the visitor's language, else the team's usual wait ("Typical wait: a few minutes"), unless the owner chose a fixed reply time or hides it. Under it the step's max wait counts down ("Max wait 1:05", every second, stopping at 0:00); when it runs out the server is asked to decide (`handover-timeout`). After a restart the countdown, and the timeout, go on from the time the server says is left. A max wait of 0 or unset is 2 minutes. The Compose chat and the XML chat both show it (`Conferbot.liveChat.waitEndsAt` for a custom UI).
-
-**When the AI hands the visitor on** to the team, the SDK gives the server the step's max wait plus 30 seconds, then nudges it (`handover-timeout`); nothing is drawn, and the nudge is off as soon as the wait ends (someone joins, nobody can, the visitor leaves the queue, the chat ends or is blocked). An agent bot uses its silent handover step's max wait. Only an AI handing on starts it, never a person, and a restored chat does not start it again.
-
-**When the AI lets an idle visitor go**: "Chat paused" with "Send a message to pick up where you left off"; the composer stays on and the next message brings the AI back. When the owner set the agent to carry on with the flow (`continue_flow`, flow bots only), the line is "Chat ended", the live chat is over and the flow goes on from the handover step's next step, without the post-chat survey. The line is kept once in the conversation, so a restart shows the same one. Compose and XML.
-
-**Precedence: server wins over local.** `ConferBotChatScreen` collects `Conferbot.serverTheme` and, whenever the server provides a `customizations` object, wraps the chat in that theme - even if you supplied your own theme via `ConferBotChatView` or `ConferbotThemeProvider`. Local themes therefore act as fallbacks that only apply when the bot has no server customizations. (For the FAB the same rule applies per attribute, see the table above.)
-
-### Local themes (Compose)
-
-For granular local control use the `ConferbotThemeBuilder`:
-
-```kotlin
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import com.conferbot.sdk.ui.compose.ConferBotChatView
-import com.conferbot.sdk.ui.theme.ConferbotThemeBuilder
-
-val myTheme = ConferbotThemeBuilder.create()
-    .name("Brand")
-    .primaryColor(Color(0xFF6366F1))
-    .headerColors(background = Color(0xFF6366F1), text = Color.White)
-    .botBubbleColors(background = Color(0xFFF3F4F6), text = Color(0xFF111827))
-    .userBubbleColors(background = Color(0xFF6366F1), text = Color.White)
-    .bubbleRadius(16.dp)
-    .build()
-
-// Single theme
-ConferBotChatView(theme = myTheme)
-
-// Or light/dark pair following the system setting
-ConferBotChatView(
-    lightTheme = myTheme,
-    darkTheme = DarkTheme,
-    useDarkTheme = null  // null = follow system
-)
+```gradle
+implementation platform('com.google.firebase:firebase-bom:32.7.0')
+implementation 'com.google.firebase:firebase-messaging-ktx'
 ```
 
-The builder also exposes `secondaryColor`, `backgroundColor`, `surfaceColor`, `errorColor`, `agentBubbleColors`, `inputColors`, `fontFamily`, text sizes (`headerSize`, `bodySize`, `messageSize`, `captionSize`, `inputSize`, `buttonSize`), corner radii (`buttonRadius`, `cardRadius`, `inputRadius`, `imageRadius`), spacing, and animation durations.
-
-### Local customization (XML ChatActivity)
-
-The built-in XML `ChatActivity` (launched by `Conferbot.openChat()`) reads the `ConferBotCustomization` passed to `initialize()`:
+**2. Give the SDK the token.** It is registered with the current conversation and again for each new one.
 
 ```kotlin
-import com.conferbot.sdk.models.ConferBotCustomization
+import com.conferbot.sdk.notifications.PushTokenType
+import com.google.firebase.messaging.FirebaseMessaging
 
-Conferbot.initialize(
-    context = this,
-    apiKey = "YOUR_API_KEY",
-    botId = "YOUR_BOT_ID",
-    customization = ConferBotCustomization(
-        primaryColor = ConferBotCustomization.parseColor("#FF6B6B"),
-        headerTitle = "Customer Support",
-        enableAvatar = true,
-        botBubbleColor = ConferBotCustomization.parseColor("#0100EC"),
-        userBubbleColor = ConferBotCustomization.parseColor("#EDEDED")
-    )
-)
-```
-
-`ConferBotCustomization` themes `ChatActivity` until the bot's settings arrive; `headerTitle` is also the header's title in the Compose chat until then. Embedded Compose screens are themed through `ConferbotTheme` and the server theme.
-
-## Push Notifications
-
-When an agent or the AI replies while the visitor is not in the chat (the app is in the background or closed), the Conferbot server sends an FCM push. Firebase is optional: the SDK only compiles against `firebase-messaging` and declares no `FirebaseMessagingService`, so push stays off until your app adds Firebase and hands the SDK a token.
-
-1. Add Firebase Messaging to your app (`google-services.json`, the `com.google.gms.google-services` plugin, `implementation 'com.google.firebase:firebase-messaging-ktx'`).
-2. Pass the token to the SDK. It is registered with the current conversation (`POST /api/v1/mobile/push/register` with `chatSessionId` and `tokenType`), again for each new conversation, tried again as the conversation goes on while the server does not have it yet, and unregistered on logout (`identify(null)` or another user), `clearHistory()` or `unregisterPush()`.
-
-```kotlin
 FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
     Conferbot.setPushToken(token, PushTokenType.FCM)
 }
 ```
 
-3. Receive messages. If Conferbot is your only FCM sender, declare the SDK's service in your manifest (it forwards new tokens and messages):
+**3. Receive messages.** If Conferbot is your app's only FCM sender, declare the SDK's service in your `AndroidManifest.xml`:
 
 ```xml
 <service
@@ -667,21 +316,30 @@ FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
 </service>
 ```
 
-With your own `FirebaseMessagingService` (only one service gets the messages), forward instead:
+If you already have a `FirebaseMessagingService` (Android delivers to only one), forward to the SDK instead:
 
 ```kotlin
-override fun onNewToken(token: String) {
-    Conferbot.setPushToken(token, PushTokenType.FCM)
-}
+import com.conferbot.sdk.core.Conferbot
+import com.conferbot.sdk.notifications.PushTokenType
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
 
-override fun onMessageReceived(message: RemoteMessage) {
-    // Arrived in the foreground: counted unread and shown, unless that conversation is on screen.
-    if (Conferbot.handlePushNotification(message.data, open = false)) return
-    // Your own notifications
+class MyMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        Conferbot.setPushToken(token, PushTokenType.FCM)
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        // In the foreground: counted unread and shown, unless that conversation is on screen.
+        if (Conferbot.handlePushNotification(message.data, open = false)) return
+        // ...your own notifications
+    }
 }
 ```
 
-4. Open taps. In the background Android shows the server's notification itself and a tap starts your launcher activity with the data as extras:
+`handlePushNotification` returns `true` only for a Conferbot push of this bot, so your other notifications are untouched.
+
+**4. Open taps.** In the background Android shows the notification itself, and a tap starts your launcher activity with the push's data as extras:
 
 ```kotlin
 override fun onCreate(savedInstanceState: Bundle?) {
@@ -695,302 +353,308 @@ override fun onNewIntent(intent: Intent) {
 }
 ```
 
-A tap opens `ChatActivity` (or your `setNotificationChatActivity` class) on its conversation: the chat when it is the conversation on the device, else that conversation in "Your requests". A tap before `initialize()` is opened once the SDK is ready.
+The tap opens the chat on that conversation (or the conversation in "Your requests" when it is not the one on the device). A tap that arrives before `initialize()` is opened once the SDK is ready.
 
-- `setPushToken(token, type)`: `type` is `PushTokenType.FCM` or `APNS`; without it a 64-character hex token is taken as APNs. `setPushToken(null)` unregisters; a new token replaces the old one.
-- `handlePushNotification(data, open = true)` returns `true` only for a Conferbot message of this bot (data `source: "conferbot"`, `type: "conferbot_message"`, `botId`, `chatSessionId`, `messageId`, `senderType`, `senderName`, `body`), so your other notifications are untouched. `ConferbotPush.parse(data)` / `ConferbotPush.isConferbotPush(data)` read one without the SDK.
-- The server sends on the channel `conferbot_messages` (`PushContract.CHANNEL_ID`), which the SDK creates when `enableNotifications` is on (the default); notifications the SDK shows use it too. One notification per conversation (collapse key / tag = the conversation). Set your own `com.google.firebase.messaging.default_notification_icon` for the ones Android shows.
-- `registerPushToken(token)` and `unregisterPushToken()` still work: they are `setPushToken(token)` and `unregisterPush()`.
+**Good to know**
 
-Server side: sending is off until the workspace's embed-server has `MOBILE_PUSH_ENABLED=true` and the FCM / APNs credentials (embed-server `docs/mobile-push.md`). The credentials are platform-wide for now: pushes reach only apps built on Conferbot's Firebase project and bundle id. Your own app's Firebase project needs per-workspace credentials, which are not built yet (embed-server #197); until then its tokens register but FCM refuses its pushes (`SENDER_ID_MISMATCH`).
+- Notifications use the `conferbot_messages` channel, which the SDK creates when `enableNotifications` is on (the default). One notification per conversation. Set your own small icon with the `com.google.firebase.messaging.default_notification_icon` meta-data.
+- On Android 13+ ask for `POST_NOTIFICATIONS` at a moment that suits your app.
+- `setPushToken(null)` or `unregisterPush()` stops this device's pushes. `registerPushToken()` / `unregisterPushToken()` from 1.0.0 still work but are deprecated.
+- **Server side:** sending is off until Conferbot's embed-server runs with `MOBILE_PUSH_ENABLED=true` and FCM credentials (embed-server `docs/mobile-push.md`). The credentials are platform-wide for now, so pushes reach only apps on Conferbot's own Firebase project. Per-workspace credentials for your own Firebase project are not built yet (embed-server #197): until then your app's tokens register, but FCM refuses its pushes (`SENDER_ID_MISMATCH`).
 
-Additional controls: `setCurrentActivity(activity)` for in-app banners, `setNotificationChatActivity(MyChatActivity::class.java)` for custom deep links, `updateNotificationSettings(NotificationSettings)`, `addNotificationListener(listener)`, `cancelAllNotifications()`.
+## Customising
 
-## Advanced
+### Dashboard first, code as a fallback
 
-### Offline behavior
+Almost everything is set in the dashboard (**Customize**) and applied with no code: theme (27 themes, light / dark / auto), colours, chat background, bot name and avatar, bubble and option corners, the launcher's shape, icon, motion and greeting card, the mascot, the home screen, sounds, font, language and the post-chat redirect. The server's values always win.
 
-With `enableOfflineMode = true` (the default), outgoing messages are queued while the device is offline and synced automatically when connectivity returns. Observe and control the queue:
-
-```kotlin
-val isOnline by Conferbot.isOnline.collectAsState()
-val pending by Conferbot.pendingMessageCount.collectAsState()
-val syncing by Conferbot.isSyncingQueue.collectAsState()
-
-Conferbot.processOfflineQueue()      // force a sync attempt
-Conferbot.clearOfflineQueue()        // drop all queued messages
-Conferbot.clearCurrentSessionQueue() // drop queued messages for this session
-```
-
-The built-in UI shows offline/connection/syncing banners automatically.
-
-### Session persistence
-
-Sessions and messages are persisted in a Room database. To resume a previous conversation instead of starting fresh:
+Code is for defaults until the bot's settings arrive, and for what only the app knows:
 
 ```kotlin
-if (Conferbot.hasPersistedSession()) {          // suspend fun
-    val result = Conferbot.restorePersistedSession()  // suspend fun
-    if (result.success) { /* history restored, room rejoined */ }
-}
-Conferbot.openChat(this)
-```
+import com.conferbot.sdk.models.ConferBotConfig
+import com.conferbot.sdk.models.ConferBotCustomization
 
-`Conferbot.clearHistory()` wipes the local record and persisted session.
-
-### Message pagination
-
-Pass a `PaginationConfig` to `initialize()` to tune history loading:
-
-```kotlin
 Conferbot.initialize(
     context = this,
-    apiKey = "...",
-    botId = "...",
-    paginationConfig = PaginationConfig(
-        pageSize = 50,
-        maxMemoryMessages = 100,
-        backgroundMemoryLimit = 50,
-        paginationThreshold = 10
+    apiKey = "conf_test_key",
+    botId = "YOUR_BOT_ID",
+    config = ConferBotConfig(
+        enableNotifications = true,   // the notification channel and in-app notifications
+        enableOfflineMode = true,     // queue messages while offline
+        widgetLanguage = null         // see Languages
+    ),
+    customization = ConferBotCustomization(
+        primaryColor = ConferBotCustomization.parseColor("#0808EE"),
+        botBubbleColor = ConferBotCustomization.parseColor("#F3F4F6"),
+        userBubbleColor = ConferBotCustomization.parseColor("#0808EE"),
+        bubbleRadius = 16f,
+        headerTitle = "Support"
     )
 )
 ```
 
-In headless UIs call `Conferbot.loadMoreMessages()` when the user scrolls near the top and check `Conferbot.hasMoreMessages()`. The built-in `ConferBotChatScreen` does this for you.
-
-### Knowledge base (help centre)
-
-The help centre follows the bot's settings in the dashboard, as on the web widget:
-
-- It shows only while **Help articles** (`enableKnowledgeBase`) is on and at least one article is published. `ConferBotChatScreen` then shows a **Chat / Articles** switch under the header; with a home screen, the help centre is its own view instead, opened from the home.
-- Recent articles head the list unless the owner hid them (`hideRecentArticles`).
-- An AI reply that cites a help article opens it in the app while Help articles is on: in the Articles tab when the help centre lists it, else fetched by id and shown over the chat. With Help articles off it opens the cited page in the browser, and a citation with neither is shown but not tappable. An agent's article card opens its public page first, else the article in the app. Back returns to the conversation.
-
-The categories and articles come with the bot's data. An article's body is fetched when it opens, and search adds matches found inside article text. The body is drawn from its HTML as on the web (headings, lists, bold and italic, links, pictures, simple tables), without a WebView; a link opens outside the app.
-
-To show the help centre on its own screen:
+In Compose you can also give the chat a local theme, used when the bot has no customizations of its own:
 
 ```kotlin
-import com.conferbot.sdk.ui.compose.knowledgebase.KnowledgeBaseScreen
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.conferbot.sdk.ui.compose.ConferBotChatView
+import com.conferbot.sdk.ui.theme.ConferbotThemeBuilder
 
-if (Conferbot.isHelpCentreOn) {
-    val kbService = Conferbot.initKnowledgeBaseService() ?: return
-    KnowledgeBaseScreen(
-        knowledgeBaseService = kbService,
-        onDismiss = { /* close */ },
-        title = "Help Center"
-    )
-}
+val brand = ConferbotThemeBuilder.create()
+    .primaryColor(Color(0xFF0808EE))
+    .headerColors(background = Color(0xFF0808EE), text = Color.White)
+    .bubbleRadius(16.dp)
+    .build()
+
+ConferBotChatView(lightTheme = brand)
 ```
 
-To open one article by id: `Conferbot.openHelpArticle(articleId, title)`. It returns false while the help centre is off. The data is at `Conferbot.knowledgeBase` (a `StateFlow`).
+The floating launcher takes fallbacks too: `ConferBotWidget(config = ConferBotWidgetConfig(position = WidgetPosition.BOTTOM_LEFT, size = 56.dp))`.
 
-Headless access: `Conferbot.searchKnowledgeBase(query)`, `trackKnowledgeBaseArticleView(article)`, `startKnowledgeBaseArticleEngagement(articleId)`, `updateKnowledgeBaseScrollDepth(depth)`, `rateKnowledgeBaseArticle(articleId, helpful)`, `hasRatedKnowledgeBaseArticle(articleId)`. On the service: `loadArticleBody(articleId)`, `articleBodies`.
+### Languages
 
-`ChatActivity` has the same help centre.
+The SDK's own words (buttons, hints, errors, handover lines, the help centre, dates and "5 min ago") are in English, Dutch, French, German or Spanish, with the web widget's wording. The language is, in order:
 
-### Analytics
+1. `ConferBotConfig.widgetLanguage` when the app sets it: `"en"`, `"nl"`, `"fr"`, `"de"`, `"es"` or `"auto"`;
+2. the language the owner picked in the dashboard;
+3. for "auto" (and every bot that never chose), the first of the phone's languages the widget speaks;
+4. English.
 
-Chat lifecycle events are tracked automatically. Optional extras:
+What the owner wrote (greetings, questions, buttons, articles) is shown as written. `Conferbot.widgetLanguage` says which language is in force.
+
+### Fonts
+
+The owner's font (any of the dashboard's Google fonts) is fetched once, cached on the device and used for all the chat's text. A system font the owner picked (Georgia, Verdana...) is asked of the device by name, so a family your app bundles under that name is picked up. Until it loads, or when it cannot, the chat uses `ConferBotCustomization.fontFamily` (a font resource id) or the platform font. In Compose, `ConferbotThemeBuilder.fontFamily(...)` sets the local theme's font.
+
+### Sounds
+
+The owner's message sound and sound pack (open, message, send, close) play at the media volume, at most one message sound every 0.8 s. The chat menu has **Sound on / off**; the choice is kept on the device. From code: `Conferbot.sounds.soundOn` (a `StateFlow<Boolean>`) and `Conferbot.sounds.toggle()`.
+
+### Redirect after the chat
+
+When the owner sets a post-chat redirect URL, the chat shows "Taking you to example.com in 10s" with **Cancel** once the conversation ends (after the rating, if there is one), then opens the URL in the system browser. Only `http(s)` URLs are followed, and only once per conversation. To open it your own way, or to turn it off:
 
 ```kotlin
-Conferbot.setUtmParameters(utmSource = "newsletter", utmCampaign = "spring")
-Conferbot.trackInteraction("buttonsClicked", mapOf("id" to "pricing"))
-Conferbot.trackGoalCompletion("goal-123", conversionValue = 49.0)
-Conferbot.submitChatRating(csatScore = 5, feedback = "Great!")
+ConferBotConfig(
+    onPostChatRedirect = { url -> openInMyWebView(url); true }, // true: handled, no countdown
+    // disablePostChatRedirect = true
+)
 ```
 
-### Raw socket events
+### Hooks
 
-Subscribe to any embed-server event by name (constants in `com.conferbot.sdk.models.SocketEvents`):
-
-```kotlin
-import com.conferbot.sdk.models.SocketEvents
-import io.socket.emitter.Emitter
-
-val listener = Emitter.Listener { args -> /* ... */ }
-Conferbot.on(SocketEvents.BOT_RESPONSE, listener)
-Conferbot.on(SocketEvents.AGENT_ACCEPTED, listener)
-Conferbot.off(SocketEvents.BOT_RESPONSE, listener)
-```
-
-### Not available (yet)
-
-Compared to other Conferbot SDKs, the Android SDK does **not** currently include voice message recording/playback (available in the Flutter SDK). File and image uploads are supported.
-
-## Event Handling
-
-Implement `ConferBotEventListener` (all methods have default no-op implementations, so override only what you need):
+Events from the chat, all with default no-op implementations:
 
 ```kotlin
-import com.conferbot.sdk.core.Conferbot
 import com.conferbot.sdk.core.ConferBotEventListener
 import com.conferbot.sdk.models.Agent
 import com.conferbot.sdk.models.RecordItem
 
 Conferbot.setEventListener(object : ConferBotEventListener {
-    override fun onMessageReceived(message: RecordItem) { }
-    override fun onMessageSent(message: RecordItem) { }
-    override fun onAgentJoined(agent: Agent) { }
-    override fun onAgentLeft(agent: Agent) { }
     override fun onSessionStarted(sessionId: String) { }
-    override fun onSessionEnded(sessionId: String) { }
-    override fun onTypingIndicator(isTyping: Boolean) { }
+    override fun onMessageReceived(message: RecordItem) { }
+    override fun onAgentJoined(agent: Agent) { }
     override fun onUnreadCountChanged(count: Int) { }
-    override fun onOnlineStatusChanged(isOnline: Boolean) { }
-    override fun onMessageFailed(messageId: String) { }
-    override fun onQueueSynced(successCount: Int, failCount: Int) { }
 })
 ```
 
-## State Management
+The web widget's handover signals (`cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`):
 
-All SDK state is exposed as `StateFlow` on the `Conferbot` singleton:
+```kotlin
+import com.conferbot.sdk.core.livechat.HandoverSignals
+import com.conferbot.sdk.core.livechat.WidgetSignal
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `isInitialized` | `StateFlow<Boolean>` | SDK initialization status |
-| `isConnected` | `StateFlow<Boolean>` | Socket connection status |
-| `chatSessionId` | `StateFlow<String?>` | Current session ID |
-| `record` | `StateFlow<List<RecordItem>>` | Chat messages |
-| `currentAgent` | `StateFlow<Agent?>` | Current live agent |
-| `unreadCount` | `StateFlow<Int>` | Unread message count |
-| `isChatVisible` | `StateFlow<Boolean>` | Whether a chat UI is showing |
-| `isAgentTyping` | `StateFlow<Boolean>` | Agent typing indicator |
-| `isLiveChatMode` | `StateFlow<Boolean>` | Live agent mode active |
-| `serverTheme` | `StateFlow<ConferbotTheme?>` | Theme built from dashboard customizations |
-| `serverCustomization` | `StateFlow<ServerChatbotCustomization?>` | Raw dashboard customization values |
-| `isOnline` | `StateFlow<Boolean>` | Device connectivity |
-| `pendingMessageCount` | `StateFlow<Int>` | Queued offline messages |
-| `isSyncingQueue` | `StateFlow<Boolean>` | Offline queue sync in progress |
-| `paginationState` | `StateFlow<PaginationState>` | Message pagination state |
-| `isLoadingMore` | `StateFlow<Boolean>` | Older messages loading |
+val stop = Conferbot.onWidgetSignal(HandoverSignals.WAIT_OVER_EVENT) { signal ->
+    val reason = (signal as WidgetSignal.WaitOver).reason // unavailable, cancelled or ended
+}
+stop() // stop listening
+```
 
-Collect them from a coroutine scope, or use `collectAsState()` in Compose.
+Analytics: `Conferbot.setUtmParameters(utmSource = "newsletter")`, `trackInteraction(...)`, `trackGoalCompletion("goal-id", conversionValue = 49.0)`. Raw socket events: `Conferbot.on(SocketEvents.BOT_RESPONSE, listener)` / `off(...)` take an `io.socket.emitter.Emitter.Listener`; add `implementation 'io.socket:socket.io-client:2.1.0'` to your app to use them (the SDK does not expose Socket.IO to your compile classpath).
 
-## API Reference
+Endpoints: the SDK talks to `https://wdt.conferbot.com`. To go through your own proxy, pass `baseUrl` (ending in `/api/v1/mobile/`) and `socketUrl` to `initialize()`, or call `ConferBotEndpoints.setApiBaseUrl(...)` / `setSocketUrl(...)` (HTTPS only) before it.
 
-Core methods on `com.conferbot.sdk.core.Conferbot`:
+## Help centre and Your requests
 
-| Member | Signature | Description |
-|--------|-----------|-------------|
-| `initialize` | `initialize(context: Context, apiKey: String, botId: String, config: ConferBotConfig = ConferBotConfig(), customization: ConferBotCustomization? = null, user: ConferBotUser? = null, baseUrl: String? = null, socketUrl: String? = null, paginationConfig: PaginationConfig = PaginationConfig())` | One-time SDK setup; throws if already initialized |
-| `openChat` | `openChat(context: Context)` | Launch the built-in full-screen chat Activity |
-| `initializeSession` | `suspend initializeSession(): Boolean` | Create a chat session manually (headless) |
-| `sendMessage` | `sendMessage(text: String)` | Send a visitor message |
-| `sendTypingStatus` | `sendTypingStatus(isTyping: Boolean)` | Report visitor typing state |
-| `initiateHandover` | `initiateHandover(message: String? = null)` | Request a live agent |
-| `endChat` | `endChat()` | End the current conversation (leaves the queue while waiting) |
-| `leaveQueue` | `leaveQueue(onDone: (Boolean) -> Unit = {})` | Leave the queue for a person; `false` when a person already has the chat |
-| `startNewChat` | `startNewChat()` | A fresh conversation once a chat has closed (the "Start a new chat" button) |
-| `sendAnswerFeedback` | `sendAnswerFeedback(agentMessageId: String, feedback: AnswerFeedback)` | A vote on an AI answer (`helpful`, `reason`, `comment`), kept on its record entry and sent |
-| `liveChat.openEmailTranscript` | `liveChat.openEmailTranscript()` | Show the "Email me this chat" card |
-| `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
-| `waiting.help` / `waiting.games` | `StateFlow<PlacedCard<HelpCardState>?>` / `StateFlow<PlacedCard<GamesCard>?>` | The while-you-wait cards on screen (for a custom UI); `waiting.solveWait { ok -> }` is "That solved it" |
-| `openWaitHelpItem` | `openWaitHelpItem(item: WaitArticles.HelpItem)` | Open a row of the while-you-wait card (an article in the help centre, else fetched by id and shown on its own: `waiting.article`) |
-| `openChatArticle` | `openChatArticle(articleId: String, title: String? = null): Boolean` | Open a cited help article as an AI source does (the help centre, else fetched by id); `false` while articles cannot open in the app |
-| `liveChat.waitEndsAt` | `StateFlow<Long?>` | When the handover's max wait runs out (ms since the epoch) while a flow waits for a person; `LiveChat.maxWaitText(LiveChat.secondsLeft(it))` is the card's line |
-| `identify` | `identify(user: ConferBotUser?)` | Set the current user (before session creation); `null` signs out |
-| `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
-| `on` / `off` | `on(event: String, callback: Emitter.Listener)` / `off(event: String, callback: Emitter.Listener? = null)` | Raw socket event subscription |
-| `loadMoreMessages` | `loadMoreMessages()` | Load the next page of history |
-| `hasMoreMessages` | `hasMoreMessages(): Boolean` | Whether older messages exist |
-| `hasPersistedSession` | `suspend hasPersistedSession(): Boolean` | A restorable session exists locally |
-| `restorePersistedSession` | `suspend restorePersistedSession(): SessionRestoreResult` | Restore the persisted session |
-| `clearHistory` | `clearHistory()` | Clear local messages and persisted session |
-| `resetUnreadCount` | `resetUnreadCount()` | Zero the unread badge |
-| `setPushToken` | `setPushToken(token: String?, type: PushTokenType? = null)` | Register the device's token with each conversation; `null` unregisters |
-| `unregisterPush` | `unregisterPush()` | Stop this device's pushes (kept for the next conversation) |
-| `handlePushNotification` | `handlePushNotification(data: Map<String, String>, open: Boolean = true): Boolean` | A Conferbot push of this bot: open its conversation, or (`open = false`) count and show it |
-| `handlePushIntent` | `handlePushIntent(intent: Intent?): Boolean` | A tapped push's launcher intent |
-| `handleNotificationTap` | `handleNotificationTap(data: Map<String, String>)` | Handle a notification tap intent |
-| `updateNotificationSettings` | `updateNotificationSettings(settings: NotificationSettings)` | Configure notification behavior |
-| `initKnowledgeBaseService` | `initKnowledgeBaseService(): KnowledgeBaseService?` | Get/create the KB service |
-| `fetchKnowledgeBase` | `fetchKnowledgeBase()` | No-op kept for old callers: KB data comes with the bot's data |
-| `openHelpArticle` | `openHelpArticle(articleId: String, title: String? = null, fromChat: Boolean = true): Boolean` | Open an article in the chat's help centre |
-| `isHelpCentreOn` | `val isHelpCentreOn: Boolean` | Help centre on, with published articles |
-| `searchKnowledgeBase` | `searchKnowledgeBase(query: String)` | Full-text article search |
-| `setUtmParameters` | `setUtmParameters(utmSource: String? = null, utmMedium: String? = null, utmCampaign: String? = null, utmTerm: String? = null, utmContent: String? = null, referrer: String? = null, landingPage: String? = null)` | Attribution parameters |
-| `trackGoalCompletion` | `trackGoalCompletion(goalId: String, conversionEvent: String? = null, conversionValue: Double? = null)` | Report a goal conversion |
-| `submitChatRating` | `submitChatRating(csatScore: Int? = null, feedback: String? = null, thumbsUp: Boolean? = null, npsScore: Int? = null, source: String = "post_chat_survey")` | Submit CSAT/NPS feedback |
-| `disconnect` | `disconnect()` | Tear down socket, state, and allow re-init |
+### Help centre
 
-UI entry points:
+The help centre follows the bot's settings: it shows while **Help articles** is on in the dashboard and at least one article is published. The chat then has a **Chat / Articles** switch (or, with a home screen, its own view). AI answers that cite an article open it in the app.
 
-| Composable / Class | Signature | Description |
-|--------------------|-----------|-------------|
-| `ConferBotWidget` | `@Composable ConferBotWidget(config: ConferBotWidgetConfig = ConferBotWidgetConfig(), modifier: Modifier = Modifier)` | Floating chat bubble + bottom-sheet chat overlay |
-| `ConferBotWidgetScope` | `@Composable ConferBotWidgetScope(config: ConferBotWidgetConfig = ConferBotWidgetConfig(), content: @Composable () -> Unit)` | Overlays the widget on top of your content |
-| `ConferBotChatScreen` | `@Composable ConferBotChatScreen(onDismiss: () -> Unit = {}, modifier: Modifier = Modifier)` | Full chat screen (server-themed) |
-| `ConferBotChatView` | `@Composable ConferBotChatView(modifier, lightTheme: ConferbotTheme = LightTheme, darkTheme: ConferbotTheme = DarkTheme, useDarkTheme: Boolean? = null, ...)` | Chat screen with local light/dark theming |
-| `ConferBotThemedChatScreen` | `@Composable ConferBotThemedChatScreen(onDismiss: () -> Unit, lightTheme, darkTheme, useDarkTheme, modifier)` | Themed modal chat with dismiss |
-| `KnowledgeBaseScreen` | `@Composable KnowledgeBaseScreen(knowledgeBaseService: KnowledgeBaseService, onDismiss: () -> Unit, modifier: Modifier = Modifier, primaryColor: Color = Color(0xFF0100EC), title: String = "Help Center", embedded: Boolean = false, showRecent: Boolean = true, openRequest: Conferbot.HelpArticleRequest? = null, ...)` | Built-in help center |
-| `ChatActivity` | `com.conferbot.sdk.ui.views.ChatActivity` | Full-screen chat Activity for XML apps (launched by `openChat`); hosts the Compose chat |
+From your own screens:
 
-More detail in the [docs/](docs/) directory: [USAGE.md](docs/USAGE.md) (step-by-step tutorial), [API.md](docs/API.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md), [COMPONENTS.md](docs/COMPONENTS.md), [EXAMPLES.md](docs/EXAMPLES.md), [CHANGELOG.md](docs/CHANGELOG.md).
+```kotlin
+if (Conferbot.isHelpCentreOn) {
+    Conferbot.openHelpArticle(articleId = "ARTICLE_ID")  // in the chat's help centre
+}
+```
+
+Or show it on a Compose screen of its own:
+
+```kotlin
+import com.conferbot.sdk.ui.compose.knowledgebase.KnowledgeBaseScreen
+
+val kb = Conferbot.initKnowledgeBaseService()
+if (kb != null && Conferbot.isHelpCentreOn) {
+    KnowledgeBaseScreen(knowledgeBaseService = kb, onDismiss = { /* close */ })
+}
+```
+
+Headless: `Conferbot.knowledgeBase` (a `StateFlow`), `searchKnowledgeBase(query)`, `rateKnowledgeBaseArticle(articleId, helpful)`.
+
+### Your requests
+
+Visitors follow their conversations with your team and answer them, as on the web widget's home screen: the chat menu has **Your requests** once they have one (**New reply** when a team reply is unread). Only the visitor's own conversations are listed: chats this device started, or every verified conversation of a signed-in user whose `hash` is valid.
+
+Your own entry point with a badge:
+
+```kotlin
+lifecycleScope.launch {
+    Conferbot.requestsUnread.collect { unread -> badge.isVisible = unread > 0 }
+}
+
+Conferbot.openRequests()            // the list
+Conferbot.openRequests(requestId)   // one request
+```
+
+`openRequests()` opens over the chat (Compose and `ChatActivity`); to open it over your own Compose screen, place `RequestsPortalView()` there.
+
+## API reference
+
+All members are on `com.conferbot.sdk.core.Conferbot` unless noted.
+
+### Setup and chat
+
+| Member | Description |
+|---|---|
+| `initialize(context, apiKey, botId, config = ConferBotConfig(), customization: ConferBotCustomization? = null, user: ConferBotUser? = null, baseUrl: String? = null, socketUrl: String? = null, paginationConfig = PaginationConfig())` | Set up once; throws when already initialized |
+| `openChat(context)` | Open the full-screen chat (`ChatActivity`) |
+| `disconnect()` | Tear everything down; `initialize()` may be called again |
+| `identify(user: ConferBotUser?)` | Sign a user in; `null` signs out |
+| `sendMessage(text)` / `sendTypingStatus(isTyping)` | Send as the visitor |
+| `answerStep(response)` | Answer the waiting flow step (`FlowStepAnswer`) |
+| `initiateHandover(message: String? = null)` | Ask for a person |
+| `leaveQueue(onDone: (Boolean) -> Unit = {})` | Leave the queue; `false` when a person already has the chat |
+| `endChat()` / `startNewChat()` | End the conversation / start a fresh one after it closed |
+| `sendAnswerFeedback(agentMessageId, feedback: AnswerFeedback)` | A vote on an AI answer |
+| `liveChat.openEmailTranscript()` | Show the "Email me this chat" card |
+| `showHome()` / `showChat(text: String? = null)` / `showHelp(categoryId: String? = null)` | Switch the chat's view |
+| `hasPersistedSession()` / `restorePersistedSession()` | `suspend`: resume the last conversation |
+| `clearHistory()` | Forget the conversation on the device |
+| `loadMoreMessages()` / `hasMoreMessages()` | History paging for a custom UI |
+| `setEventListener(listener)` | `ConferBotEventListener` callbacks |
+| `onWidgetSignal(name, listener): () -> Unit` | Handover signals; returns the unsubscribe |
+| `on(event, listener)` / `off(event, listener)` | Raw socket events (`SocketEvents`) |
+
+### Push
+
+| Member | Description |
+|---|---|
+| `setPushToken(token: String?, type: PushTokenType? = null)` | Register the device's token with each conversation; `null` unregisters |
+| `unregisterPush()` | Stop this device's pushes |
+| `handlePushNotification(data: Map<String, String>, open: Boolean = true): Boolean` | Handle a Conferbot push; `false` for anything else |
+| `handlePushIntent(intent: Intent?): Boolean` | Handle a tapped push's launcher intent |
+| `setNotificationChatActivity(activityClass)` | The Activity a notification tap opens (default `ChatActivity`) |
+| `updateNotificationSettings(settings)` / `addNotificationListener(listener)` / `cancelAllNotifications()` | In-app notification behaviour |
+| `registerPushToken(token)` / `unregisterPushToken()` | Deprecated: `setPushToken` / `unregisterPush` |
+| `ConferbotNotificationService` | `com.conferbot.sdk.notifications`: the FCM service to declare (open, so you can extend it) |
+
+### Help centre and requests
+
+| Member | Description |
+|---|---|
+| `isHelpCentreOn: Boolean` | Help articles on, with published articles |
+| `openHelpArticle(articleId, title: String? = null, fromChat: Boolean = true): Boolean` | Open an article in the chat's help centre |
+| `initKnowledgeBaseService(): KnowledgeBaseService?` | The service `KnowledgeBaseScreen` takes |
+| `knowledgeBase: StateFlow<KnowledgeBaseData?>` | Categories and articles |
+| `searchKnowledgeBase(query)` / `rateKnowledgeBaseArticle(articleId, helpful)` | Search and rate |
+| `requests.requests: StateFlow<List<RequestSummary>?>` | The visitor's requests (null until read) |
+| `requestsUnread: StateFlow<Int>` | Requests with an unread team reply |
+| `openRequests(requestId: String? = null)` | Open the list, or one request |
+
+### State
+
+| Property | Type |
+|---|---|
+| `isInitialized`, `isConnected`, `isOnline` | `StateFlow<Boolean>` |
+| `chatSessionId` | `StateFlow<String?>` |
+| `record` | `StateFlow<List<RecordItem>>` (the conversation) |
+| `currentAgent` | `StateFlow<Agent?>` |
+| `isAgentTyping`, `isLiveChatMode`, `isChatVisible` | `StateFlow<Boolean>` |
+| `unreadCount`, `pendingMessageCount` | `StateFlow<Int>` |
+| `currentUIState` | `StateFlow<NodeUIState?>` (the waiting step) |
+| `homeView` | `StateFlow<HomeView>` (`HOME`, `CHAT`, `HELP`) |
+| `serverCustomization` / `serverTheme` | the dashboard's settings / the theme built from them |
+| `widgetLanguage` | `String`, the language in force |
+
+### Configuration
+
+| `ConferBotConfig` | Default | Description |
+|---|---|---|
+| `enableNotifications` | `true` | The `conferbot_messages` channel and in-app notifications |
+| `enableOfflineMode` | `true` | Queue messages while offline |
+| `autoConnect` | `true` | Connect on `initialize()` |
+| `reconnectionAttempts` / `reconnectionDelay` | `null` (5 / 1000 ms) | Socket reconnection |
+| `widgetLanguage` | `null` | `"en"`, `"nl"`, `"fr"`, `"de"`, `"es"` or `"auto"`; wins over the owner's |
+| `onPostChatRedirect` | `null` | `(url) -> Boolean`; `true` when the app handled the URL |
+| `disablePostChatRedirect` | `false` | Never follow the post-chat redirect |
+
+| `ConferBotUser` | Description |
+|---|---|
+| `id` | Your user id (required) |
+| `name`, `email`, `phone` | Shown in the dashboard |
+| `metadata: Map<String, Any>?` | Your own fields; also `{{first_name}}`, `{{company}}` placeholders |
+| `hash` | Identity verification HMAC, made on your server |
+
+### UI
+
+| Composable / class | Description |
+|---|---|
+| `ConferBotWidget(config = ConferBotWidgetConfig(), modifier)` | The floating launcher with its chat sheet |
+| `ConferBotWidgetScope(config, content)` | Your content with the launcher over it |
+| `ConferBotChatScreen(onDismiss = {}, modifier)` | The full chat, themed by the dashboard |
+| `ConferBotChatView(modifier, lightTheme, darkTheme, useDarkTheme)` | The chat with a local theme as fallback |
+| `KnowledgeBaseScreen(knowledgeBaseService, onDismiss, ...)` | The help centre on its own |
+| `HomeScreenView(onClose)` | The home screen (`com.conferbot.sdk.ui.compose.home`) |
+| `RequestsPortalView()` | Where `openRequests()` opens over your own screen |
+| `ChatActivity` | `com.conferbot.sdk.ui.views`: the full-screen chat for XML apps |
+
+More: [docs/USAGE.md](docs/USAGE.md), [docs/API.md](docs/API.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/EXAMPLES.md](docs/EXAMPLES.md).
 
 ## Troubleshooting
 
-**The bot does not appear / stays blank**
+**The chat stays empty.**
+1. Publish the bot; drafts are not served.
+2. Check the bot ID (24 characters, from the Share tab). A wrong id gives an empty chat.
+3. The phone needs HTTPS and WebSocket access to `wdt.conferbot.com`. Corporate proxies that block WebSockets stop messages.
+4. Try the demo bot `691c970890527a0468f9b2c9`. If it loads, the problem is your bot's id or publish state.
+5. Filter Logcat by `Conferbot`.
 
-1. **Check the bot is published.** Draft flows are not served to the SDK - publish from the flow builder.
-2. **Check the `botId`.** It must be the 24-character ID from Bot Settings > General. A wrong ID fails silently with an empty chat.
-3. **Check connectivity to `wdt.conferbot.com`.** The SDK needs HTTPS access to `https://wdt.conferbot.com` (REST + Socket.IO). Corporate proxies or firewalls that block WebSockets will prevent messages from flowing.
-4. **Try the demo bot.** Bot ID `691c970890527a0468f9b2c9` works without an account - if it loads, the problem is your bot's ID or publish state, not the integration.
-5. **Watch Logcat.** Filter by tag `Conferbot` for initialization, session, and socket errors.
+**`IllegalStateException: Conferbot SDK is already initialized`.** Initialize once, in `Application.onCreate()`. Call `disconnect()` before initializing again.
 
-**`IllegalStateException: already initialized`** - `initialize()` was called twice. Initialize once in `Application.onCreate()`, and call `disconnect()` before re-initializing.
+**My XML layout or colour overrides no longer change the chat.** Since the XML chat hosts the Compose chat it no longer inflates `activity_chat.xml` and friends. Use `ConferBotCustomization`, the dashboard, or your own Activity with `ConferBotChatView`. See [CHANGELOG.md](CHANGELOG.md).
 
-**Messages send but nothing comes back** - the socket may be connected while the flow failed to start; confirm the bot is published and check for `fetched-chatbot-data` errors in Logcat.
+**No push notifications.**
+- Firebase is not bundled any more: add `firebase-messaging` and declare `ConferbotNotificationService` (or forward from your service).
+- Check that `setPushToken` is called and, on Android 13+, that the app may post notifications.
+- Sending is off on the server until push is enabled, and for now reaches only apps on Conferbot's Firebase project (see [Push notifications](#push-notifications)).
 
-**Minified release builds crash** - the SDK ships consumer ProGuard rules; if you still hit issues add:
+**`ClassNotFoundException: com.google.firebase...`.** You declared `ConferbotNotificationService` without adding `firebase-messaging` to the app.
 
-```proguard
--keep class com.conferbot.sdk.** { *; }
--keep class io.socket.** { *; }
-```
+**The identity hash is rejected.** Hash exactly the `id` you pass (or the email when there is no id), trimmed, with the workspace's current secret, as hex.
 
-## Example App
+**A different language than expected.** `ConferBotConfig.widgetLanguage` wins over the dashboard; "auto" follows the phone's language list.
 
-A fully working sample app is included in the [`example/`](example/) directory.
+## Contributing and testing
 
-```bash
-# 1. Clone the repo
-git clone https://github.com/conferbot/android-sdk.git
-cd android-sdk
+- Build: `sh ./gradlew :conferbot:assembleDebug`
+- Unit tests: `sh ./gradlew :conferbot:testDebugUnitTest --no-daemon -q` (results in `conferbot/build/test-results/`)
+- The example app: [example/README.md](example/README.md), against Conferbot's cloud or a local server.
+- [docs/PARITY.md](docs/PARITY.md) tracks every web-widget feature in this SDK, with its issue, files and tests, and how to test on a device.
+- Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
-# 2. Open in Android Studio
-#    File > Open > select the root directory
-
-# 3. Configure your bot credentials
-#    Open example/src/main/java/com/conferbot/example/ExampleApplication.kt
-#    and replace:
-#      apiKey = "test_key"
-#      botId  = "691c970890527a0468f9b2c9"   # public demo bot, works as-is
-#    with your own credentials from the Conferbot dashboard.
-
-# 4. Run the 'example' configuration on a device or emulator (Shift+F10)
-```
-
-### What the Example Shows
-
-| Screen | Pattern | Description |
-|--------|---------|-------------|
-| **MainActivity** (XML) | Activity launch + headless | Buttons for `openChat`, `identify`, `sendMessage`, `initiateHandover`, `clearHistory`; observes `unreadCount`, `isConnected`, `currentAgent`, `record` |
-| **ComposeActivity** | Jetpack Compose | Embeds `ConferBotChatScreen` in a Compose app |
-| **ExampleApplication** | Setup | `initialize()`, event listener, notification listener/settings, FCM token registration |
-
-## Contributing
-
-We welcome bug reports and feature requests via [GitHub Issues](https://github.com/conferbot/android-sdk/issues). If you would like to contribute code, please open an issue first to discuss the proposed change.
+Bug reports and feature requests: [GitHub Issues](https://github.com/Conferbot/conferbot-android/issues). Please open an issue before a large pull request.
 
 ## License
 
-Apache 2.0 - see [LICENSE](LICENSE) for details.
-
-## Resources
-
-- [Full Documentation](https://docs.conferbot.com/mobile/android)
-- [Conferbot Dashboard](https://app.conferbot.com)
-- [GitHub Issues](https://github.com/conferbot/android-sdk/issues)
-- Email: mobile-support@conferbot.com
+Apache 2.0, see [LICENSE](LICENSE).
