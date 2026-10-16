@@ -295,6 +295,10 @@ class CalendarNodeHandler : BaseNodeHandler() {
         return dayName.lowercase() !in excludedDays && dayKey !in excludedDates
     }
 
+    /** The day's taken slots ("HH:MM - HH:MM", bot's clock): the bot's bookings and the node's own (web displayStep.ts daySlotsFor). */
+    private suspend fun booked(data: Map<String, Any?>, nodeId: String, dayKey: String): List<String> =
+        FlowCalendar.bookedLabels(flowContext().calendarBookings, nodeId, data, dayKey, zone(data))
+
     private suspend fun ui(data: Map<String, Any?>, nodeId: String): NodeUIState.Calendar {
         val zone = zone(data)
         val now = flowContext().now()
@@ -310,7 +314,12 @@ class CalendarNodeHandler : BaseNodeHandler() {
                 days.add(key)
                 continue
             }
-            slotsFor(data, key, now).forEach { slots.add(NodeUIState.Calendar.TimeSlot(date = key, time = it.start)) }
+            val daySlots = slotsFor(data, key, now)
+            val booked = booked(data, nodeId, key)
+            // Every slot taken: the day is not offered (web: greyed out as "fully booked").
+            if (daySlots.isEmpty() || FlowCalendar.isDayFullyBooked(daySlots, booked)) continue
+            // A taken slot is shown, not pickable.
+            daySlots.forEach { slots.add(NodeUIState.Calendar.TimeSlot(date = key, time = it.start, available = FlowCalendar.slotLabel(it) !in booked)) }
         }
         return NodeUIState.Calendar(
             questionText = FlowKit.shownText(data["calendarPrompt"]),
@@ -350,6 +359,8 @@ class CalendarNodeHandler : BaseNodeHandler() {
             FlowKit.userSay(value)
         } else {
             val slot = slotsFor(nodeData, dateString, ctx.now()).firstOrNull { it.start == slotStart }
+                // A taken slot cannot be booked again (web: its button is disabled).
+                ?.takeIf { FlowCalendar.slotLabel(it) !in booked(nodeData, nodeId, dateString) }
                 ?: return NodeResult.DisplayUI(ui(nodeData, nodeId))
             val botDate = FlowCalendar.noonInZone(dateString, botZone)
             val visitorDate = FlowCalendar.noonInZone(FlowCalendar.dayKeyInZone(botDate, botZone), visitorZone)
