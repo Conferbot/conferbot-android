@@ -29,7 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.flow.FlowRich
-import com.conferbot.sdk.core.flow.FlowRich.t
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.flow.Js
 import com.conferbot.sdk.core.flow.MatrixPicks
@@ -118,7 +118,7 @@ fun MatrixStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, send:
     var picks by remember(step.visit) { mutableStateOf(MatrixPicks.of(step.node)) }
     val rowLabel = 96.dp
     StepCard(style) {
-        Text(t(if (multiple) "matrix.pickAny" else "matrix.rateEach").trim('(', ')').replaceFirstChar { it.uppercase() }, style = style.hint)
+        Text(t(if (multiple) "sdk.matrix.pickAny" else "matrix.rateEach"), style = style.hint)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             // The columns share the width; past seven narrow ones the grid scrolls.
             val cell = ((maxWidth - rowLabel) / Math.max(1, cols.size)).coerceIn(44.dp, 72.dp)
