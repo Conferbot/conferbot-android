@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.home
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.customization.Customizations
 import com.conferbot.sdk.core.customization.MascotArt
 import com.conferbot.sdk.core.customization.ThemeTokens
@@ -187,47 +189,57 @@ data class HomeModel(
 
 object Home {
 
-    // ------------------------------------------------------------ words (web ts/i18n/en.ts)
+    // ------------------------------------------------------------ words (web ts/i18n home.*, trust.*, requests.*), read in the active language
 
-    const val TITLE = "Hi there 👋"
-    const val DESCRIPTION = "Ask us anything - we're here to help."
-    const val ONLINE_NOW = "Online now"
-    const val SUPPORT = "Support"
-    const val CHAT_WITH_US = "Chat with us"
-    const val OUR_ASSISTANT = "Our assistant"
-    const val RESUME = "Pick up where you left off"
-    const val CONTINUE_CONVERSATION = "Continue the conversation"
-    const val ASK_AGAIN = "Ask it again - we'll answer right away"
-    const val HELP_CENTRE = "Help centre"
-    const val RECENT_ARTICLES = "Recent articles"
-    const val SEE_ALL = "See all"
-    const val SEARCH_PLACEHOLDER = "Search for help"
-    const val SEARCH_LABEL = "Search help articles"
-    fun noMatch(query: String) = "No articles match “$query”."
-    const val ASK_INSTEAD = "Ask us instead"
-    const val CHAT_INSTEAD = "Chat with us instead"
-    const val ASK_PLACEHOLDER = "Ask a question…"
-    fun askLabel(name: String) = "Ask $name a question"
-    /** "Ask “<query>”": the query is drawn bold. */
-    const val ASK_QUERY = "Ask"
-    fun answersRightAway(name: String) = "$name answers right away"
-    const val WELL_HELP = "We'll help you with it"
-    const val ARTICLES = "Articles"
-    const val GOOD_MORNING = "Good morning"
-    const val GOOD_AFTERNOON = "Good afternoon"
-    const val GOOD_EVENING = "Good evening"
-    const val HELLO = "Hello"
-    fun welcomeBackName(name: String) = "Welcome back, $name"
-    const val WELCOME_BACK = "Welcome back"
-    const val REQUESTS_TITLE = "Your requests"
-    fun requestsSeeAll(n: Int) = "See all ($n)"
-    const val REVIEW = "review"
-    const val REVIEWS = "reviews"
-    fun rated(avg: String, count: Int, reviews: String) = "Rated $avg out of 5 from $count $reviews"
-    const val OUR_TEAM = "Our team"
-    const val CUSTOMER_LOGO = "Customer logo"
-    const val CLOSE = "Close"
-    const val BACK = "Back"
+    val TITLE: String get() = t("home.title")
+    val DESCRIPTION: String get() = t("home.description")
+    val ONLINE_NOW: String get() = t("home.onlineNow")
+    val SUPPORT: String get() = t("home.support")
+    val CHAT_WITH_US: String get() = t("home.chatWithUs")
+    val OUR_ASSISTANT: String get() = t("home.ourAssistant")
+    val RESUME: String get() = t("home.resume")
+    val CONTINUE_CONVERSATION: String get() = t("home.continueConversation")
+    val ASK_AGAIN: String get() = t("home.askAgain")
+    val HELP_CENTRE: String get() = t("home.helpCentre")
+    val RECENT_ARTICLES: String get() = t("home.recentArticles")
+    val SEE_ALL: String get() = t("home.seeAll")
+    val SEARCH_PLACEHOLDER: String get() = t("home.searchPlaceholder")
+    val SEARCH_LABEL: String get() = t("kb.searchLabel")
+    fun noMatch(query: String) = t("kb.noMatch", "query" to query)
+    val ASK_INSTEAD: String get() = t("home.askInstead")
+    val CHAT_INSTEAD: String get() = t("home.chatInstead")
+    val ASK_PLACEHOLDER: String get() = t("home.askPlaceholder")
+    fun askLabel(name: String) = t("home.askLabel", "name" to name)
+
+    /**
+     * "Ask “<query>”": the words around the query, which is drawn bold (web
+     * home.askQuery "Ask {query}"): ("Ask ", "") in English, ("", " fragen") in German.
+     */
+    fun askQueryParts(): Pair<String, String> {
+        val parts = t("home.askQuery").split("{query}")
+        return parts[0] to parts.getOrElse(1) { "" }
+    }
+
+    /** "Ask" before the bold query (see [askQueryParts] for languages that put it after). */
+    val ASK_QUERY: String get() = askQueryParts().first.trim()
+    fun answersRightAway(name: String) = t("home.answersRightAway", "name" to name)
+    val WELL_HELP: String get() = t("home.wellHelp")
+    val ARTICLES: String get() = t("tabs.articles")
+    val GOOD_MORNING: String get() = t("home.goodMorning")
+    val GOOD_AFTERNOON: String get() = t("home.goodAfternoon")
+    val GOOD_EVENING: String get() = t("home.goodEvening")
+    val HELLO: String get() = t("home.hello")
+    fun welcomeBackName(name: String) = t("home.welcomeBackName", "name" to name)
+    val WELCOME_BACK: String get() = t("home.welcomeBack")
+    val REQUESTS_TITLE: String get() = t("requests.title")
+    fun requestsSeeAll(n: Int) = t("requests.seeAll", "n" to n)
+    val REVIEW: String get() = t("trust.review")
+    val REVIEWS: String get() = t("trust.reviews")
+    fun rated(avg: String, count: Int, reviews: String) = t("trust.rated", "avg" to avg, "count" to count, "reviews" to reviews)
+    val OUR_TEAM: String get() = t("trust.ourTeam")
+    val CUSTOMER_LOGO: String get() = t("trust.customerLogo")
+    val CLOSE: String get() = t("common.close")
+    val BACK: String get() = t("common.back")
 
     // ------------------------------------------------------------ helpers
 
@@ -365,11 +377,6 @@ object Home {
 
     private fun plainText(v: String) = v.replace(TAGS, " ").replace(SPACES, " ").trim()
 
-    /** The owner's words, or the stock ones (web i18n.ts ownerTextOr). */
-    private fun ownerTextOr(value: Any?, stock: String): String {
-        val v = (value as? String)?.let(::plainText).orEmpty()
-        return if (v.isEmpty() || v == plainText(stock)) stock else value as String
-    }
 
     // ------------------------------------------------------------ colours
 
@@ -680,7 +687,8 @@ object Home {
             status = status,
             tone = people.tone,
             dot = !hideStatus,
-            button = ownerTextOr(c["initialPageCardButtonText"], CHAT_WITH_US),
+            // The owner's words, or the stock ones in the visitor's language (web core/customizations.ts ownerTextOr).
+            button = I18n.ownerTextOr(c["initialPageCardButtonText"], "home.chatWithUs"),
             starters = agent?.starters.orEmpty().filter { it.isNotBlank() }.take(3),
             faces = trustImages(c["homeTeamPhotos"], 3),
             rating = ratingLine(c["homeRating"])
@@ -751,7 +759,8 @@ object Home {
         return HomeModel(
             hello = back?.hello ?: salutation(hour ?: Calendar.getInstance().apply { timeInMillis = now }.get(Calendar.HOUR_OF_DAY)),
             brand = brand(c, agent?.displayName?.ifEmpty { null } ?: botName.orEmpty()),
-            title = (c["initialPageTitle"] as? String)?.trim().orEmpty(),
+            // The stock "Hi there 👋" in the visitor's language (web core/customizations.ts stockText).
+            title = I18n.stockText((c["initialPageTitle"] as? String)?.trim().orEmpty(), "home.title"),
             description = copy.description,
             message = (c["initialPageMessage"] as? String)?.let(::plainText).orEmpty(),
             band = band,
