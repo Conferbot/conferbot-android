@@ -255,16 +255,33 @@ class LiveChatExtras(
         queuePoll = null
     }
 
+    // When the handover's max wait runs out (ms since the epoch) while a
+    // flow's handover waits for a person: the wait card counts down to it.
+    private val _waitEndsAt = MutableStateFlow<Long?>(null)
+    val waitEndsAt: StateFlow<Long?> = _waitEndsAt.asStateFlow()
+
+    // A restored wait's seconds left (the server's), for the next wait to start from.
+    @Volatile private var restoredRemaining: Long? = null
+
+    /** A restored wait for a person: its seconds left, before the wait starts again (HandoverLifecycle). */
+    fun resumeWaitWith(remainingSeconds: Long?) {
+        restoredRemaining = remainingSeconds
+    }
+
     /**
      * The handover step's max wait: once it passes with nobody joined, the
      * server is asked to decide (handover-timeout) and answers with
-     * no-agents-available. Once per wait.
+     * no-agents-available. Once per wait. A restored wait goes on from the
+     * server's seconds left (web special.ts _attachHandoverWait); the wait
+     * card counts down to the same deadline ([waitEndsAt]).
      */
-    fun startWaitTimer(nodeData: Map<String, Any?>?, workspaceId: String?) {
+    fun startWaitTimer(nodeData: Map<String, Any?>?, workspaceId: String?, now: () -> Long = System::currentTimeMillis) {
         if (waitTimer?.isActive == true) return
-        val minutes = com.conferbot.sdk.core.agent.HandoverPayload.waitMinutesOf(nodeData?.get("maxWaitTime")).toDouble()
+        val deadline = LiveChat.waitDeadline(nodeData?.get("maxWaitTime"), restoredRemaining, now())
+        restoredRemaining = null
+        _waitEndsAt.value = deadline
         waitTimer = scope.launch {
-            delay((minutes * 60_000).toLong())
+            delay(maxOf(0L, deadline - now()))
             val id = sessionId() ?: return@launch
             socket()?.emit("handover-timeout", JSONObject(LiveChat.handoverTimeoutPayload(id, nodeData, workspaceId)))
         }
@@ -273,6 +290,7 @@ class LiveChatExtras(
     fun stopWaitTimer() {
         waitTimer?.cancel()
         waitTimer = null
+        _waitEndsAt.value = null
     }
 
     /**
@@ -399,6 +417,7 @@ class LiveChatExtras(
     fun reset() {
         stopQueuePoll()
         stopWaitTimer()
+        restoredRemaining = null
         _queue.value = null
         _handoverWaiting.value = null
         _noAgentsAvailable.value = false
