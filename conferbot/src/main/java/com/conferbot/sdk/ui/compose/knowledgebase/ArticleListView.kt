@@ -1,5 +1,7 @@
 package com.conferbot.sdk.ui.compose.knowledgebase
 
+import com.conferbot.sdk.core.i18n.I18n
+import com.conferbot.sdk.core.i18n.t
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -46,7 +48,7 @@ fun ArticleListView(
     modifier: Modifier = Modifier,
     primaryColor: Color = Color(0xFF0100EC),
     isLoading: Boolean = false,
-    emptyMessage: String = "No articles found"
+    emptyMessage: String = t("kb.noArticles")
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         when {
@@ -386,7 +388,7 @@ fun CompactArticleItem(
 @Composable
 fun EmptyArticlesState(
     modifier: Modifier = Modifier,
-    message: String = "No articles found"
+    message: String = t("kb.noArticles")
 ) {
     Box(
         modifier = modifier
@@ -508,6 +510,8 @@ fun ArticleCardPlaceholder(
  * Format date for display
  */
 private fun formatDate(date: Date): String {
-    val format = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    // English as before ("Jan 5, 2026"); other languages in their own way (I18n.locale, nl-BE kept).
+    val format = if (I18n.language == I18n.EN) SimpleDateFormat("MMM d, yyyy", Locale.US)
+    else java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, I18n.locale)
     return format.format(date)
 }
