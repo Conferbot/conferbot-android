@@ -82,6 +82,44 @@ data class IntegrationResultData(
  */
 sealed class NodeUIState {
     /**
+     * The step this state waits on, as its own card draws it: the node's type
+     * and settings, what the handler adds (an OTP's stage, address results,
+     * the payment's Checkout), the reason the last answer was refused and
+     * which visit this is. Stamped by the engine on every waiting step; null
+     * for lines and media. The chat's step cards read it; XML ignores it.
+     */
+    open val step: StepInfo? get() = null
+
+    /**
+     * See [step]. [extra] comes from the handler; [type], [node], [error] and
+     * [visit] from the engine. [visit] changes when the flow arrives at the
+     * step again (not when an answer is refused), so a card keeps what the
+     * visitor entered through a refusal and starts fresh on a new visit.
+     */
+    data class StepInfo(
+        val type: String = "",
+        val node: Map<String, Any?> = emptyMap(),
+        val extra: Map<String, Any?> = emptyMap(),
+        val error: String? = null,
+        val visit: Int = 0
+    )
+
+    /** This state with [s] as its step (states that are never a waiting step stay as they are). */
+    fun withStep(s: StepInfo?): NodeUIState = when (this) {
+        is TextInput -> copy(step = s)
+        is SingleChoice -> copy(step = s)
+        is MultipleChoice -> copy(step = s)
+        is Range -> copy(step = s)
+        is Calendar -> copy(step = s)
+        is ImageChoice -> copy(step = s)
+        is MultipleQuestions -> copy(step = s)
+        is Rating -> copy(step = s)
+        is Dropdown -> copy(step = s)
+        is FileUpload -> copy(step = s)
+        else -> this
+    }
+
+    /**
      * Simple text message from bot
      */
     data class Message(
@@ -135,7 +173,8 @@ sealed class NodeUIState {
         val validationRegex: String? = null,
         val errorMessage: String? = null,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         enum class InputType {
             TEXT, NAME, EMAIL, PHONE, NUMBER, URL, LOCATION
@@ -154,7 +193,8 @@ sealed class NodeUIState {
         val useSignedUrl: Boolean = true,
         val nodeId: String,
         val answerKey: String,
-        val chatSessionId: String? = null
+        val chatSessionId: String? = null,
+        override val step: StepInfo? = null
     ) : NodeUIState()
 
     /**
@@ -164,7 +204,8 @@ sealed class NodeUIState {
         val questionText: String?,
         val choices: List<Choice>,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class Choice(
             val id: String,
@@ -181,7 +222,8 @@ sealed class NodeUIState {
         val questionText: String?,
         val options: List<Option>,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class Option(
             val id: String,
@@ -198,7 +240,8 @@ sealed class NodeUIState {
         val minValue: Int,
         val maxValue: Int,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         enum class RatingType {
             STAR, NUMBER, SMILEY, OPINION_SCALE
@@ -212,7 +255,8 @@ sealed class NodeUIState {
         val questionText: String?,
         val options: List<Option>,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class Option(
             val id: String,
@@ -229,7 +273,8 @@ sealed class NodeUIState {
         val maxValue: Int,
         val defaultValue: Int? = null,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState()
 
     /**
@@ -241,7 +286,8 @@ sealed class NodeUIState {
         val timezone: String?,
         val availableSlots: List<TimeSlot>? = null,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class TimeSlot(
             val date: String,
@@ -257,7 +303,8 @@ sealed class NodeUIState {
         val questionText: String?,
         val images: List<ImageOption>,
         val nodeId: String,
-        val answerKey: String
+        val answerKey: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class ImageOption(
             val id: String,
@@ -284,7 +331,8 @@ sealed class NodeUIState {
     data class MultipleQuestions(
         val questions: List<Question>,
         val currentIndex: Int,
-        val nodeId: String
+        val nodeId: String,
+        override val step: StepInfo? = null
     ) : NodeUIState() {
         data class Question(
             val questionText: String,
