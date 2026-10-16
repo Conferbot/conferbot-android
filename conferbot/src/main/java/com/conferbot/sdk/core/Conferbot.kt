@@ -447,7 +447,13 @@ object Conferbot {
             waitHooks = object : com.conferbot.sdk.core.livechat.WaitHooks {
                 override fun start() = waiting.startWait()
                 override fun end() = waiting.endWait()
-            }
+            },
+            // An agent bot's inactivity close only pauses it (no flow to go on with).
+            isAgentBot = { _agentBot.value != null },
+            // The escalation's handover-timeout names the bot's workspace.
+            workspaceId = { cachedWorkspaceId ?: ChatState.workspaceId },
+            // A restored wait's countdown and max wait go on from the server's seconds left.
+            onRestoredWait = { liveChat.resumeWaitWith(it) }
         )
     }
 
@@ -1585,15 +1591,14 @@ object Conferbot {
         socketClient?.on("agent-message-edited", change(false))
         socketClient?.on("agent-message-deleted", change(true))
 
-        // Closed for inactivity; the visitor's next message reopens it.
+        // Paused (or, for continue_flow, ended) for inactivity. The line and its
+        // record entry are the handover's (HandoverLifecycle.inactiveClosed):
+        // recorded once.
         socketClient?.on("ai-agent-inactive-close", Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
             if (!isOwnSession(data)) return@Listener
             setAwaitingReply(false)
             _suggestions.value = emptyList()
-            ChatState.pushToRecord(
-                com.conferbot.sdk.core.state.RecordEntry(id = "ai-close-${System.currentTimeMillis()}", shape = "ai-agent-inactive-close", type = "ai-agent-inactive-close")
-            )
         })
         socketClient?.on("ai-agent-resumed", Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject
@@ -3567,6 +3572,36 @@ object Conferbot {
     fun openHelpArticle(articleId: String, title: String? = null, fromChat: Boolean = true): Boolean {
         if (!com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(_serverCustomizationMap.value, _knowledgeBase.value, articleId)) return false
         _helpArticleRequest.value = HelpArticleRequest(articleId, title, fromChat)
+        return true
+    }
+
+    // A chat that can show an article is on screen (the Compose chat's
+    // article sheet): counted, as more than one can be up.
+    private val _articleHosts = MutableStateFlow(0)
+    internal val articleHosts: StateFlow<Int> = _articleHosts.asStateFlow()
+
+    /** A chat that can show an article by id comes on screen (true) or goes (false). */
+    internal fun setArticlesShown(on: Boolean) {
+        _articleHosts.update { (it + if (on) 1 else -1).coerceAtLeast(0) }
+    }
+
+    /**
+     * Can an AI source or an article card open its article in the app? While
+     * the help centre is on (enableKnowledgeBase) and a chat that can show
+     * one is on screen (RN agentBot.ts canOpenArticles).
+     */
+    fun canOpenChatArticles(customizations: Map<String, Any?>? = _serverCustomizationMap.value, hosts: Int = _articleHosts.value): Boolean =
+        hosts > 0 && com.conferbot.sdk.core.helpcentre.HelpCentre.on(customizations)
+
+    /**
+     * An AI source or article card opens its article: in the chat's help
+     * centre when it lists it, else fetched by id and shown on its own (the
+     * wait's article sheet, #75). False while articles cannot open in the app.
+     */
+    fun openChatArticle(articleId: String, title: String? = null): Boolean {
+        if (!canOpenChatArticles() || articleId.isBlank()) return false
+        if (openHelpArticle(articleId, title, fromChat = true)) return true
+        waiting.openArticleById(articleId, title)
         return true
     }
 
