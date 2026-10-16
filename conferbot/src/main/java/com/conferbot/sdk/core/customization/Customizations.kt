@@ -52,7 +52,7 @@ data class ResolvedCustomizations(
     val userTextColor: String = "#000000",
     val optionBubbleColor: String = "#0b4eb8",
     val optionTextColor: String = "#ffffff",
-    /** dots, wave, shimmer, pencil or mascot (pencil and mascot draw dots until mascots land). */
+    /** dots, wave, shimmer, pencil or mascot (the bot's mascot, "<name> is typing"). */
     val typingStyle: String = "dots",
     /** Send button: the theme palette's accent when it supplied the colours, else the header colour. */
     val accent: String = "#0b4eb8",
@@ -60,6 +60,16 @@ data class ResolvedCustomizations(
     val accentInk: String? = null,
     /** The widget theme in force (core/customization/WidgetTheme). */
     val theme: ResolvedWidgetTheme = ResolvedWidgetTheme(),
+    /** The owner's mascot (art3d mascotLookOf): the idle call, the mascot typing and launcher styles, the greeting card. */
+    val mascot: MascotArt.Look = MascotArt.Look(),
+    /** The colour it is drawn in when the owner chose none: the launcher's (widgetIconBgColor, else the header's). */
+    val mascotAccent: String = "#4f46e5",
+    /** The mascot greets on the greeting card, by its name, in place of the avatar. */
+    val mascotInGreeting: Boolean = false,
+    /** How the greeting card's figure moves: lively (absent), subtle or off. */
+    val mascotMotion: String = MascotMotion.DEFAULT,
+    /** The mascot's size in the launcher, % of the button (70-150, default 112). */
+    val mascotLauncherScale: Int = MascotArt.SCALE_DEFAULT,
 )
 
 object Customizations {
@@ -80,6 +90,10 @@ object Customizations {
         val s = str(v)
         return if (Regex("^(https?:)?//", RegexOption.IGNORE_CASE).containsMatchIn(s) || s.startsWith("data:image/", true)) s else null
     }
+
+    /** The mascot's colour when the owner chose none: the launcher's (widgetIconBgColor), else the header's, else indigo. */
+    fun mascotAccent(c: Map<String, Any?>?): String =
+        str(c?.get("widgetIconBgColor")).ifEmpty { str(c?.get("headerBgColor")) }.ifEmpty { "#4f46e5" }
 
     /** "Live chat test (te..." - 18 characters, as the header cuts it. */
     fun headerTitle(name: String): String = if (name.length > 18) name.take(18) + "..." else name
@@ -145,6 +159,11 @@ object Customizations {
             accent = str(c["themeAccent"]).ifEmpty { str(c["headerBgColor"]) }.ifEmpty { "#0b4eb8" },
             accentInk = str(c["themeOnAccent"]).ifEmpty { null },
             theme = theme ?: ResolvedWidgetTheme(),
+            mascot = MascotArt.lookOf(c),
+            mascotAccent = mascotAccent(c),
+            mascotInGreeting = c["mascotInGreeting"] == true,
+            mascotMotion = MascotMotion.normalize(c["mascotMotion"]),
+            mascotLauncherScale = MascotArt.scaleOf(c),
         )
     }
 }
