@@ -131,7 +131,7 @@ sealed class ConferbotNotification {
                 }
                 "agent_joined" -> {
                     AgentJoined(
-                        agentName = data["agentName"] ?: "Agent",
+                        agentName = data["agentName"] ?: NotificationText.agent,
                         agentId = data["agentId"],
                         agentAvatarUrl = data["agentAvatarUrl"],
                         chatSessionId = chatSessionId
@@ -139,14 +139,14 @@ sealed class ConferbotNotification {
                 }
                 "agent_left" -> {
                     AgentLeft(
-                        agentName = data["agentName"] ?: "Agent",
+                        agentName = data["agentName"] ?: NotificationText.agent,
                         agentId = data["agentId"],
                         chatSessionId = chatSessionId
                     )
                 }
                 "chat_ended" -> {
                     ChatEnded(
-                        reason = data["reason"] ?: "Chat session ended",
+                        reason = data["reason"] ?: NotificationText.sessionEnded,
                         chatSessionId = chatSessionId
                     )
                 }
