@@ -233,6 +233,9 @@ fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = { Conferbot.lea
                     val lines = LiveChat.waitCardLines(queue, com.conferbot.sdk.core.livechat.ReplyTime.typicalWait(com.conferbot.sdk.core.livechat.ReplyTime.of(map["replyTime"]), queue?.typical))
                     CardSub(lines.estimate)
                     if (lines.typical.isNotEmpty()) CardSub(lines.typical)
+                    // The max wait counting down (web queueCard.ts setRemaining).
+                    val endsAt by Conferbot.liveChat.waitEndsAt.collectAsState()
+                    MaxWaitLine(endsAt)
                 }
                 if (onCancel != null) {
                     Text(I18n.t("common.cancel"), color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.clickable(onClick = onCancel).padding(6.dp))
@@ -243,6 +246,26 @@ fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = { Conferbot.lea
             }
         }
     }
+}
+
+/**
+ * The max-wait countdown on the wait card: "Max wait 1:05", once a second,
+ * stopping at 0:00 (web queueCard.ts setRemaining). The same deadline as the
+ * handover-timeout ([com.conferbot.sdk.core.livechat.LiveChatExtras.waitEndsAt]).
+ * Not a live region: it would talk every second.
+ */
+@Composable
+internal fun MaxWaitLine(endsAt: Long?, now: () -> Long = System::currentTimeMillis) {
+    endsAt ?: return
+    var t by remember(endsAt) { mutableStateOf(now()) }
+    LaunchedEffect(endsAt) {
+        t = now()
+        while (t < endsAt) {
+            kotlinx.coroutines.delay(1_000)
+            t = now()
+        }
+    }
+    CardSub(LiveChat.maxWaitText(LiveChat.secondsLeft(endsAt, t)))
 }
 
 /** Nobody could take the chat: the AI is back, and the team replies by email. */
