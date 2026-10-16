@@ -190,6 +190,15 @@ object Conferbot {
     private var restoredConversation = false
 
     /**
+     * The visitor already has a conversation here: one put back after a
+     * restart, or one they have written in (auto-open leaves it to them).
+     */
+    val chatStarted: Boolean
+        get() = restoredConversation || _record.value.any {
+            it is RecordItem.UserMessage || it is RecordItem.UserInputResponse || it is RecordItem.UserLiveMessage || it is RecordItem.UserLiveMessageFile
+        }
+
+    /**
      * Access to the flow engine for UI components
      * Allows direct observation of node states and submission of responses
      */
@@ -491,6 +500,69 @@ object Conferbot {
             context = { appContext },
             customizations = { _serverCustomizationMap.value }
         )
+    }
+
+    // ========== Human touches ==========
+    // The bot's tapback, the celebration, the waiting nudge and "Edit" on the
+    // latest answer (core/delight; web ts/chat/delight/). Screen-only.
+    val delight: com.conferbot.sdk.core.delight.DelightExtras by lazy {
+        com.conferbot.sdk.core.delight.DelightExtras(
+            customizations = { _serverCustomizationMap.value },
+            engine = {
+                nodeFlowEngine?.let { e ->
+                    object : com.conferbot.sdk.core.delight.ChangeAnswerEngine {
+                        override fun points() = e.questionPoints().map { Triple(it.id, it.nodeId, it.type) }
+                        override fun typesSince(pointId: Int) = e.questionPoints().firstOrNull { it.id == pointId }?.let { e.typesSince(it) } ?: listOf("agent")
+                        override fun rewindTo(pointId: Int) = e.rewindTo(pointId)
+                    }
+                }
+            },
+            record = { _record.value },
+            setRecord = { fn -> _record.value = fn(_record.value) },
+            locked = { _isLiveChatMode.value || handover.phase() != com.conferbot.sdk.core.livechat.HandoverPhase.NONE || nodeFlowEngine?.isEnded == true },
+            chatVisible = { _isChatVisible.value && homeView.value == com.conferbot.sdk.core.home.HomeView.CHAT },
+            reducedMotion = {
+                appContext?.let {
+                    runCatching { android.provider.Settings.Global.getFloat(it.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
+                } ?: false
+            },
+            timer = mainTimer
+        )
+    }
+
+    /** "Edit" under the visitor's latest answer: back to that question, asked again. */
+    fun changeAnswer() = delight.changeAnswer()
+
+    /** The visitor touched or scrolled the chat (the waiting nudge waits). */
+    fun noteChatActivity() = delight.noteActivity()
+
+    // ========== Typing preview ==========
+    // While a person chats with the visitor, the agent sees the draft
+    // (core/livechat/TypingPreview.kt; web index.ts updateVisitorDraft).
+    private val draftSender by lazy {
+        com.conferbot.sdk.core.livechat.TypingPreview.DraftSender(
+            send = { draft ->
+                val sid = _chatSessionId.value
+                if (sid != null && socketClient?.isConnected == true) {
+                    socketClient?.emit("visitor-draft", JSONObject().put("chatSessionId", sid).put("draft", draft))
+                }
+            },
+            timer = mainTimer
+        )
+    }
+
+    /** A person (not the AI agent) is in the conversation. */
+    private val chattingWithPerson: Boolean
+        get() = _isLiveChatMode.value && _currentAgent.value?.let { !it.id.startsWith("ai-agent-") } == true
+
+    /**
+     * The composer's text as it changes ("" once sent): the agent's typing
+     * preview, never for a secret field ([sensitive]), and the waiting nudge.
+     */
+    fun updateVisitorDraft(text: String, sensitive: Boolean = false) {
+        delight.setComposerValue(text)
+        if (!sensitive && com.conferbot.sdk.core.livechat.TypingPreview.on(_serverCustomizationMap.value, chattingWithPerson)) draftSender.update(text)
+        else draftSender.clear()
     }
 
     /**
@@ -847,6 +919,12 @@ object Conferbot {
             startRequests()
             // A message arriving plays the owner's message sound (core/sound).
             scope.launch { _record.collect { sounds.onRecord(it) } }
+            // The bot's tapback, the burst and "Edit" (core/delight).
+            scope.launch { _record.collect { delight.onRecord(it) } }
+            _flowEngine?.let { e ->
+                scope.launch { e.currentUIState.collect { delight.onUiState(it) } }
+                scope.launch { e.isProcessing.collect { delight.onBusy(it) } }
+            }
 
             _isInitialized.value = true
             Log.d(TAG, "SDK initialized with pagination support")
@@ -1707,6 +1785,10 @@ object Conferbot {
             waiting.setKnowledgeBase(kbData)
             // ...and for the home screen's cards and its ask box.
             home.setKnowledgeBase(kbData)
+            // The bot's bookings: a calendar's taken slots (web index.ts setCalendarBookings).
+            (chatbotData.optJSONArray("calendarBookings") ?: data.optJSONArray("calendarBookings"))?.let {
+                nodeFlowEngine?.setCalendarBookings(jsonArrayToList(it))
+            }
 
             // Parse elements array: elements is an array with one object containing nodes and edges
             val elementsArray = chatbotData.optJSONArray("elements")
@@ -2060,15 +2142,17 @@ object Conferbot {
         scope.launch {
             nodeFlowEngine?.botMessages?.collect { ui ->
                 val text = (ui as? NodeUIState.Message)?.text ?: return@collect
-                addMessageToRecord(RecordItem.BotMessage(id = "flow-${ui.nodeId}-${System.nanoTime()}", time = java.util.Date(), text = text))
+                addMessageToRecord(RecordItem.BotMessage(id = "flow-${ui.nodeId}-${System.nanoTime()}", time = java.util.Date(), text = text, nodeId = ui.nodeId))
             }
         }
         // The visitor's reply to a step card (its own line: "Agreed to Terms").
         scope.launch {
-            nodeFlowEngine?.visitorLines?.collect { line ->
+            nodeFlowEngine?.visitorAnswers?.collect { line ->
                 // A signature's line carries its link; the bubble just says so.
-                val text = if (line.startsWith("Signed: ")) "Signed" else line
-                if (text.isNotBlank()) addMessageToRecord(RecordItem.UserInputResponse(id = "step-reply-${System.nanoTime()}", time = java.util.Date(), text = text))
+                val text = if (line.text.startsWith("Signed: ")) "Signed" else line.text
+                // What it answered: the bot's tapback and "Edit" read it (core/delight).
+                val of = com.conferbot.sdk.core.delight.AnswerOf(line.nodeId, line.type, text)
+                if (text.isNotBlank()) addMessageToRecord(RecordItem.UserInputResponse(id = "step-reply-${System.nanoTime()}", time = java.util.Date(), text = text, answerOf = of))
             }
         }
         // The question is said once per visit to the step, not again when an
@@ -2088,7 +2172,7 @@ object Conferbot {
                 // A step drawn by its own card: its question as the bot's line above it.
                 com.conferbot.sdk.core.flow.FlowStepCards.cardStep(uiState)?.let { st ->
                     val q = com.conferbot.sdk.core.flow.FlowStepCards.question(st)?.let { com.conferbot.sdk.core.nodes.handlers.FlowKit.shownText(it) }
-                    if (!q.isNullOrBlank()) addMessageToRecord(RecordItem.BotMessage(id = "flow-q-${System.nanoTime()}", time = java.util.Date(), text = stripHtml(q)))
+                    if (!q.isNullOrBlank()) addMessageToRecord(RecordItem.BotMessage(id = "flow-q-${System.nanoTime()}", time = java.util.Date(), text = stripHtml(q), nodeId = uiState.step?.nodeId))
                     return@collectLatest
                 }
 
@@ -2113,7 +2197,8 @@ object Conferbot {
                     is NodeUIState.TextInput -> RecordItem.BotMessage(
                         id = "flow-${uiState.nodeId}-${System.currentTimeMillis()}",
                         time = java.util.Date(),
-                        text = stripHtml(uiState.questionText)
+                        text = stripHtml(uiState.questionText),
+                        nodeId = uiState.nodeId
                     )
                     // Interactive nodes render their own question text inline via NodeRenderer
                     // Don't duplicate as a separate BotMessage
@@ -2411,6 +2496,8 @@ object Conferbot {
 
         // A sound pack's send sound (web messageSound.ts mountSoundPack).
         sounds.play(com.conferbot.sdk.core.sound.MessageSound.Event.SEND)
+        // The agent's typing preview goes (web typingPreview.ts).
+        draftSender.clear()
 
         // Waiting for a person: "play" or "games" opens the games menu instead
         // of being sent (core/waiting/WaitingGames.kt, web games/wire.ts).
@@ -3084,7 +3171,8 @@ object Conferbot {
                 nodeData = mapOf(
                     "choices" to choiceTexts,
                     "selected" to (displayTextEarly ?: "")
-                )
+                ),
+                nodeId = nodeFlowEngine?.currentUIState?.value?.step?.nodeId
             ))
         }
 
@@ -3101,12 +3189,30 @@ object Conferbot {
             val userMessage = RecordItem.UserInputResponse(
                 id = "user-choice-${System.currentTimeMillis()}",
                 time = java.util.Date(),
-                text = displayText
+                text = displayText,
+                answerOf = answerOfFor(nodeFlowEngine?.currentUIState?.value, response, displayText)
             )
             addMessageToRecord(userMessage)
         }
 
         nodeFlowEngine?.submitResponse(response)
+    }
+
+    /**
+     * What an answer row says it answered (core/delight reads it): the
+     * question's step and type, and its text as a score where it is one
+     * ("4/5"), so the bot's tapback reads it as the web reads its bubble.
+     */
+    private fun answerOfFor(ui: NodeUIState?, response: Any, text: String): com.conferbot.sdk.core.delight.AnswerOf? {
+        val step = ui?.step ?: return null
+        if (step.nodeId.isEmpty() || step.type.isEmpty()) return null
+        val value = when (response) {
+            is Number -> response.toDouble()
+            is Map<*, *> -> (response["value"] ?: response["rating"])?.toString()?.toDoubleOrNull()
+            else -> response.toString().trim().toDoubleOrNull()
+        }
+        val max = (ui as? NodeUIState.Rating)?.maxValue?.toDouble()
+        return com.conferbot.sdk.core.delight.AnswerOf(step.nodeId, step.type, com.conferbot.sdk.core.delight.Delight.scoreText(step.type, value, max).ifEmpty { text })
     }
 
     /**
