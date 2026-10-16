@@ -1021,7 +1021,8 @@ object Conferbot {
             val endedMessage = RecordItem.SystemMessage(
                 id = com.conferbot.sdk.core.livechat.LiveEvents.eventId("agent-chat-ended"),
                 time = java.util.Date(),
-                text = "Chat has ended",
+                // Drawn in the visitor's language; the record below keeps the English line.
+                text = com.conferbot.sdk.core.livechat.HandoverLifecycle.chatEndedLine(),
                 kind = "agent-chat-ended"
             )
             addMessageToRecord(endedMessage)
@@ -1058,7 +1059,7 @@ object Conferbot {
             val noAgentsMessage = RecordItem.SystemMessage(
                 id = "no-agents-${System.currentTimeMillis()}",
                 time = java.util.Date(),
-                text = "No agents available"
+                text = com.conferbot.sdk.core.i18n.t("sdk.flow.noAgents")
             )
             addMessageToRecord(noAgentsMessage)
 
@@ -1262,7 +1263,7 @@ object Conferbot {
             _awaitingReply.value = false
             // Say so, instead of silently dropping the dots (web
             // agentListeners.ts): on screen only, not in the record.
-            val notice = RecordItem.SystemMessage(id = AgentBotParser.replyTimeoutId(), time = java.util.Date(), text = AgentBotParser.REPLY_TIMEOUT_TEXT)
+            val notice = RecordItem.SystemMessage(id = AgentBotParser.replyTimeoutId(), time = java.util.Date(), text = AgentBotParser.replyTimeoutText())
             _record.update { it + notice }
         }
     }
@@ -1319,7 +1320,7 @@ object Conferbot {
         }
 
         agentHandoverPending = true
-        val greeting = bot.greeting.ifBlank { AgentBotParser.DEFAULT_GREETING }
+        val greeting = bot.greeting.ifBlank { AgentBotParser.defaultGreeting() }
         @Suppress("UNCHECKED_CAST")
         val shell = AgentBotParser.agentShellNodes(nodes as List<Map<String, Any?>>, bot.agentId)
         val (welcome, handover) = shell
@@ -1578,9 +1579,9 @@ object Conferbot {
      * or null when it went, on the main thread.
      */
     fun sendLiveFile(uri: android.net.Uri, onDone: (String?) -> Unit = {}) {
-        val context = appContext ?: return onDone("Not ready")
-        val sessionId = _chatSessionId.value ?: return onDone("Not ready")
-        val service = _fileUploadService ?: return onDone("Uploads are not available")
+        val context = appContext ?: return onDone(com.conferbot.sdk.core.i18n.t("sdk.live.notReady"))
+        val sessionId = _chatSessionId.value ?: return onDone(com.conferbot.sdk.core.i18n.t("sdk.live.notReady"))
+        val service = _fileUploadService ?: return onDone(com.conferbot.sdk.core.i18n.t("sdk.live.uploadsUnavailable"))
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -1597,9 +1598,9 @@ object Conferbot {
                     Triple(up, name, mime)
                 }.getOrNull()
             }
-            val (up, name, mime) = result ?: return@launch onDone("That file can't be sent. Please try another one.")
+            val (up, name, mime) = result ?: return@launch onDone(com.conferbot.sdk.core.i18n.t("sdk.live.fileFailed"))
             val url = up.url
-            if (!up.success || url.isNullOrBlank()) return@launch onDone("That file can't be sent. Please try another one.")
+            if (!up.success || url.isNullOrBlank()) return@launch onDone(com.conferbot.sdk.core.i18n.t("sdk.live.fileFailed"))
             liveChat.sendLiveFile(url, name, mime)
             onDone(null)
         }
