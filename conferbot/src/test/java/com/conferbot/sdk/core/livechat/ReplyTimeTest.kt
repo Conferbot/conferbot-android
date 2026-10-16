@@ -77,4 +77,46 @@ class ReplyTimeTest {
         assertThat(ReplyTime.of(null)).isNull()
         assertThat(ReplyTime.of("x")).isNull()
     }
+
+    // The web's home card cases (tests/replyTime.test.js homeLine, homePeople), as RN's.
+
+    @Test
+    fun `the home card line for each case`() {
+        val opts = Date()
+        assertThat(ReplyTime.homeLine(online("few_minutes"), tz = tz)).isEqualTo(HomeLine("The team typically replies in a few minutes", ReplyTone.ONLINE))
+        assertThat(ReplyTime.homeLine(online(null), tz = tz)).isNull()
+        assertThat(ReplyTime.homeLine(null, now = opts, tz = tz)).isNull()
+        val now = local(2026, 9, 3, 20)
+        val backAt = iso(local(2026, 9, 5, 9))
+        assertThat(ReplyTime.homeLine(online("few_minutes").copy(state = "away", backAt = backAt), now = now, tz = tz))
+            .isEqualTo(HomeLine("We're away right now · back Monday 9 AM", ReplyTone.AWAY))
+        assertThat(ReplyTime.homeLine(online("few_minutes").copy(state = "offline"), tz = tz))
+            .isEqualTo(HomeLine("The team is offline · we'll reply by email", ReplyTone.AWAY))
+        assertThat(ReplyTime.homeLine(online("few_minutes").copy(state = "offline", leaveMessage = false), tz = tz)!!.text).isEqualTo("The team is offline right now")
+        assertThat(ReplyTime.homeLine(ReplyTimeInfo(mode = "hide", handover = true), tz = tz)).isEqualTo(HomeLine(hide = true))
+        assertThat(ReplyTime.homeLine(online("few_minutes"), agent = true, tz = tz)).isEqualTo(HomeLine("Answers instantly · team replies in a few minutes", ReplyTone.ONLINE))
+        assertThat(ReplyTime.homeLine(online("few_minutes").copy(state = "away", backAt = backAt), agent = true, now = now, tz = tz)!!.text)
+            .isEqualTo("Answers instantly · team back Monday 9 AM")
+        assertThat(ReplyTime.homeLine(ReplyTimeInfo(mode = "hide", handover = true), agent = true, tz = tz)).isNull()
+    }
+
+    @Test
+    fun `the home card's promise - plain words, never a speed promise when nobody is there`() {
+        val now = local(2026, 9, 8, 22)
+        fun p(rt: ReplyTimeInfo?, agent: Boolean = false) = ReplyTime.homePeople(rt, agent = agent, now = now, tz = tz)
+        val tomorrow9 = iso(local(2026, 9, 9, 9))
+        assertThat(p(online("few_minutes"))).isEqualTo(ReplyLine("Usually replies in a few minutes", ReplyTone.ONLINE))
+        assertThat(p(online("few_minutes").copy(mode = "fixed", text = "We reply within 2 hours"))).isEqualTo(ReplyLine("We reply within 2 hours", ReplyTone.ONLINE))
+        assertThat(p(online(null))).isEqualTo(ReplyLine("Usually replies instantly", ReplyTone.ONLINE))
+        assertThat(p(null)).isEqualTo(ReplyLine("Answers instantly, day or night", ReplyTone.ONLINE))
+        assertThat(p(online("few_minutes").copy(handover = false))).isEqualTo(ReplyLine("Answers instantly, day or night", ReplyTone.ONLINE))
+        assertThat(p(online("few_minutes").copy(state = "offline")).text).isEqualTo("Team replies by email")
+        assertThat(p(online("few_minutes").copy(state = "offline", backAt = tomorrow9)).text).isEqualTo("Team back tomorrow 9 AM")
+        assertThat(p(online("few_minutes").copy(state = "away", backAt = tomorrow9)).text).isEqualTo("Team back tomorrow 9 AM")
+        assertThat(p(online("few_minutes").copy(state = "away", leaveMessage = false)).text).isEqualTo("Team away right now")
+        assertThat(p(ReplyTimeInfo(mode = "hide", handover = true)).text).isEqualTo("")
+        assertThat(p(null, agent = true)).isEqualTo(ReplyLine("Answers instantly, day or night", ReplyTone.ONLINE))
+        assertThat(p(online("few_minutes").copy(state = "offline"), agent = true)).isEqualTo(ReplyLine("Answers instantly, day or night", ReplyTone.ONLINE))
+        assertThat(p(ReplyTimeInfo(mode = "hide", handover = true), agent = true).text).isEqualTo("Answers instantly, day or night")
+    }
 }
