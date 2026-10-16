@@ -359,7 +359,7 @@ class AIProviderFactoryTest {
     // ==================== Execute With Fallback Streaming Tests ====================
 
     @Test
-    fun `executeWithFallbackStreaming calls error callback when no providers`() = runTest {
+    fun `executeWithFallbackStreaming calls error callback when no provider is configured`() = runTest {
         var receivedError: AIProviderException? = null
 
         val callback = object : AIStreamCallback {
@@ -378,8 +378,9 @@ class AIProviderFactoryTest {
             preferredProvider = null
         )
 
+        // The providers are registered but none has a config, and the error says so
         assertThat(receivedError).isNotNull()
-        assertThat(receivedError?.message).contains("No AI providers available")
+        assertThat(receivedError?.message).contains("No configuration found")
     }
 
     @Test
