@@ -57,6 +57,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -461,6 +463,73 @@ object Conferbot {
         }
     }
 
+    // ========== Your requests ==========
+    // The visitor's own conversations with the team: the list, one request
+    // with its reply box, live team replies, the unread count for a badge
+    // (core/requests; web ts/home/requests/). In the chat menu once they
+    // have one; [openRequests] for an app's own entry.
+    /** The visitor id the handshake carried (the user's id, else this device's). */
+    private var handshakeVisitorId: String? = null
+
+    private val requestsStore = object : com.conferbot.sdk.core.requests.RequestsStore {
+        private fun prefs() = appContext?.getSharedPreferences("conferbot_requests", Context.MODE_PRIVATE)
+        override fun read(key: String): String? = prefs()?.getString(key, null)
+        override fun write(key: String, value: String) { prefs()?.edit()?.putString(key, value)?.apply() }
+    }
+
+    val requests: com.conferbot.sdk.core.requests.RequestsExtras by lazy {
+        com.conferbot.sdk.core.requests.RequestsExtras(
+            botId = { botId },
+            socket = { socketClient?.let { RequestsSocketAdapter(it) } },
+            connected = { socketClient?.isConnected == true },
+            // The id the records carry, else the handshake's.
+            visitorId = { ChatState.visitorId ?: handshakeVisitorId },
+            user = { user?.let { com.conferbot.sdk.core.requests.RequestsUser(it.id, it.email, it.hash) } },
+            store = { requestsStore },
+            chatSessionId = { _chatSessionId.value },
+            chatEnded = {
+                com.conferbot.sdk.core.livechat.LiveEvents.endedSinceLastLive(
+                    com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(ChatState.record.value)
+                )
+            },
+            // The portal is drawn over the chat: leaving it shows the chat.
+            openChat = {},
+            post = { fn -> scope.launch { fn() } }
+        )
+    }
+
+    /** "Your requests": the list, or one request by its id (the chat menu's item, or an app's own button). */
+    fun openRequests(requestId: String? = null) = requests.open(requestId)
+
+    /** Leave "Your requests". */
+    fun closeRequests() = requests.close()
+
+    /** Requests with a team reply not read on this device: for an app's badge. */
+    val requestsUnread: StateFlow<Int> get() = requests.unread
+
+    /** When the list is read: connected, the chat shown or hidden, and the chats the visitor wrote in remembered. */
+    private fun startRequests() {
+        requests.attach()
+        scope.launch { _isConnected.collect { if (it) requests.onConnected() } }
+        scope.launch { _isChatVisible.drop(1).collect { requests.onChatShown() } }
+        scope.launch {
+            combine(_chatSessionId, ChatState.record) { id, record -> id to record }.collect { (id, record) ->
+                requests.onRecord(id, com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(record))
+            }
+        }
+    }
+
+    private class RequestsSocketAdapter(private val client: SocketClient) : com.conferbot.sdk.core.requests.RequestsSocket {
+        override fun ask(event: String, data: Map<String, Any?>, timeoutMs: Long, onAnswer: (Map<String, Any?>?) -> Unit) =
+            client.emitWithAck(event, JSONObject(data), timeoutMs) { onAnswer(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(it as? JSONObject)) }
+        override fun emit(event: String, data: Map<String, Any?>) = client.emit(event, JSONObject(data))
+        override fun on(event: String, fn: (Map<String, Any?>?) -> Unit): () -> Unit {
+            val listener = Emitter.Listener { args -> fn(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(args.firstOrNull() as? JSONObject)) }
+            client.on(event, listener)
+            return { client.off(event, listener) }
+        }
+    }
+
     private class HandoverSocketAdapter(private val client: SocketClient) : com.conferbot.sdk.core.livechat.HandoverSocket {
         override fun on(event: String, fn: (Map<String, Any?>?) -> Unit) {
             client.on(event, Emitter.Listener { args -> fn(com.conferbot.sdk.core.livechat.LiveChatExtras.toMap(args.firstOrNull() as? JSONObject)) })
@@ -614,7 +683,7 @@ object Conferbot {
                 socketUrl = socketUrl ?: ConferBotEndpoints.socketUrl,
                 // The visitor as the records name it: the server refuses a
                 // blocked one at the handshake (web core/socket.ts).
-                visitorId = user?.id ?: getOrCreateVisitorId(context.applicationContext)
+                visitorId = (user?.id ?: getOrCreateVisitorId(context.applicationContext)).also { handshakeVisitorId = it }
             ).also { client ->
                 client.onVisitorBlocked = { scope.launch { onVisitorBlocked(mapOf("handshake" to true)) } }
             }
@@ -672,6 +741,7 @@ object Conferbot {
             if (config.autoConnect) {
                 connectSocket()
             }
+            startRequests()
 
             _isInitialized.value = true
             Log.d(TAG, "SDK initialized with pagination support")
@@ -2361,6 +2431,8 @@ object Conferbot {
     fun identify(user: ConferBotUser) {
         this.user = user
         ChatState.visitorContext = user.toVisitorContext()
+        // Signed in: their verified requests from any device.
+        if (_isInitialized.value) requests.onConnected()
     }
 
     /**
@@ -2663,6 +2735,7 @@ object Conferbot {
         liveChat.reset()
         handover.reset()
         waiting.reset()
+        requests.reset()
         _talkToPersonRetired.value = false
         _record.value = emptyList()
         _chatSessionId.value = null
