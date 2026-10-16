@@ -30,7 +30,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Headless SDK** - every piece of state exposed as Kotlin `StateFlow` for fully custom UIs
 - **Real-time messaging** - Socket.IO powered communication with the Conferbot flow engine
 - **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
-- **Live agent handover** - transition to human agents with typing indicators
+- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", and "Email me this chat"
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
@@ -271,6 +271,11 @@ The chat follows a handover the way the web widget does:
 - "Talk to a person" shows only for an AI agent bot while nobody is coming or here. It goes once tapped.
 - After an app restart, call `restorePersistedSession()` before opening the chat. A live chat comes back live with its agent. A chat still in the queue waits again without a second request.
 
+- When the agent leaves and nobody else has the chat, it goes back to the queue: "Connecting you to another agent..." (or "Connecting you to Sales..."), and a flow on its handover step waits again. A transfer is kept in the conversation's record, not drawn, as on the web.
+- When an agent ends the chat, a flow carries on from its handover step, with the step's post-chat survey questions first when they are on. An end that arrives twice draws one "Chat has ended" line and opens one rating card.
+- Once a live chat has ended and nothing else is going on, the composer is off and the chat offers **Start a new chat** (`Conferbot.startNewChat()`).
+- A visitor the workspace blocked (`visitor-blocked`, or refused at connect: the handshake sends the visitor id) sees "This conversation has been closed.", with no input and no new chat.
+
 Listen to the waiting signals (the web widget's `cb:*` events):
 
 ```kotlin
@@ -285,6 +290,18 @@ off() // stop listening
 ```
 
 `HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
+
+### AI answers
+
+- An agent's reply is drawn as the web draws it: paragraphs, lists, **bold**, _italic_, `code`, ~~strikethrough~~, links, headings (h3-h6), quotes, preformatted text and tables (they scroll sideways in Compose; the XML chat writes a table's rows as text).
+- **Helpful?** sits under the newest AI answer. A No is sent at once; then a reason, an optional comment, "Talk to a person" (only while nobody is coming or here) and "Ask another way" (the cursor goes to the composer). The rated line's thumbs change the vote, and the vote is kept on the answer in the conversation's record. Owners can turn it off with `hideAnswerFeedback`.
+- An AI fallback reply is the same bubble in italics, a little lighter.
+- When the AI has not answered after 45 seconds, the typing dots go and the chat says "That took too long. Try again, or ask for a human." (on screen only).
+- Every response record carries the phone's language (`visitorInsights.language.browser`, for example `de-DE`), so the AI answers a short message such as "ok" in the visitor's language.
+
+### Email me this chat
+
+The chat menu (Compose) has **Email me this chat**. It opens one card with the visitor's email filled in when known. The server sends the whole conversation to that address only (`POST /api/v1/mobile/chat/transcript-email`, at most 5 per 15 minutes). Once sent: "Sent! Check your inbox at ..."; the address is kept as the visitor's email. The XML chat shows the same card when `Conferbot.liveChat.openEmailTranscript()` is called.
 
 ### How bot flows run
 
@@ -666,6 +683,9 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `initiateHandover` | `initiateHandover(message: String? = null)` | Request a live agent |
 | `endChat` | `endChat()` | End the current conversation (leaves the queue while waiting) |
 | `leaveQueue` | `leaveQueue(onDone: (Boolean) -> Unit = {})` | Leave the queue for a person; `false` when a person already has the chat |
+| `startNewChat` | `startNewChat()` | A fresh conversation once a chat has closed (the "Start a new chat" button) |
+| `sendAnswerFeedback` | `sendAnswerFeedback(agentMessageId: String, feedback: AnswerFeedback)` | A vote on an AI answer (`helpful`, `reason`, `comment`), kept on its record entry and sent |
+| `liveChat.openEmailTranscript` | `liveChat.openEmailTranscript()` | Show the "Email me this chat" card |
 | `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
 | `identify` | `identify(user: ConferBotUser)` | Set the current user (before session creation) |
 | `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
