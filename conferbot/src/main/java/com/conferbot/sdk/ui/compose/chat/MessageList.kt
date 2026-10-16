@@ -22,6 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import com.conferbot.sdk.ui.compose.delight.ConfettiBurst
+import com.conferbot.sdk.ui.compose.delight.ReactionBadge
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,6 +85,12 @@ fun PaginatedMessageList(
     // While you wait: the help card and the games, each after the item that
     // was last on screen when it was drawn (core/waiting); never saved.
     WaitingCardsHost()
+
+    // The human touches (core/delight): the bot's tapback and burst on an
+    // answer, "Edit" under the latest one, the nudge on a waiting question.
+    val touches by com.conferbot.sdk.core.Conferbot.delight.touches.collectAsState()
+    val changeRowId by com.conferbot.sdk.core.Conferbot.delight.changeRowId.collectAsState()
+    val stallHint by com.conferbot.sdk.core.Conferbot.delight.stallHint.collectAsState()
     val waitHelp by com.conferbot.sdk.core.Conferbot.waiting.help.collectAsState()
     val waitGames by com.conferbot.sdk.core.Conferbot.waiting.games.collectAsState()
     val onScreen = remember(messages) { messages.mapTo(HashSet()) { it.id } }
@@ -132,6 +141,15 @@ fun PaginatedMessageList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                // Any touch in the chat: the visitor is busy here (the waiting nudge waits).
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                            com.conferbot.sdk.core.Conferbot.noteChatActivity()
+                        }
+                    }
+                }
                 .padding(horizontal = spacing.chatContentPadding),
             verticalArrangement = Arrangement.spacedBy(spacing.messageSpacing),
             contentPadding = PaddingValues(vertical = spacing.lg)
@@ -155,7 +173,22 @@ fun PaginatedMessageList(
             // latest live message while a person is on the other end.
             items(items = messages, key = { it.id }) { message ->
                 Column {
-                MessageBubble(message = message)
+                val touch = touches[message.id]
+                MessageBubble(
+                    message = message,
+                    overlay = if (touch == null) null else touchOverlay(touch, colors.surface, colors.background, colors.primary) {
+                        com.conferbot.sdk.core.Conferbot.delight.clearTouch(message.id)
+                    }
+                )
+                // The badge hangs 14dp below the bubble.
+                if (touch?.reaction != null) Spacer(Modifier.height(10.dp))
+                if (changeRowId == message.id) {
+                    com.conferbot.sdk.ui.compose.delight.ChangeAnswerLink(
+                        onClick = { com.conferbot.sdk.core.Conferbot.changeAnswer() },
+                        muted = colors.onSurfaceVariant,
+                        fontFamily = theme.typography.fontFamily
+                    )
+                }
                 if (receipt?.id == message.id) {
                     Text(
                         text = com.conferbot.sdk.core.livechat.LiveChat.receiptLabel(receipt.state),
@@ -239,6 +272,12 @@ fun PaginatedMessageList(
                     }
                 }
             }
+            // "No rush - ..." under a question that has waited (core/delight).
+            stallHint?.let { hint ->
+                if (hasInlineNode || currentUIState is NodeUIState.TextInput) item(key = "stall_hint") {
+                    com.conferbot.sdk.ui.compose.delight.StallHint(hint, accent = colors.primary, muted = colors.onSurfaceVariant, fontFamily = theme.typography.fontFamily)
+                }
+            }
             footer?.let { cards ->
                 item(key = "live_chat_cards") {
                     // A card grew (a rating opened its feedback box): kept in view.
@@ -282,7 +321,7 @@ fun PaginatedMessageList(
 
     // Auto-scroll to bottom on new messages / node UI change
     // ...and as a reply is written, or suggestions and the dots appear.
-    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping, footerKey, waitHelp?.card?.key, waitGames?.card) {
+    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping, footerKey, waitHelp?.card?.key, waitGames?.card, stallHint, changeRowId) {
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0 && !showScrollToBottom) {
             coroutineScope.launch { listState.animateScrollToItem(count - 1) }
@@ -365,4 +404,16 @@ private fun StepAvatarSpace() {
     val loaded = map.isNotEmpty()
     if (loaded && look.hideAvatar) return
     Spacer(Modifier.width(if (loaded) look.avatarSize.dp else ConferbotThemeAmbient.current.spacing.avatarSize))
+}
+
+/** The bot's tapback and burst over the visitor's answer bubble (core/delight). */
+private fun touchOverlay(
+    touch: com.conferbot.sdk.core.delight.AnswerTouch,
+    card: androidx.compose.ui.graphics.Color,
+    ring: androidx.compose.ui.graphics.Color,
+    accent: androidx.compose.ui.graphics.Color,
+    onBurstDone: () -> Unit
+): @Composable BoxScope.() -> Unit = {
+    touch.reaction?.let { ReactionBadge(it, card = card, ring = ring) }
+    touch.celebrate?.let { stamp -> ConfettiBurst(stamp, accent = accent, onDone = onBurstDone) }
 }
