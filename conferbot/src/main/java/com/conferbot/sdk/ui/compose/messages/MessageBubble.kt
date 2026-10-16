@@ -80,7 +80,12 @@ fun MessageBubble(
             RecordItem.SystemMessage(id = message.id, time = message.time, text = message.text),
             modifier, animationDuration
         )
-        is RecordItem.SystemMessage -> SystemMessageBubble(message, modifier, animationDuration)
+        // The AI let an idle visitor go: "Chat paused" with its note, or "Chat
+        // ended", in the visitor's language (core/livechat/LiveEvents.kt).
+        is RecordItem.SystemMessage -> if (message.kind == com.conferbot.sdk.core.livechat.LiveEvents.INACTIVE_CLOSE) {
+            val line = com.conferbot.sdk.core.livechat.LiveEvents.inactiveCloseLine(message.paused)
+            SystemMessageBubble(message.copy(text = line.text), modifier, animationDuration, note = line.note)
+        } else SystemMessageBubble(message, modifier, animationDuration)
         // Files: the agent's, and the visitor's in a live chat.
         is RecordItem.AgentMessageFile -> FileBubble(message.file, null, null, fromVisitor = false, sender = message.agentDetails?.name, modifier = modifier)
         is RecordItem.UserLiveMessageFile -> FileBubble(message.url, message.fileName, message.mimeType, fromVisitor = true, sender = null, modifier = modifier)
