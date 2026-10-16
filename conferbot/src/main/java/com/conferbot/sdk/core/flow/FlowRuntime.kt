@@ -108,6 +108,8 @@ interface FlowContext {
     /** The page the chat runs on, when the host app supplies one (hidden-fields). */
     val pageUrl: String?
     val pageReferrer: String?
+    /** The bot's bookings (the bot data's calendarBookings), for a calendar's taken slots. */
+    val calendarBookings: List<Map<String, Any?>> get() = emptyList()
 
     suspend fun api(path: String, body: Map<String, Any?>, timeoutMs: Long? = null): ApiReply
     suspend fun upload(file: UploadFile): UploadResult
