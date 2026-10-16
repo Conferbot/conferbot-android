@@ -304,7 +304,7 @@ While the visitor waits for a person, the chat offers something to do, as the we
 - **A person joins:** an unused offer goes. A game under way is saved ("Sam's here!", "Your game is saved - finish it later?", **Finish my game**). A finished game stays as its result.
 - The cards use the bot's colours and font. With the phone's animations off, nothing moves. The cards are never saved on the device or sent in the conversation's record.
 
-An article row opens the article in the chat's help centre; a page opens in the browser. The XML chat does not draw these cards; there "play" is sent as a message.
+An article row opens the article in the chat's help centre; a page opens in the browser. An article the server picked that the help centre cannot open (the help centre is off, or does not list it) is fetched by id from the server and shown on its own over the chat, with Back to the chat and **Try again** if it could not be loaded. The XML chat does not draw these cards; there "play" is sent as a message.
 
 ### AI answers
 
@@ -468,6 +468,14 @@ Conferbot.identify(
 ```
 
 The user ID is sent when the chat session is created (`initSession(userId = user?.id)`), so identify the user **before** the chat is opened. Calling `identify()` after a session exists updates the SDK's local user but does not retroactively re-tag the running session.
+
+### Signing out
+
+When the user signs out, call `Conferbot.identify(null)` (on the main thread). On a shared device the next person then sees nothing of the last one's: their "Your requests" list goes at once (with the requests screens and any draft reply), an answer still on its way for them is ignored, and the list is read again for whoever is signed in now. The greeting's name falls back too. Signing a different user in works the same way.
+
+```kotlin
+Conferbot.identify(null)
+```
 
 The user's `name` and `metadata` (`firstName`, `company`, ...) also fill the owner's "greet by name" placeholders, such as `Hi {{first_name|there}}` (see Home screen).
 
@@ -759,8 +767,8 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `liveChat.openEmailTranscript` | `liveChat.openEmailTranscript()` | Show the "Email me this chat" card |
 | `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
 | `waiting.help` / `waiting.games` | `StateFlow<PlacedCard<HelpCardState>?>` / `StateFlow<PlacedCard<GamesCard>?>` | The while-you-wait cards on screen (for a custom UI); `waiting.solveWait { ok -> }` is "That solved it" |
-| `openWaitHelpItem` | `openWaitHelpItem(item: WaitArticles.HelpItem)` | Open a row of the while-you-wait card (an article in the help centre) |
-| `identify` | `identify(user: ConferBotUser)` | Set the current user (before session creation) |
+| `openWaitHelpItem` | `openWaitHelpItem(item: WaitArticles.HelpItem)` | Open a row of the while-you-wait card (an article in the help centre, else fetched by id and shown on its own: `waiting.article`) |
+| `identify` | `identify(user: ConferBotUser?)` | Set the current user (before session creation); `null` signs out |
 | `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
 | `on` / `off` | `on(event: String, callback: Emitter.Listener)` / `off(event: String, callback: Emitter.Listener? = null)` | Raw socket event subscription |
 | `loadMoreMessages` | `loadMoreMessages()` | Load the next page of history |
