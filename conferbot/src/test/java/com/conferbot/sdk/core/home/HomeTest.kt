@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.home
 
+import com.conferbot.sdk.core.customization.MascotArt
 import com.conferbot.sdk.core.customization.ThemeTokens
 import com.conferbot.sdk.core.requests.RequestState
 import com.conferbot.sdk.core.requests.RequestSummary
@@ -462,7 +463,9 @@ class HomeTest {
     }
 
     @Test
-    fun `the mascot has its place, empty for now`() {
-        assertThat(Home.model(HOME)!!.mascot).isNull()
+    fun `carries the owner's mascot for an app's own spot (the web's home draws none)`() {
+        assertThat(Home.model(HOME)!!.mascot.look).isEqualTo(MascotArt.Look("blob", "round", "none", "", ""))
+        assertThat(Home.model(HOME + mapOf("mascotShape" to "owl", "mascotName" to "Hoot", "widgetIconBgColor" to "#123456"))!!.mascot)
+            .isEqualTo(HomeMascot(MascotArt.Look("owl", "round", "none", "", "Hoot"), "#123456"))
     }
 }
