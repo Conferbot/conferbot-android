@@ -13,10 +13,14 @@ import java.util.concurrent.atomic.AtomicLong
  * @param maxRequests Maximum number of requests allowed in the time window
  * @param perMillis Time window duration in milliseconds
  */
-class RateLimiter(
+class RateLimiter internal constructor(
     private val maxRequests: Int,
-    private val perMillis: Long
+    private val perMillis: Long,
+    private val clock: () -> Long
 ) {
+    constructor(maxRequests: Int, perMillis: Long) :
+        this(maxRequests, perMillis, System::currentTimeMillis)
+
     // Thread-safe queue to track request timestamps
     private val requestTimestamps = ConcurrentLinkedQueue<Long>()
 
@@ -40,7 +44,7 @@ class RateLimiter(
             cleanupExpiredTimestamps()
 
             mutex.withLock {
-                val currentTime = System.currentTimeMillis()
+                val currentTime = clock()
 
                 if (requestTimestamps.size < maxRequests) {
                     // We have capacity, add timestamp and proceed
@@ -72,7 +76,7 @@ class RateLimiter(
         // Clean up expired timestamps
         cleanupExpiredTimestamps()
 
-        val currentTime = System.currentTimeMillis()
+        val currentTime = clock()
 
         // Check if we have capacity
         if (requestTimestamps.size >= maxRequests) {
@@ -103,13 +107,13 @@ class RateLimiter(
     suspend fun tryAcquire(timeoutMs: Long): Boolean {
         totalRequests.incrementAndGet()
 
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val deadline = clock() + timeoutMs
 
-        while (System.currentTimeMillis() < deadline) {
+        while (clock() < deadline) {
             cleanupExpiredTimestamps()
 
             mutex.withLock {
-                val currentTime = System.currentTimeMillis()
+                val currentTime = clock()
 
                 if (requestTimestamps.size < maxRequests) {
                     requestTimestamps.add(currentTime)
@@ -173,7 +177,7 @@ class RateLimiter(
         }
 
         val oldestTimestamp = requestTimestamps.peek() ?: return 0
-        val currentTime = System.currentTimeMillis()
+        val currentTime = clock()
         val waitTime = (oldestTimestamp + perMillis) - currentTime
 
         return waitTime.coerceAtLeast(0)
@@ -214,12 +218,13 @@ class RateLimiter(
      * Remove timestamps that are outside the sliding window
      */
     private fun cleanupExpiredTimestamps() {
-        val cutoffTime = System.currentTimeMillis() - perMillis
+        val cutoffTime = clock() - perMillis
 
-        // Remove all timestamps older than the window
+        // Remove all timestamps outside the window. One exactly perMillis old has
+        // expired: its wait reads 0, and keeping it would spin acquire() without a delay.
         while (true) {
             val oldest = requestTimestamps.peek() ?: break
-            if (oldest < cutoffTime) {
+            if (oldest <= cutoffTime) {
                 requestTimestamps.poll()
             } else {
                 break
