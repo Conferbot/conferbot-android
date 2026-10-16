@@ -101,7 +101,9 @@ sealed class NodeUIState {
         val node: Map<String, Any?> = emptyMap(),
         val extra: Map<String, Any?> = emptyMap(),
         val error: String? = null,
-        val visit: Int = 0
+        val visit: Int = 0,
+        /** The step's node id. */
+        val nodeId: String = ""
     )
 
     /** This state with [s] as its step (states that are never a waiting step stay as they are). */
