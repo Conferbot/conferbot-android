@@ -173,4 +173,19 @@ class GreetingTest {
         assertThat(Greeting.instant("")).isNull()
         assertThat(Greeting.instant(null)).isNull()
     }
+
+    @Test
+    fun `greets by name - the card shows the filled text, not the placeholder (#77)`() {
+        val c = mapOf<String, Any?>(
+            "chatIconCta" to true,
+            "chatIconCtaText" to "Hi {{first_name|there}} 👋",
+            "greetingRules" to listOf(mapOf("matchType" to "glob", "pattern" to "*", "text" to "Pricing for {{company|your team}}?", "priority" to 1))
+        )
+        val sam = Personalize.customizations(c, Personalize.visitorVars(Personalize.userContext(mapOf("company" to "Acme"), "Sam Lee")))
+        assertThat(Greeting.decide(sam, new)!!.text).isEqualTo("Pricing for Acme?")
+        assertThat(Greeting.decide(sam - "greetingRules", new)!!.text).isEqualTo("Hi Sam 👋")
+        val anon = Personalize.customizations(c, Personalize.visitorVars(null))
+        assertThat(Greeting.decide(anon - "greetingRules", new)!!.text).isEqualTo("Hi there 👋")
+        assertThat(Greeting.decide(anon, new)!!.text).isEqualTo("Pricing for your team?")
+    }
 }
