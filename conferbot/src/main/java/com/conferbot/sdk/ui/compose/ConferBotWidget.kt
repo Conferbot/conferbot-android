@@ -64,6 +64,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -257,6 +258,8 @@ fun ConferBotWidget(
         agentBot = agentBot,
         enabled = hasLook,
     )
+    // The card that just went, drawn while it leaves (RN ConferBotWidget leavingCard).
+    val greetingLeave = remember { GreetingLeave() }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // A "send" greeting or a suggested question goes out once the chat has a
@@ -309,6 +312,8 @@ fun ConferBotWidget(
     val showLabel = hasLook && look.style == "label"
     val avatarUrl = if (hasLook && look.style == "avatar") look.avatar else null
     val imageUrl = if (hasLook) look.imageUrl else null
+    // The owner's mascot on a soft light button (launcherStyle.ts "mascot"); an uploaded image wins (Launcher.resolve).
+    val mascotStyle = hasLook && look.style == "mascot" && imageUrl == null
 
     // The entrance, the attention loop and the idle call (LauncherFxControllers):
     // all off unless the owner chose one; nothing with the phone's animations off.
@@ -327,7 +332,7 @@ fun ConferBotWidget(
         mode = look.animation,
         chatOpen = isChatOpen,
         unreadCount = unreadCount,
-        enabled = hasLook && imageUrl == null && avatarUrl == null,
+        enabled = hasLook && imageUrl == null && avatarUrl == null && !mascotStyle,
         holdForAttention = { fx.attention.onLauncher },
     )
     val inMoment = motion.inMoment
@@ -390,11 +395,13 @@ fun ConferBotWidget(
     val attentionOn = fx.attention.running && !isChatOpen
     val perf = fx.idle.perf?.takeIf { !isChatOpen }
     if (perf != null) {
-        val mc = MascotArt.color(customizationMap, accent)
-        val key = "$mc ${perf.mascot.arm} $accent"
+        // The owner's mascot (shape, eyes, accessory, colour) in the launcher's colour.
+        val look = MascotArt.lookOf(customizationMap)
+        val key = "$look ${perf.mascot.arm} $accent"
         if (key != fx.mascotKey) {
             fx.mascotKey = key
-            fx.mascot = MascotArt.layers(mc, perf.mascot.arm, accent)
+            fx.mascot = MascotArt.layers(accent, perf.mascot.arm, look)
+            fx.mascotOrigins = MascotArt.origins(look)
         }
     }
 
@@ -458,8 +465,23 @@ fun ConferBotWidget(
         }
 
         // ---- The greeting card: 12 above the launcher, its edge in line with it ----
-        val card = greeting.card
-        if (card != null && !isChatOpen) {
+        // It stays drawn while it leaves (its collapse or fade, the figure's hand-off or bow), then goes.
+        val shownCard = greeting.card?.takeIf { !isChatOpen }
+        // Until the effect runs, the card that just went is still the last one shown (the same card, no remount).
+        val justWent = greetingLeave.last?.takeIf { shownCard == null && greetingLeave.leaving == null }?.let { it to if (greetingLeave.closing) "close" else "open" }
+        SideEffect {
+            if (shownCard != null) {
+                greetingLeave.last = shownCard
+                greetingLeave.closing = false
+                greetingLeave.leaving = null
+            } else if (justWent != null) {
+                greetingLeave.leaving = justWent
+                greetingLeave.closing = false
+            }
+        }
+        val card = shownCard ?: greetingLeave.leaving?.first ?: justWent?.first
+        val leavingReason = if (shownCard != null) null else greetingLeave.leaving?.second ?: justWent?.second
+        if (card != null) {
             val edge = maxOf(8.dp, offsetX - tucked)
             val screenWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
             Box(
@@ -484,7 +506,14 @@ fun ConferBotWidget(
                 key(card) {
                     GreetingCard(
                         data = card,
+                        leaving = leavingReason,
+                        onGone = {
+                            greetingLeave.leaving = null
+                            greetingLeave.last = null
+                        },
+                        launcher = fx.launcher?.let { Triple(it.width, it.height, if (position == WidgetPosition.BOTTOM_LEFT) "left" else "right") },
                         onPress = {
+                            if (greeting.card == null) return@GreetingCard
                             greeting.closeForNow()
                             if (card.click == "link" && card.linkUrl.isNotBlank()) {
                                 try { uriHandler.openUri(card.linkUrl) } catch (_: Exception) {}
@@ -495,10 +524,13 @@ fun ConferBotWidget(
                             }
                         },
                         onClose = {
+                            if (greeting.card == null) return@GreetingCard
+                            greetingLeave.closing = true
                             greeting.dismiss()
                             fx.idle.greetingClosed()
                         },
                         onStarter = { text ->
+                            if (greeting.card == null) return@GreetingCard
                             greeting.closeForNow()
                             com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
                             isChatOpen = true
@@ -507,7 +539,7 @@ fun ConferBotWidget(
                     )
                 }
                 // The wave: a waving hand on the card's corner, unless its text has its own.
-                if (attentionOn && fx.attention.has("hand") && !card.text.contains(LauncherAttention.WAVING_HAND)) {
+                if (shownCard != null && attentionOn && fx.attention.has("hand") && !card.text.contains(LauncherAttention.WAVING_HAND)) {
                     Text(
                         text = LauncherAttention.WAVING_HAND,
                         fontSize = 20.sp,
@@ -683,6 +715,12 @@ fun ConferBotWidget(
                         modifier = Modifier
                             .then(if (showLabel) Modifier.fillMaxHeight() else Modifier.fillMaxSize())
                             .then(if (fabBrush != null) Modifier.background(fabBrush, fabShape) else Modifier)
+                            // The mascot's soft light button while closed; open, the brand colour.
+                            .then(
+                                if (mascotStyle && !isChatOpen) Modifier.drawBehind {
+                                    drawRect(com.conferbot.sdk.ui.compose.mascot.mascotButtonBrush(look.mascot.light, this.size.width, this.size.height))
+                                } else Modifier,
+                            )
                             // The shine's gloss sweeping across the button (the button clips it).
                             .drawWithContent {
                                 drawContent()
@@ -700,6 +738,8 @@ fun ConferBotWidget(
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
+                            // The mascot is drawn over the button (below), its ears and hat over the rim.
+                            mascotStyle && !isChatOpen -> Box(Modifier.fillMaxSize())
                             imageUrl != null -> coil.compose.AsyncImage(
                                 model = imageUrl,
                                 contentDescription = "Open chat",
@@ -737,6 +777,20 @@ fun ConferBotWidget(
                             }
                         }
                     }
+                }
+                if (mascotStyle && !isChatOpen) {
+                    com.conferbot.sdk.ui.compose.mascot.LauncherMascot(
+                        m = look.mascot,
+                        boxW = fabWidth.value,
+                        boxH = size.value,
+                        unread = unreadCount,
+                        chatOpen = isChatOpen,
+                        reduced = reduced,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = fabScale
+                            scaleY = fabScale
+                        },
+                    )
                 }
                 if (avatarUrl != null) {
                     val dot = maxOf(10f, size.value * 0.24f).dp
@@ -811,6 +865,7 @@ internal class LauncherFxHolder(prefs: android.content.SharedPreferences?) {
     var screen by mutableStateOf(Size.Zero)
     var root: LayoutCoordinates? = null
     var mascot: MascotArt.Layers? = null
+    var mascotOrigins: MascotArt.Origins = MascotArt.ORIGINS
     var mascotKey = ""
 
     init {
@@ -825,6 +880,13 @@ internal class LauncherFxHolder(prefs: android.content.SharedPreferences?) {
         attention.onChange = null
         idle.dispose()
     }
+}
+
+/** The greeting card that just went, drawn while it leaves; `closing` when its x sent it. */
+private class GreetingLeave {
+    var last: GreetingCardData? = null
+    var leaving by mutableStateOf<Pair<GreetingCardData, String>?>(null)
+    var closing = false
 }
 
 /** The effects drawn round the launcher, behind it or in front of it, in its own box (dp); they reach past it. */
@@ -843,7 +905,7 @@ private fun LauncherFxStage(fx: LauncherFxHolder, front: Boolean, attentionOn: B
             c.scale(density, density)
             c.translate(r.left, r.top)
             if (shadow) fx.attention.part("shadow", fx.attention.elapsed)?.let { LauncherFxDraw.bounceShadow(c, r.width, r.height, it) }
-            if (mascot) LauncherFxDraw.idleCall(c, perf!!, fx.mascot!!, fx.idle.elapsed)
+            if (mascot) LauncherFxDraw.idleCall(c, perf!!, fx.mascot!!, fx.mascotOrigins, fx.idle.elapsed)
             if (plan != null && plan.behind != front) LauncherFxDraw.entrance(c, plan, fx.entrance.elapsed)
             c.restoreToCount(save)
         }
