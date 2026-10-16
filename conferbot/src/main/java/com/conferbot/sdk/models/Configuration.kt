@@ -128,7 +128,14 @@ data class ConferBotConfig(
     /**
      * AI provider settings for GPT/LLM nodes
      */
-    val aiSettings: AISettings = AISettings()
+    val aiSettings: AISettings = AISettings(),
+    /**
+     * The language the SDK draws its own words in: "en", "nl", "fr", "de",
+     * "es", or "auto" (the phone's languages). Null keeps the owner's
+     * `widgetLanguage` setting; a value here wins over it, as the web's
+     * host-page customizations do.
+     */
+    val widgetLanguage: String? = null
 )
 
 /**
