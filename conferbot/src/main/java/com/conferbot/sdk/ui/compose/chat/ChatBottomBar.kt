@@ -149,6 +149,7 @@ fun ChatBottomBar(
                     Text(
                         placeholder,
                         style = TextStyle(
+                            fontFamily = theme.typography.fontFamily,
                             fontSize = 16.sp,           // font-size: 16px
                             color = placeholderColor   // color: #4d4d4d
                         )
@@ -161,7 +162,9 @@ fun ChatBottomBar(
                         onTypingChanged(newText.isNotEmpty())
                         onDraft?.invoke(newText)
                     },
+                    // The chat's font (core/customization/OwnerFont.kt).
                     textStyle = TextStyle(
+                        fontFamily = theme.typography.fontFamily,
                         fontSize = 16.sp,
                         color = inkColor,
                         lineHeight = 22.sp
