@@ -160,8 +160,9 @@ fun ChatHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
+                    // The display font (the owner's, else a display theme font; core/customization/OwnerFont.kt).
                     style = TextStyle(
-                        fontFamily = typography.fontFamily,
+                        fontFamily = typography.secondaryFontFamily,
                         fontSize = 16.sp,
                         fontWeight = typography.headerWeight
                     ),
