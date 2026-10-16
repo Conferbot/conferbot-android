@@ -78,6 +78,13 @@ fun PaginatedMessageList(
         )
     }
 
+    // While you wait: the help card and the games, each after the item that
+    // was last on screen when it was drawn (core/waiting); never saved.
+    WaitingCardsHost()
+    val waitHelp by com.conferbot.sdk.core.Conferbot.waiting.help.collectAsState()
+    val waitGames by com.conferbot.sdk.core.Conferbot.waiting.games.collectAsState()
+    val onScreen = remember(messages) { messages.mapTo(HashSet()) { it.id } }
+
     // TextInput nodes are answered via the unified bottom bar (web parity),
     // so they render no inline UI and must not reserve an avatar row.
     val hasInlineNode = currentUIState != null && onNodeResponse != null &&
@@ -157,7 +164,13 @@ fun PaginatedMessageList(
                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp, end = 2.dp)
                     )
                 }
+                WaitingCardsAfter(message.id, onScreen)
                 }
+            }
+
+            // A while-you-wait card whose item is not on screen (or none was).
+            if ((waitHelp != null && waitHelp?.after !in onScreen) || (waitGames != null && waitGames?.after !in onScreen)) {
+                item(key = "waiting_cards_end") { WaitingCardsAfter(null, onScreen) }
             }
 
             // The AI reply as it is written
@@ -268,7 +281,7 @@ fun PaginatedMessageList(
 
     // Auto-scroll to bottom on new messages / node UI change
     // ...and as a reply is written, or suggestions and the dots appear.
-    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping, footerKey) {
+    LaunchedEffect(messages.size, currentUIState, agentStream?.text?.length, suggestions.size, showTyping, footerKey, waitHelp?.card?.key, waitGames?.card) {
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0 && !showScrollToBottom) {
             coroutineScope.launch { listState.animateScrollToItem(count - 1) }
