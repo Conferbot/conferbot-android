@@ -83,7 +83,8 @@ fun PaginatedMessageList(
     val hasInlineNode = currentUIState != null && onNodeResponse != null &&
         // A person joined: the chat's own line says so.
         !(currentUIState is NodeUIState.HumanHandover && currentUIState.state == NodeUIState.HumanHandover.HandoverState.AGENT_CONNECTED) &&
-        currentUIState !is NodeUIState.TextInput &&
+        // A step card that takes the typing (OTP, address, signature) is drawn here.
+        (currentUIState !is NodeUIState.TextInput || com.conferbot.sdk.ui.compose.steps.hasStepCard(currentUIState)) &&
         currentUIState !is NodeUIState.Message &&
         currentUIState !is NodeUIState.Image &&
         currentUIState !is NodeUIState.Video
@@ -199,9 +200,20 @@ fun PaginatedMessageList(
                             horizontalArrangement = Arrangement.Start,
                             verticalAlignment = Alignment.Top
                         ) {
-                            BotAvatar()
+                            val card = com.conferbot.sdk.ui.compose.steps.hasStepCard(currentUIState)
+                            // A step card sits under its question's bubble, in the avatar's column.
+                            if (card) StepAvatarSpace() else BotAvatar()
                             Spacer(Modifier.width(spacing.sm))
-                            NodeRenderer(
+                            if (card) {
+                                // The step's own card, under the bot's question; kept in
+                                // view as it grows (results, a form, a day's times).
+                                Box(Modifier.weight(1f).padding(top = spacing.xs).onSizeChanged {
+                                    val count = listState.layoutInfo.totalItemsCount
+                                    if (count > 0 && !showScrollToBottom) coroutineScope.launch { listState.animateScrollToItem(count - 1, Int.MAX_VALUE / 2) }
+                                }) {
+                                    com.conferbot.sdk.ui.compose.steps.FlowStepView(currentUIState!!)
+                                }
+                            } else NodeRenderer(
                                 uiState = currentUIState!!,
                                 onResponse = onNodeResponse!!,
                                 primaryColor = colors.primary,
@@ -329,4 +341,14 @@ private fun LoadMoreHint(totalCount: Int, loadedCount: Int, modifier: Modifier =
             color = theme.colors.onSurfaceVariant
         )
     }
+}
+
+/** The width the bot's avatar takes (nothing when it is hidden), so a step card lines up with the bubbles. */
+@Composable
+private fun StepAvatarSpace() {
+    val look by com.conferbot.sdk.core.Conferbot.customizations.collectAsState()
+    val map by com.conferbot.sdk.core.Conferbot.serverCustomizationMap.collectAsState()
+    val loaded = map.isNotEmpty()
+    if (loaded && look.hideAvatar) return
+    Spacer(Modifier.width(if (loaded) look.avatarSize.dp else ConferbotThemeAmbient.current.spacing.avatarSize))
 }
