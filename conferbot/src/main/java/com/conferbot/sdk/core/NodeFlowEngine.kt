@@ -131,6 +131,14 @@ class NodeFlowEngine internal constructor(
     private val _botMessages = MutableSharedFlow<NodeUIState>(extraBufferCapacity = 64)
     val botMessages: SharedFlow<NodeUIState> = _botMessages.asSharedFlow()
 
+    /**
+     * The visitor's lines a step card's answer made (the step's own reply:
+     * "Agreed to Terms", "Verified: a@b.io", "Paid $5.00"), for the chat to
+     * draw as the visitor's bubbles. Only answers sent with [submitStepResponse].
+     */
+    private val _visitorLines = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val visitorLines: SharedFlow<String> = _visitorLines.asSharedFlow()
+
     // Flow definition
     private val nodes = LinkedHashMap<String, FlowNode>()
     private var nodeList: List<FlowNode> = emptyList()
@@ -426,8 +434,12 @@ class NodeFlowEngine internal constructor(
     /** Whether the step waits for the visitor once drawn. */
     private fun awaitsInput(node: FlowNode): Boolean = NodeTypes.requiresUserInteraction(node.type)
 
+    /** [ui] stamped with its step (see NodeUIState.step); [error] the card's refusal. */
+    private fun stamped(ui: NodeUIState, node: FlowNode, token: Int, error: String? = null): NodeUIState =
+        ui.withStep(NodeUIState.StepInfo(type = node.type, node = node.data, extra = ui.step?.extra ?: emptyMap(), error = error, visit = token))
+
     private suspend fun handleDisplayUI(ui: NodeUIState, node: FlowNode, token: Int) {
-        _currentUIState.value = ui
+        _currentUIState.value = stamped(ui, node, token)
         _isProcessing.value = false
         if (shownToken != token && node.type in DISPLAY_NODE_TYPES) {
             shownToken = token
@@ -640,8 +652,17 @@ class NodeFlowEngine internal constructor(
         scope.launch { respond(response) }
     }
 
+    /**
+     * A step card's answer (core/flow/FlowStepAnswer): as [submitResponse],
+     * and the visitor's lines the step says in reply come out of
+     * [visitorLines] for the chat to draw.
+     */
+    fun submitStepResponse(response: Any) {
+        scope.launch { respond(response, echo = true) }
+    }
+
     /** The visitor's answer to the waiting step. */
-    suspend fun respond(response: Any) {
+    suspend fun respond(response: Any, echo: Boolean = false) {
         val nodeId = currentNodeId ?: return
         if (!waiting) {
             android.util.Log.d(TAG, "Not waiting for input, ignoring response")
@@ -668,7 +689,12 @@ class NodeFlowEngine internal constructor(
         if (node.type == NodeTypes.HUMAN_HANDOVER && response is List<*>) sendSurveyRating(response)
 
         try {
+            val before = ChatState.transcript.value.lastOrNull()
             val result = runHandler(handler, node, "edge", token) { h -> h.handleResponse(response, node.data, node.id) }
+            if (echo) {
+                val now = ChatState.transcript.value
+                now.drop(now.indexOfLast { it === before } + 1).filter { it.by == "user" }.forEach { _visitorLines.tryEmit(it.message) }
+            }
             if (token != moveToken || ended) return
             sendResponseToServer()
             handleNodeResult(result, node, token)
@@ -701,9 +727,12 @@ class NodeFlowEngine internal constructor(
             _errorMessage.value = FlowText.plainText(message)
         }
         val shown = ui ?: _currentUIState.value
+        val reason = FlowText.plainText(message).takeIf { it.isNotEmpty() }
         _currentUIState.value = when (shown) {
-            is NodeUIState.TextInput -> shown.copy(errorMessage = FlowText.plainText(message))
-            else -> shown
+            null -> null
+            // The card says why on itself; a typed answer's reason is the bubble above.
+            is NodeUIState.TextInput -> stamped(shown.copy(errorMessage = FlowText.plainText(message)), node, token, if (inCard) reason else null)
+            else -> stamped(shown, node, token, if (inCard) reason else null)
         }
         waiting = true
     }
