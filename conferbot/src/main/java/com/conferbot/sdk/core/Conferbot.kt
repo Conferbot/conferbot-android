@@ -25,7 +25,14 @@ import com.conferbot.sdk.notifications.ConferbotNotificationManager
 import com.conferbot.sdk.notifications.NotificationHandler
 import com.conferbot.sdk.notifications.NotificationListener
 import com.conferbot.sdk.notifications.NotificationSettings
-import com.conferbot.sdk.notifications.NotificationTokenListener
+import com.conferbot.sdk.notifications.ConferbotPush
+import com.conferbot.sdk.notifications.PushContract
+import com.conferbot.sdk.notifications.PushDeviceInfo
+import com.conferbot.sdk.notifications.PushRegisterError
+import com.conferbot.sdk.notifications.PushRegisterResult
+import com.conferbot.sdk.notifications.PushRegistrar
+import com.conferbot.sdk.notifications.PushTarget
+import com.conferbot.sdk.notifications.PushTokenType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.services.ApiClient
@@ -58,8 +65,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -171,9 +180,6 @@ object Conferbot {
     // Notification components
     private var _notificationManager: ConferbotNotificationManager? = null
     private var _notificationHandler: NotificationHandler? = null
-
-    // Current push token
-    private var currentPushToken: String? = null
 
     // Pagination configuration
     private var paginationConfig = PaginationConfig()
@@ -1029,6 +1035,7 @@ object Conferbot {
                 connectSocket()
             }
             startRequests()
+            startPush()
             startPostChatRedirect()
             // The chat's fonts loaded: the theme draws with them (core/customization/OwnerFont.kt).
             scope.launch {
@@ -2781,7 +2788,10 @@ object Conferbot {
      * main thread.
      */
     fun identify(user: ConferBotUser?) {
+        val before = this.user?.id
         this.user = user
+        // Logout or another user: this device stops getting the old conversation's pushes.
+        if (before != null && before != user?.id) scope.launch { pushRegistrar.unregister() }
         ChatState.visitorContext = user?.toVisitorContext()
         // Their name in the owner's texts ("Hi {{first_name|there}}"), or the fallback once signed out.
         if (rawCustomizationJson != null) applyLook()
@@ -2815,121 +2825,170 @@ object Conferbot {
     // ==================== Push Notification Methods ====================
 
     /**
-     * Initialize notification components
+     * Initialize notification components (the conferbot_messages channel the
+     * server's pushes name is created here).
      */
     private fun initializeNotifications(context: Context) {
         _notificationManager = ConferbotNotificationManager.getInstance(context)
         _notificationHandler = NotificationHandler.getInstance(context)
 
         // Set ChatActivity as default for deep linking
-        _notificationHandler?.setChatActivityClass(ChatActivity::class.java)
-        _notificationManager?.setChatActivityClass(ChatActivity::class.java)
-
-        // Listen for token refresh
-        NotificationTokenListener.addListener { token ->
-            registerPushToken(token)
-        }
+        _notificationHandler?.setChatActivityClass(notificationChatActivityClass)
+        _notificationManager?.setChatActivityClass(notificationChatActivityClass)
 
         Log.d(TAG, "Notification components initialized")
     }
 
-    /**
-     * Register push notification token with both API and socket
-     *
-     * @param token FCM token
-     */
-    fun registerPushToken(token: String) {
-        currentPushToken = token
-        val sessionId = _chatSessionId.value
+    // ==================== Push notifications (embed-server #189) ====================
+    // As RN's usePushNotifications / Flutter's provider (#77, #89): opt-in,
+    // nothing is registered until the app hands over a token. Registered by
+    // HTTP only (POST /push/register with the conversation and tokenType);
+    // the socket's register-push-token checks the handshake's visitor, which
+    // early in a chat is not yet the conversation's (a false SESSION_FORBIDDEN).
 
-        // Register via API
-        scope.launch {
-            sessionId?.let {
-                apiClient?.registerPushToken(token, it)
-            }
+    /** A burst of messages is one retry. */
+    internal const val PUSH_RETRY_DEBOUNCE_MS = 1000L
+
+    private var notificationChatActivityClass: Class<*> = ChatActivity::class.java
+
+    internal val pushRegistrar = PushRegistrar(
+        register = { body -> apiClient?.registerPush(body) ?: PushRegisterResult(false, PushRegisterError.NETWORK) },
+        unregister = { token -> apiClient?.unregisterPush(token) ?: false },
+        deviceInfo = { pushDeviceInfo() }
+    )
+
+    /** A tap that came before the SDK was ready (the app started from it). */
+    @Volatile private var pendingPush: ConferbotPush? = null
+
+    private fun pushDeviceInfo(): PushDeviceInfo {
+        val appVersion = appContext?.let { ctx ->
+            runCatching {
+                @Suppress("DEPRECATION")
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            }.getOrNull()
         }
-
-        // Also register via socket for real-time notifications
-        if (sessionId != null && socketClient?.isConnected == true) {
-            registerPushTokenViaSocket(token, sessionId)
-        }
-
-        Log.d(TAG, "Push token registered")
+        return PushDeviceInfo(model = Build.MODEL, osVersion = Build.VERSION.RELEASE, appVersion = appVersion)
     }
 
-    /**
-     * Register push token via socket connection
-     */
-    private fun registerPushTokenViaSocket(token: String, sessionId: String) {
-        val data = JSONObject().apply {
-            put("token", token)
-            put("platform", "android")
-            put("sessionId", sessionId)
-            put("deviceInfo", JSONObject().apply {
-                put("os", "Android")
-                put("osVersion", Build.VERSION.RELEASE)
-                put("sdkVersion", Build.VERSION.SDK_INT)
-                put("deviceModel", Build.MODEL)
-            })
-        }
-        socketClient?.emit("register-push-token", data)
-    }
-
-    /**
-     * Unregister push token (call when user logs out or disables notifications)
-     */
-    fun unregisterPushToken() {
-        val token = currentPushToken ?: return
-        val sessionId = _chatSessionId.value ?: return
-
+    /** The registrar follows the conversation and its activity; a tap kept for later opens now. */
+    private fun startPush() {
+        // A new conversation: registered with it.
+        scope.launch { _chatSessionId.collect { pushRegistrar.setSession(it) } }
+        // The conversation went on: a registration still waiting for it tries again.
         scope.launch {
-            try {
-                val data = JSONObject().apply {
-                    put("token", token)
-                    put("sessionId", sessionId)
-                    put("platform", "android")
+            _record.map { it.size }.distinctUntilChanged().collectLatest { size ->
+                if (size > 0) {
+                    kotlinx.coroutines.delay(PUSH_RETRY_DEBOUNCE_MS)
+                    pushRegistrar.poke()
                 }
-                socketClient?.emit("unregister-push-token", data)
-                currentPushToken = null
-                Log.d(TAG, "Push token unregistered")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to unregister push token", e)
             }
+        }
+        pendingPush?.let { push ->
+            pendingPush = null
+            scope.launch { openPush(push, launch = true) }
         }
     }
 
     /**
-     * Handle push notification data
-     * Returns true if the notification was handled by Conferbot
-     *
-     * @param data Push notification data payload
-     * @return true if handled, false if not a Conferbot notification
+     * The device's push token (FCM registration token; an APNs token as hex):
+     * registered with the current conversation, again for each new one, and
+     * unregistered on logout (`identify(null)` or another user), on
+     * [clearHistory] or [unregisterPush]. A new token replaces the old one;
+     * `null` unregisters. Without [type] a 64-character hex token is taken as
+     * APNs, anything else FCM.
      */
-    fun handlePushNotification(data: Map<String, String>): Boolean {
-        // Check if notification is from Conferbot
-        val isConferbotNotification = data["source"] == "conferbot" ||
-                data["type"] in listOf(
-                    "conferbot_message",
-                    "new_message",
-                    "agent_joined",
-                    "agent_left",
-                    "chat_ended",
-                    "handover_queued",
-                    "queue_position_update"
+    @JvmOverloads
+    fun setPushToken(token: String?, type: PushTokenType? = null) {
+        scope.launch { pushRegistrar.setToken(token, type) }
+    }
+
+    /** Stop this device's pushes (the user turned them off). The token is kept for the next conversation. */
+    fun unregisterPush() {
+        scope.launch { pushRegistrar.unregister() }
+    }
+
+    /** Same as [setPushToken] with the token's type guessed. */
+    @Deprecated("Use setPushToken(token, type)", ReplaceWith("setPushToken(token)"))
+    fun registerPushToken(token: String) = setPushToken(token)
+
+    @Deprecated("Use unregisterPush()", ReplaceWith("unregisterPush()"))
+    fun unregisterPushToken() = unregisterPush()
+
+    /**
+     * A notification's data (FCM `RemoteMessage.data`, or a tapped
+     * notification's extras). Returns true when it is a Conferbot message for
+     * this bot (data `source: "conferbot"`, `type: "conferbot_message"`).
+     *
+     * - [open] true (a tap): opens its conversation, the chat when it is the
+     *   one on the device, else that conversation in "Your requests"; a tap
+     *   before [initialize] is opened once the SDK is ready.
+     * - [open] false (it arrived in the foreground): counted unread and shown
+     *   on the `conferbot_messages` channel, unless that conversation is on
+     *   screen.
+     */
+    @JvmOverloads
+    fun handlePushNotification(data: Map<String, String>, open: Boolean = true): Boolean {
+        val push = ConferbotPush.parse(data) ?: return false
+        val bot = botId
+        if (bot != null && push.botId != bot) return false
+        if (!open) {
+            val onScreen = _isChatVisible.value && _chatSessionId.value == push.chatSessionId
+            if (!onScreen) {
+                _unreadCount.value = _unreadCount.value + 1
+                _notificationManager?.showPushNotification(push, data)
+            }
+            _notificationHandler?.notifyListeners(
+                ConferbotNotification.NewMessage(
+                    from = push.senderName,
+                    content = push.body,
+                    senderType = if (push.senderType == "agent") ConferbotNotification.SenderType.AGENT else ConferbotNotification.SenderType.BOT,
+                    chatSessionId = push.chatSessionId
                 )
-
-        if (!isConferbotNotification) {
-            return false
-        }
-
-        // Parse and handle the notification
-        val notification = ConferbotNotification.fromPushData(data)
-        if (notification != null) {
-            _notificationHandler?.handleNotification(notification)
+            )
             return true
         }
+        if (bot == null || !_isInitialized.value) {
+            pendingPush = push
+            return true
+        }
+        openPush(push, launch = true)
+        return true
+    }
 
-        return false
+    /**
+     * The intent a tapped push opened (the launcher activity, when the system
+     * showed the server's notification while the app was in the background):
+     * call it from onCreate and onNewIntent. True when it was Conferbot's.
+     */
+    fun handlePushIntent(intent: Intent?): Boolean {
+        val extras = intent?.extras ?: return false
+        val data = extras.keySet().mapNotNull { k ->
+            @Suppress("DEPRECATION")
+            extras.get(k)?.let { k to it.toString() }
+        }.toMap()
+        return handlePushNotification(data, open = true)
+    }
+
+    /** Opens the conversation [push] names; [launch] false when the chat screen is already being opened by it. */
+    internal fun openPush(push: ConferbotPush, launch: Boolean) {
+        _notificationManager?.cancelPushNotification(push.chatSessionId)
+        if (launch) {
+            appContext?.let { ctx ->
+                try {
+                    ctx.startActivity(Intent(ctx, notificationChatActivityClass).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    })
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to open the chat for a push", e)
+                }
+            }
+        }
+        when (PushContract.targetOf(push, _chatSessionId.value)) {
+            PushTarget.CHAT -> showChat()
+            // Another of the visitor's conversations: that one, in "Your requests".
+            PushTarget.REQUESTS -> openRequests(push.chatSessionId)
+        }
+        _unreadCount.value = 0
     }
 
     /**
@@ -2938,6 +2997,11 @@ object Conferbot {
      * @param data Notification data
      */
     fun handleNotificationTap(data: Map<String, String>) {
+        val push = ConferbotPush.parse(data)
+        if (push != null) {
+            if (botId == null || !_isInitialized.value) pendingPush = push else openPush(push, launch = false)
+            return
+        }
         _notificationHandler?.handleNotificationTap(data)
     }
 
@@ -2957,6 +3021,7 @@ object Conferbot {
      * @param activityClass Activity class to launch
      */
     fun setNotificationChatActivity(activityClass: Class<*>) {
+        notificationChatActivityClass = activityClass
         _notificationHandler?.setChatActivityClass(activityClass)
         _notificationManager?.setChatActivityClass(activityClass)
     }
@@ -3087,6 +3152,8 @@ object Conferbot {
      * Clear chat history
      */
     fun clearHistory() {
+        // The visitor's data goes: so do the pushes for the conversation left behind.
+        scope.launch { pushRegistrar.unregister() }
         // A countdown from the conversation being left behind stops here.
         postChatRedirect.reset()
         liveChat.reset()
