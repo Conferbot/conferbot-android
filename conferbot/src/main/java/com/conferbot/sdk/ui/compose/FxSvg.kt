@@ -1,6 +1,7 @@
 package com.conferbot.sdk.ui.compose
 
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -22,7 +23,7 @@ import kotlin.math.roundToInt
  * (transform, clip-path, opacity), path, ellipse, circle, rect (rx),
  * polygon; fill / stroke as a colour, none or a linear / radial gradient
  * (object bounding box or user space, with a gradientTransform), their
- * opacities, stroke width, caps and joins; and clipPath. No filters, as in
+ * opacities, stroke width, caps, joins and dashes; and clipPath. No filters, as in
  * RN. Draws on the platform canvas (Compose's nativeCanvas).
  */
 internal object FxSvg {
@@ -66,6 +67,13 @@ internal object FxSvg {
         val h = svgNode.a["height"]?.toFloatOrNull()
         val viewBox = if (vb.size == 4) vb.toFloatArray() else floatArrayOf(0f, 0f, w ?: 100f, h ?: 100f)
         return Doc(svgNode, ids, viewBox, svgNode.a["preserveAspectRatio"] == "none")
+    }
+
+    /** A stroke-dasharray ("3.4 1.4"), an odd list repeated as SVG does; null for none. */
+    private fun dashes(v: String?): FloatArray? {
+        val n = (v ?: return null).trim().split(SEP).mapNotNull { it.toFloatOrNull() }.filter { it >= 0f }
+        if (n.isEmpty() || n.all { it == 0f }) return null
+        return (if (n.size % 2 == 1) n + n else n).toFloatArray()
     }
 
     private fun d(a: Map<String, String>, k: String, fallback: Float = 0f) = a[k]?.trim()?.toFloatOrNull() ?: fallback
@@ -195,6 +203,7 @@ internal object FxSvg {
                 it.strokeWidth = d(a, "stroke-width", 1f)
                 it.strokeCap = when (a["stroke-linecap"]) { "round" -> Paint.Cap.ROUND; "square" -> Paint.Cap.SQUARE; else -> Paint.Cap.BUTT }
                 it.strokeJoin = when (a["stroke-linejoin"]) { "round" -> Paint.Join.ROUND; "bevel" -> Paint.Join.BEVEL; else -> Paint.Join.MITER }
+                dashes(a["stroke-dasharray"])?.let { d -> it.pathEffect = DashPathEffect(d, d(a, "stroke-dashoffset")) }
                 canvas.drawPath(shape, it)
             }
         } else if (n.kids.isNotEmpty()) {
