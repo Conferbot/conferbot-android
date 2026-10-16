@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.customization
 
+import com.conferbot.sdk.core.i18n.I18n
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -192,7 +193,8 @@ object Greeting {
     fun decide(c: Map<String, Any?>?, facts: Facts): Resolved? {
         val raw = c ?: emptyMap()
         var on = raw["chatIconCta"] == true
-        var text = str(raw["chatIconCtaText"]).trim()
+        // The stock "Hi👋, how can I help?" in the visitor's language; the owner's own words as written (web core/customizations.ts stockText).
+        var text = I18n.stockText(str(raw["chatIconCtaText"]).trim(), "greeting.stock", listOf("Hi 👋, how can I help?"))
         var delay = num(raw["greetingDelay"], DEFAULT_DELAY, 0, 3600)
         var click = (raw["greetingClickAction"] as? String)?.takeIf { it == "send" || it == "link" } ?: "open"
         // Smart greetings with the owner's own greeting off: no default message.
@@ -264,7 +266,7 @@ object Greeting {
         val avatar = str(x["avatar"]).takeIf { x["hideAvatar"] != true && it.isNotEmpty() }
             ?: str(x["initialPageAvatar"]).ifEmpty { null }
             ?: str(x["logo"]).takeIf { x["hideLogo"] != true && it.isNotEmpty() }
-        return Head(avatar, str(x["logoText"]).ifEmpty { botName }.ifEmpty { "Support" }, x["hideOnlineStatus"] != true)
+        return Head(avatar, str(x["logoText"]).ifEmpty { botName }.ifEmpty { I18n.t("home.support") }, x["hideOnlineStatus"] != true)
     }
 
     private fun channel(v: Double): Double {
