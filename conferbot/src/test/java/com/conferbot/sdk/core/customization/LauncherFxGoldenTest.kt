@@ -13,7 +13,9 @@ import kotlin.math.sqrt
  * Native SDK's golden (scripts/parity/launcherfx/golden.json, copied to
  * src/test/resources/launcherfx-golden.json) holds Chrome's own values of
  * every track, paused at each sample. Each sample keeps only the channels
- * away from rest; iterations -1 is infinity.
+ * away from rest; iterations -1 is infinity. The mascot's transform lists
+ * (`matrix` cases: its moods, the typing mascot, the greeting card, the
+ * figure's gestures) are compared as Chrome's matrix (ma..mf).
  */
 @Suppress("UNCHECKED_CAST")
 class LauncherFxGoldenTest {
@@ -61,15 +63,26 @@ class LauncherFxGoldenTest {
     fun evaluatesEveryGoldenCaseWithinAHairOfChrome() {
         val worst = HashMap<String, Double>()
         var samples = 0
+        val m = listOf("ma", "mb", "mc", "md", "me", "mf")
+        val identity = doubleArrayOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
         for (c in cases) {
             val tracks = (c["tracks"] as List<Map<String, Any?>>).map { Track.fromJson(it) }
             val base = doubles(c["base"])
             val box = c["box"] as Map<String, Any?>
             for (s in c["samples"] as List<Map<String, Any?>>) {
                 val v = s["v"] as Map<String, Any?>
-                val want = FxValues.rest(doubles(v).filterKeys { it != "px" && it != "py" })
+                val want = FxValues.rest(doubles(v).filterKeys { it in Keyframes.CHANNELS })
                 val t = num(s, "t")
                 val got = Keyframes.evaluate(tracks, t, base)
+                if (c["matrix"] == true) {
+                    // A transform list: its matrix, in the order the list draws it.
+                    val mx = Keyframes.transformMatrix(got, Keyframes.transformOrder(tracks[0]))
+                    val wv = doubles(v)
+                    m.forEachIndexed { i, ch -> worst["matrix"] = max(worst["matrix"] ?: 0.0, abs(mx[i] - (wv[ch] ?: identity[i]))) }
+                    for (ch in listOf("o", "dash")) worst[ch] = max(worst[ch] ?: 0.0, abs(got[ch] - want[ch]))
+                    samples += 1
+                    continue
+                }
                 for (ch in Keyframes.CHANNELS) worst[ch] = max(worst[ch] ?: 0.0, abs(got[ch] - want[ch]))
                 if (c["path"] != null && v["px"] != null) {
                     val x = num(box, "x")
@@ -85,11 +98,13 @@ class LauncherFxGoldenTest {
             }
         }
         println("launcherfx golden: ${cases.size} cases, $samples samples; max error " + worst.toSortedMap().mapValues { "%.5f".format(it.value) })
-        assertEquals(447, cases.size)
-        assertEquals(19275, samples)
+        assertEquals(499, cases.size)
+        assertEquals(22123, samples)
         for (ch in listOf("tx", "ty", "txp", "typ", "r", "rx", "ry", "od", "dash", "clip")) assertTrue("$ch ${worst[ch]}", worst.getValue(ch) < 0.01)
         for (ch in listOf("sx", "sy", "o")) assertTrue("$ch ${worst[ch]}", worst.getValue(ch) < 0.001)
         // Chrome lays `left` out on a 1/64 px grid; the motion path is flattened.
+        // The mascot's transform lists, as matrices.
+        assertTrue("matrix ${worst["matrix"]}", worst.getValue("matrix") < 0.001)
         assertTrue("left ${worst["left"]}", worst.getValue("left") < 0.05)
         assertTrue("path ${worst["path"]}", worst.getValue("path") < 0.6)
     }
@@ -157,6 +172,44 @@ class LauncherFxGoldenTest {
             }
         }
         check("entrance:settle", listOf(LauncherEntrance.SETTLE_REVEAL))
+        // The mascot: its moods, the typing mascot and pencil, the card's moves and the figure's gestures.
+        val moods = listOf(
+            Triple("wave", "wave", 2.0),
+            Triple("wave", "down", null),
+            Triple("think", null, null),
+            Triple("happy", "down", null),
+        )
+        for ((mood, arm, waves) in moods) {
+            val plan = MascotMoods.moodPlan(mood, arm = arm, waveCount = waves)
+            for ((part, tracks) in plan.parts) {
+                if (part == "lid" && mood != "wave") continue
+                check("mascot:mood-$mood${if (arm != null) "@$arm" else ""}:$part", tracks)
+            }
+        }
+        val typing = MascotMoods.Typing
+        check("mascot:typing:sway", listOf(typing.sway))
+        check("mascot:typing:blink", listOf(typing.blink))
+        check("mascot:typing:glance", listOf(typing.glance))
+        typing.dots.forEachIndexed { i, d -> check("mascot:typing:dot$i", listOf(d.track)) }
+        check("mascot:pencil:line", listOf(MascotMoods.Pencil.write))
+        check("mascot:pencil:pencil", listOf(MascotMoods.Pencil.pencil))
+        check("mascot:card:spring", listOf(MascotMotion.cardEnterTrack("lively", "card")!!))
+        check("mascot:card:in", listOf(MascotMotion.cardEnterTrack("subtle", "card")!!))
+        check("mascot:card:collapse", listOf(MascotMotion.cardLeaveTrack("lively", "open")!!))
+        check("mascot:card:out", listOf(MascotMotion.cardLeaveTrack("off", "close")!!))
+        check("mascot:card:ping-dot", listOf(MascotMotion.Ping.dot))
+        check("mascot:card:ping-ring", listOf(MascotMotion.Ping.ring))
+        check("mascot:card:word3", listOf(MascotMotion.wordFade("Hi there, how can we help you today?")!!.tracks[3]))
+        for (amp in listOf(1.0, 0.75, 0.55)) {
+            val a = Keyframes.jsNum(amp)
+            for (g in listOf("pop", "rise", "fadeIn", "wave", "tilt", "nod", "hop", "handoff", "bow")) {
+                if (amp != 1.0 && (g == "rise" || g == "fadeIn")) continue
+                val delay = when (g) { "pop" -> 140.0; "rise" -> 80.0; else -> 0.0 }
+                check("mascot:gesture:$g@$a", listOf(MascotMotion.gestureTrack(g, if (g == "fadeIn") 0.0 else amp, delay, if (g == "handoff") -40.0 to 60.0 else null)))
+            }
+            check("mascot:gesture:talk@$a", listOf(MascotMotion.talkTrack(amp)))
+        }
+        check("mascot:gesture:breath", listOf(MascotMotion.BREATH))
         // Every case in the golden is one this SDK builds.
         assertEquals(cases.size, checked)
     }
