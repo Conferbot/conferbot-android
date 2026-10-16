@@ -335,12 +335,20 @@ fun AgentMessageBubble(
                         style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                     )
                 } else {
-                    // Lists, bold and tappable links (utils/ChatMarkdown.kt).
+                    // Lists, bold, tables and tappable links (utils/ChatMarkdown.kt).
+                    // The AI's fallback reply ("I couldn't find that...") is
+                    // the same bubble, italic at 85% (web isFallback).
+                    val fallback = message.extras?.isFallback == true
                     ChatMarkdownText(
                         text = if (showOriginal && message.translation != null) message.translation.original else message.text,
-                        color = colors.agentBubbleText,
+                        color = if (fallback) colors.agentBubbleText.copy(alpha = 0.85f) else colors.agentBubbleText,
                         linkColor = colors.agentBubbleText,
-                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, lineHeight = typography.messageSize * 1.4f)
+                        style = TextStyle(
+                            fontFamily = typography.fontFamily,
+                            fontSize = typography.messageSize,
+                            lineHeight = typography.messageSize * 1.4f,
+                            fontStyle = if (fallback) androidx.compose.ui.text.font.FontStyle.Italic else null
+                        )
                     )
                 }
                 // Sent in the visitor's language: the agent's own words one tap away.
