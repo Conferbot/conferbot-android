@@ -15,10 +15,23 @@ import kotlinx.coroutines.flow.asStateFlow
  * Network connectivity monitor using ConnectivityManager.
  * Provides real-time network status updates via StateFlow.
  */
-class NetworkMonitor(private val context: Context) {
+class NetworkMonitor internal constructor(
+    private val context: Context,
+    private val networkRequestFactory: () -> NetworkRequest
+) {
+
+    constructor(context: Context) : this(context, ::defaultNetworkRequest)
 
     companion object {
         private const val TAG = "NetworkMonitor"
+
+        /** The request the SDK listens on: internet over WiFi, cellular or ethernet. */
+        internal fun defaultNetworkRequest(): NetworkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+            .build()
     }
 
     private val connectivityManager =
@@ -42,12 +55,7 @@ class NetworkMonitor(private val context: Context) {
             return
         }
 
-        val networkRequest = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-            .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
-            .build()
+        val networkRequest = networkRequestFactory()
 
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
