@@ -2,6 +2,7 @@
 
 package com.conferbot.sdk.ui.compose.messages
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -231,7 +232,7 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
                 )
                 if (inApp) {
                     Spacer(Modifier.width(6.dp))
-                    Text("Help article ›", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
+                    Text(I18n.t("kb.helpArticle") + " ›", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
                 } else if (source.url != null) {
                     Spacer(Modifier.width(6.dp))
                     Text("${AgentBotParser.sourceHost(source.url)} ↗", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
@@ -270,7 +271,7 @@ private fun FactsCard(card: AnswerCard) {
         Rows(card.rows)
         card.note?.let { Text(it, color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize)) }
         card.url?.let { url ->
-            Text("Learn more ↗", color = theme.colors.primary, style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
+            Text(I18n.t("result.seeDetails") + " ↗", color = theme.colors.primary, style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(top = 8.dp).clickable { openUrl(context, url) })
         }
     }
@@ -324,19 +325,19 @@ private fun ActionCard(request: ActionRequest) {
                     contentAlignment = Alignment.Center
                 ) {
                     if (state == "busy") CircularProgressIndicator(Modifier.size(16.dp), color = theme.colors.onPrimary, strokeWidth = 2.dp)
-                    else Text("Confirm", color = theme.colors.onPrimary, style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold))
+                    else Text(I18n.t("action.confirm"), color = theme.colors.onPrimary, style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold))
                 }
                 Box(
                     Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).border(BorderStroke(1.dp, theme.colors.divider), RoundedCornerShape(10.dp))
                         .clickable(enabled = state == "ask") { answer(false) }.padding(vertical = 9.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Not now", color = theme.colors.onSurface, style = TextStyle(fontSize = theme.typography.captionSize))
+                    Text(I18n.t("common.notNow"), color = theme.colors.onSurface, style = TextStyle(fontSize = theme.typography.captionSize))
                 }
             }
         } else {
             Text(
-                when (state) { "done" -> "Confirmed"; "declined" -> "Not now"; else -> "That did not go through. Please ask again." },
+                when (state) { "done" -> I18n.t("action.done"); "declined" -> I18n.t("action.cancelled"); else -> I18n.t("action.failedRetry") },
                 color = theme.colors.onSurfaceVariant,
                 style = TextStyle(fontSize = theme.typography.captionSize),
                 modifier = Modifier.padding(top = 8.dp)
@@ -481,7 +482,7 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
                     }
                 }
                 is RichEntry.Article -> CardSurface {
-                    Text("Help article", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
+                    Text(I18n.t("kb.helpArticle"), color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
                     Text(rich.title, color = colors.onSurface, style = TextStyle(fontSize = theme.typography.messageSize, fontWeight = FontWeight.SemiBold))
                     if (rich.snippet.isNotBlank()) Text(rich.snippet, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis,
                         style = TextStyle(fontSize = theme.typography.captionSize))
@@ -491,7 +492,7 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
                     val inApp = url == null && rich.articleId.isNotBlank() &&
                         com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(customizationMap, knowledgeBase, rich.articleId)
                     if (url != null || inApp) {
-                        Text(if (url != null) "Read article ↗" else "Read article ›", color = colors.primary,
+                        Text(I18n.t("sdk.kb.readArticle") + if (url != null) " ↗" else " ›", color = colors.primary,
                             style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
                             modifier = Modifier.padding(top = 8.dp).clickable {
                                 if (url != null) openUrl(context, url) else Conferbot.openHelpArticle(rich.articleId, rich.title)
