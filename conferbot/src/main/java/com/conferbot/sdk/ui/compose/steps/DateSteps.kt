@@ -25,9 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.conferbot.sdk.core.flow.FlowCalendar
 import com.conferbot.sdk.core.flow.FlowRich
-import com.conferbot.sdk.core.flow.FlowRich.t
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.flow.Js
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.nodes.NodeUIState
 import java.util.TimeZone
 
@@ -51,7 +52,7 @@ internal fun MonthPicker(
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(FlowStepAnswer.monthTitle(month), style = style.bold, modifier = Modifier.weight(1f))
+            Text(monthTitle(month), style = style.bold, modifier = Modifier.weight(1f))
             val canBack = first == null || month > first
             val canOn = last == null || month < last
             IconButton(onClick = { onMonth(FlowStepAnswer.addMonths(month, -1)) }, enabled = canBack, modifier = Modifier.size(32.dp)) {
@@ -62,7 +63,7 @@ internal fun MonthPicker(
             }
         }
         Row(Modifier.fillMaxWidth()) {
-            WEEK.forEach { Text(it, style = style.hint.copy(textAlign = TextAlign.Center), modifier = Modifier.weight(1f)) }
+            I18n.weekdayNames("narrow", WEEK).forEach { Text(it, style = style.hint.copy(textAlign = TextAlign.Center), modifier = Modifier.weight(1f)) }
         }
         val days = FlowStepAnswer.monthGrid(month.take(4).toInt(), month.substring(5, 7).toInt())
         days.chunked(7).forEach { week ->
@@ -106,10 +107,20 @@ private fun TimeOptions(style: StepLook, times: List<String>, label: (String) ->
     }
 }
 
-private fun clock12(hhmm: String): String = runCatching {
+// English writes 2:30 PM; the other widget languages the 24-hour 14:30.
+private fun clock12(hhmm: String): String = if (I18n.language != I18n.EN) hhmm else runCatching {
     val (h, m) = hhmm.split(":").map { it.toInt() }
     "${if (h % 12 == 0) 12 else h % 12}:${"%02d".format(m)} ${if (h < 12) "AM" else "PM"}"
 }.getOrDefault(hhmm)
+
+/** "October 2026" in the widget's language (English keeps the SDK's own spelling). */
+private fun monthTitle(ym: String): String =
+    if (I18n.language == I18n.EN) FlowStepAnswer.monthTitle(ym)
+    else runCatching { "${I18n.monthNames("long")[ym.substring(5, 7).toInt() - 1]} ${ym.take(4)}" }.getOrDefault(ym)
+
+/** A closed weekday for "Closed on ...": "Sundays" in English, the day's name in the others (web rich.ts weekdaysName). */
+private fun closedDayName(wd: Int): String =
+    if (I18n.language == I18n.EN) "${FlowCalendar.DAY_NAMES[wd]}s" else I18n.weekdayNames("long")[wd]
 
 /**
  * datetime-node's card (web richNodesView dateTimeCardHtml): a month to
@@ -134,7 +145,7 @@ fun DateTimeStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, sen
             // Days out of bounds cannot be picked (as the web's date input); a
             // closed weekday can, and the step says why it is refused.
             MonthPicker(style, month, { month = it }, min?.take(7), max?.take(7), day, { FlowStepAnswer.dayInBounds(data, it, today) }, !busy) { day = it }
-            if (closed.isNotEmpty()) Text(t("dates.closedOn", mapOf("days" to FlowRich.joinAnd(closed.map { "${FlowCalendar.DAY_NAMES[it]}s" }))), style = style.hint)
+            if (closed.isNotEmpty()) Text(t("dates.closedOn", mapOf("days" to FlowRich.joinAnd(closed.map { closedDayName(it) }))), style = style.hint)
         }
         if (mode != "date") TimeOptions(style, FlowStepAnswer.timeChoices(data), ::clock12, time, !busy) { time = it }
         StepStatus(style, step.error)
