@@ -75,6 +75,17 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import com.conferbot.sdk.core.customization.MascotMotion
+import com.conferbot.sdk.ui.compose.mascot.figureBreath
+import com.conferbot.sdk.ui.compose.mascot.figureGesture
+import com.conferbot.sdk.ui.compose.mascot.figureTalk
+import com.conferbot.sdk.ui.compose.mascot.greetingCardMotion
+import com.conferbot.sdk.ui.compose.mascot.pingMotion
+import com.conferbot.sdk.ui.compose.mascot.wordMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -140,9 +151,22 @@ private fun stops(t: Float, xs: List<Float>, ys: List<Float>): Float {
 
 private fun easeInOut(t: Float) = CubicBezierEasing(0.42f, 0f, 0.58f, 1f).transform(t)
 
+/** A box drawn at its size but laid out smaller: CSS negative margins (top, bottom, start). */
+private fun Modifier.negativeMargins(top: Dp, bottom: Dp, start: Dp): Modifier = layout { m, c ->
+    val p = m.measure(c)
+    val t = top.roundToPx()
+    val b = bottom.roundToPx()
+    val s = start.roundToPx()
+    layout(maxOf(0, p.width - s), maxOf(0, p.height - t - b)) { p.place(-s, -t) }
+}
+
 /**
  * The greeting card. [onPress] for a tap on the card, [onClose] for its X,
- * [onStarter] for a suggested question.
+ * [onStarter] for a suggested question. Its figure (the owner's mascot with
+ * mascotInGreeting, else the avatar) and the card move as the owner chose
+ * (mascotMotion, mascot/GreetingMotion). [leaving] (open / close): the card
+ * is going, drawn while its leaving moves play, then [onGone]. [launcher]:
+ * the launcher's box under it (w, h dp, left / right), for the hand-off.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -152,6 +176,9 @@ internal fun GreetingCard(
     onClose: () -> Unit,
     onStarter: (String) -> Unit,
     modifier: Modifier = Modifier,
+    leaving: String? = null,
+    onGone: () -> Unit = {},
+    launcher: Triple<Float, Float, String>? = null,
 ) {
     val context = LocalContext.current
     val reduced = remember {
@@ -165,10 +192,35 @@ internal fun GreetingCard(
     val accent = hexColor(data.accent, Color(0xFF4F46E5))
     val width = (WIDTH[style] ?: 296).dp
 
-    // ---- Entrance (cb-greet-spring 620ms; notification slides down; neon flickers) ----
-    val enter = remember { Animatable(if (reduced) 1f else 0f) }
+    // ---- The card and its figure alive (core MascotMotion): the spring or the plain entrance, the figure's moves, the ping, the words, the leaving ----
+    val withMascot = data.mascot != null
+    val figureSize = if (withMascot) 40f else 32f
+    val gm = com.conferbot.sdk.ui.compose.mascot.rememberGreetingMotion(
+        mode = data.motion,
+        style = style,
+        text = data.text,
+        figure = if (withMascot) "mascot" else if (data.head.avatar != null && style != "imessage") "avatar" else null,
+        reduced = reduced,
+        leaving = leaving,
+        onGone = onGone,
+    )
+    var cardH by remember { mutableStateOf(120f) }
+    gm.toward = {
+        launcher?.let { (lw, lh, pos) ->
+            // The figure sits at the card's top left (16, 14 in); the launcher 12 below the card, its outer edge in line.
+            val w = (WIDTH[style] ?: 296).toFloat()
+            val fx = 16 + figureSize / 2
+            val fy = 14 + figureSize / 2
+            val lx = if (pos == "right") w - lw / 2 else lw / 2
+            (lx - fx).toDouble() to (cardH + 12 + lh / 2 - fy).toDouble()
+        }
+    }
+
+    // ---- Entrance: the notification slides down and neon flickers (their own); the rest above ----
+    val ownEntrance = style == "neon" || style == "notification"
+    val enter = remember { Animatable(if (reduced || !ownEntrance) 1f else 0f) }
     LaunchedEffect(Unit) {
-        if (reduced) return@LaunchedEffect
+        if (reduced || !ownEntrance) return@LaunchedEffect
         if (style == "neon") {
             // Hard steps: 0, 1, .3, 1, .55, 1 at 0/90/144/216/270/342ms.
             for ((d, v) in listOf(90L to 1f, 54L to 0.3f, 72L to 1f, 54L to 0.55f, 72L to 1f)) {
@@ -278,16 +330,46 @@ internal fun GreetingCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxWidth().padding(end = if (style == "postcard") 62.dp else 22.dp),
         ) {
-            if (showAvatar && data.head.avatar != null) {
-                coil.compose.AsyncImage(
-                    model = data.head.avatar,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(avatar.dp)
-                        .clip(RoundedCornerShape((avatarRadius ?: (avatar / 2)).dp))
-                        .background(Color(0xFFEEF2F7)),
-                )
+            val mascot = data.mascot
+            if (mascot != null) {
+                // The mascot on the card (polish-home.css .cb-greet__mascot): 40 x 40, blinking, waving twice as the card appears.
+                Box(
+                    Modifier
+                        .negativeMargins(top = 6.dp, bottom = 4.dp, start = 2.dp)
+                        .size(40.dp)
+                        .figureBreath(gm),
+                ) {
+                    Box(Modifier.figureGesture(gm)) {
+                        Box(Modifier.figureTalk(gm)) {
+                            val layers = com.conferbot.sdk.ui.compose.mascot.rememberMascotLayers(mascot.accent, "wave", mascot.look)
+                            com.conferbot.sdk.ui.compose.mascot.MascotMoodFigure(
+                                layers = layers,
+                                look = mascot.look,
+                                size = 40f,
+                                mood = "wave",
+                                arm = "wave",
+                                waveCount = 2.0,
+                                reduced = reduced,
+                            )
+                        }
+                    }
+                }
+            } else if (showAvatar && data.head.avatar != null) {
+                Box(Modifier.figureBreath(gm)) {
+                    Box(Modifier.figureGesture(gm)) {
+                        Box(Modifier.figureTalk(gm)) {
+                            coil.compose.AsyncImage(
+                                model = data.head.avatar,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(avatar.dp)
+                                    .clip(RoundedCornerShape((avatarRadius ?: (avatar / 2)).dp))
+                                    .background(Color(0xFFEEF2F7)),
+                            )
+                        }
+                    }
+                }
             }
             val showStatus = statusText != null || data.head.online
             if (row) {
@@ -303,7 +385,13 @@ internal fun GreetingCard(
                     Text(shownName, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (showStatus) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            if (dot && statusText == null) Box(Modifier.size(7.dp).background(Color(0xFF22C55E), CircleShape))
+                            if (dot && statusText == null) {
+                                Box(Modifier.size(7.dp)) {
+                                    // The "Online" ping: the dot swells once and one soft ring goes out.
+                                    if (MascotMotion.Ping.ringed(style)) Box(Modifier.size(7.dp).pingMotion(gm, ring = true).background(Color(0xFF22C55E), CircleShape))
+                                    Box(Modifier.size(7.dp).pingMotion(gm, ring = false).background(Color(0xFF22C55E), CircleShape))
+                                }
+                            }
                             Text(statusText ?: "Online", style = baseStatus)
                         }
                     }
@@ -317,6 +405,22 @@ internal fun GreetingCard(
         val base = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.3.sp, color = Color(0xFF1E293B), fontFamily = cardFont).merge(s)
         val caret = style == "typewriter" && !reduced
         val shown = if (style == "typewriter") typed else data.text
+        val fading = gm.words
+        if (gm.wordsAt != null && fading != null && style != "typewriter") {
+            // The words fading up one by one (lively): each its own text, laid out as the line would wrap.
+            val lineH = if (base.lineHeight.isSp) base.lineHeight.value else 20.3f
+            FlowRow(
+                modifier = modifier
+                    .heightIn(max = (lineH * lines).dp)
+                    .clipToBounds()
+                    .semantics(mergeDescendants = true) { contentDescription = data.text },
+            ) {
+                fading.words.forEachIndexed { i, w ->
+                    Text(if (i < fading.words.size - 1) "$w " else w, style = base, modifier = Modifier.wordMotion(gm, i))
+                }
+            }
+            return
+        }
         Text(
             buildAnnotatedString {
                 append(shown)
@@ -375,17 +479,20 @@ internal fun GreetingCard(
 
     val tap = Modifier
         .semantics { contentDescription = data.text }
-        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onPress)
+        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, enabled = leaving == null, onClick = onPress)
 
     Box(
         modifier
             .width(width)
+            .onSizeChanged { cardH = it.height / density.density }
             .graphicsLayer {
+                if (!ownEntrance) return@graphicsLayer
                 alpha = enterAlpha
                 translationY = with(density) { enterY.dp.toPx() }
                 scaleX = enterScale
                 scaleY = enterScale
-            },
+            }
+            .greetingCardMotion(gm),
     ) {
         when (style) {
             "imessage" -> {
