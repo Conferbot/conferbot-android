@@ -26,7 +26,6 @@ import coil.compose.AsyncImage
 import com.conferbot.sdk.core.flow.FlowRich
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.nodes.NodeUIState
-import com.conferbot.sdk.core.nodes.handlers.CAROUSEL_CONTINUE
 import com.conferbot.sdk.core.nodes.handlers.CarouselCard
 import com.conferbot.sdk.core.nodes.handlers.FlowKit
 import com.conferbot.sdk.core.nodes.handlers.carouselCards
@@ -98,7 +97,7 @@ fun CardsStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, send: 
         else LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(end = 16.dp)) {
             items(cards, key = { it.id }) { c -> OneCard(c, style, busy, 230.dp) { send(FlowStepAnswer.cardButton(it, c.id)) } }
         }
-        if (onlyLinks) StepOption(CAROUSEL_CONTINUE, style, enabled = !busy) { send(FlowStepAnswer.cardsContinue) }
+        if (onlyLinks) StepOption(com.conferbot.sdk.core.i18n.t("common.continue"), style, enabled = !busy) { send(FlowStepAnswer.cardsContinue) }
         StepStatus(style, step.error)
     }
 }
