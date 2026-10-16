@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -218,7 +219,8 @@ class ChatActivity : AppCompatActivity() {
                     (ui as? com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover)
                         ?.takeIf { it.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT }
                         ?.let { com.conferbot.sdk.ui.compose.chat.HandoverWaitCard(message = it.handoverMessage) }
-                    com.conferbot.sdk.ui.compose.chat.LiveChatFooterCards(onUpload = { pickFile.launch("*/*") })
+                    val closed by remember { closedState() }.collectAsState(initial = null)
+                    com.conferbot.sdk.ui.compose.chat.LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }, closed = closed)
                     lockedBy?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("This conversation has been locked") }
                     agentLost?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("$it's connection dropped. Hang on, they should be right back.") }
                     com.conferbot.sdk.ui.compose.chat.QuickActionsStrip()
@@ -233,6 +235,21 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
+    /** The chat's closed state: blocked, or a live chat ended with nothing going on. */
+    private fun closedState() = combine(
+        com.conferbot.sdk.core.state.ChatState.record,
+        Conferbot.liveChat.blocked,
+        Conferbot.isLiveChatMode,
+        Conferbot.currentAgent
+    ) { record, blocked, live, agent ->
+        com.conferbot.sdk.core.livechat.LiveEvents.closedStateOf(
+            com.conferbot.sdk.core.livechat.LiveEvents.kindsOf(record),
+            blocked = blocked,
+            stepWaiting = Conferbot.currentUIState.value != null || Conferbot.isProcessingNode.value,
+            live = live && agent != null
+        )
+    }
+
     private fun setupObservers() {
         // Live chat: the paperclip, and the composer while the agent turned
         // replies off or locked the conversation.
@@ -245,12 +262,19 @@ class ChatActivity : AppCompatActivity() {
             Conferbot.liveChat.visitorInputEnabled
         ) { live, requested, custom, locked, inputOn ->
             val attach = live && (com.conferbot.sdk.core.livechat.LiveChat.visitorUploadsOn(custom) || requested != null)
-            Triple(attach, locked != null || !inputOn, Unit)
+            attach to (locked != null || !inputOn)
         }
-            .onEach { (attach, repliesOff, _) ->
-                binding.attachButton.visibility = if (attach) View.VISIBLE else View.GONE
+            // Blocked, or ended with nothing going on: the composer is off
+            // with the closed line as its hint (core/livechat/LiveEvents.kt).
+            .combine(closedState()) { (attach, repliesOff), closed -> Triple(attach, repliesOff || closed?.inputOff == true, closed) }
+            .onEach { (attach, repliesOff, closed) ->
+                binding.attachButton.visibility = if (attach && closed == null) View.VISIBLE else View.GONE
                 binding.messageInput.isEnabled = !repliesOff
-                binding.messageInput.hint = if (repliesOff) "Replies are turned off for now" else "Type a message..."
+                binding.messageInput.hint = when {
+                    closed?.inputOff == true -> closed.text
+                    repliesOff -> "Replies are turned off for now"
+                    else -> "Type a message..."
+                }
                 binding.sendButton.isEnabled = !repliesOff && !binding.messageInput.text.isNullOrBlank()
             }
             .launchIn(lifecycleScope)
