@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.nodes.NodeUIState
 import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 
@@ -295,7 +296,7 @@ fun AudioNode(
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause audio" else "Play audio",
+                            contentDescription = if (isPlaying) t("sdk.media.pauseAudio") else t("sdk.media.playAudio"),
                             tint = theme.colors.primary,
                             modifier = Modifier.size(24.dp)
                         )
@@ -362,7 +363,7 @@ fun FileNode(
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     Icon(
                         imageVector = Icons.Default.Description,
-                        contentDescription = "File",
+                        contentDescription = t("file.file"),
                         tint = theme.colors.primary,
                         modifier = Modifier.size(22.dp)
                     )
@@ -393,7 +394,7 @@ fun FileNode(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Download,
-                        contentDescription = "Download",
+                        contentDescription = t("file.download"),
                         tint = theme.colors.primary,
                         modifier = Modifier.size(18.dp)
                     )
@@ -482,7 +483,7 @@ fun FileUploadNode(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Dismiss",
+                            contentDescription = t("common.dismiss"),
                             tint = Color(0xFFC62828),
                             modifier = Modifier.size(14.dp)
                         )
@@ -534,7 +535,7 @@ fun FileUploadNode(
                                     if (selectedFiles.size < state.maxFiles) {
                                         selectedFiles = selectedFiles + fileInfo
                                     } else {
-                                        errorMessage = "Maximum ${state.maxFiles} files allowed"
+                                        errorMessage = t("sdk.file.maxFiles", "n" to state.maxFiles)
                                     }
                                 } else {
                                     selectedFiles = listOf(fileInfo)
@@ -590,7 +591,7 @@ fun FileUploadNode(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (selectedFiles.size == 1) "Upload File" else "Upload ${selectedFiles.size} Files",
+                                text = if (selectedFiles.size == 1) t("sdk.file.upload") else t("sdk.file.uploadMany"),
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
@@ -744,7 +745,7 @@ private fun SelectedFileCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Remove file",
+                    contentDescription = t("sdk.file.remove", "name" to fileName),
                     tint = theme.colors.error,
                     modifier = Modifier.size(16.dp)
                 )
@@ -818,7 +819,7 @@ private fun FileUploadProgressCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Uploading... ${(animatedProgress * 100).toInt()}%",
+                        text = "${t("sdk.file.uploading")} ${(animatedProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.labelSmall,
                         color = theme.colors.onSurfaceVariant
                     )
@@ -830,7 +831,7 @@ private fun FileUploadProgressCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Cancel upload",
+                        contentDescription = t("common.cancel"),
                         tint = theme.colors.error,
                         modifier = Modifier.size(18.dp)
                     )
@@ -891,7 +892,7 @@ private fun UploadSuccessIndicator(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Success",
+                    contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
@@ -901,7 +902,7 @@ private fun UploadSuccessIndicator(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Upload complete",
+                    text = t("sdk.file.uploaded"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFF2E7D32)
                 )
@@ -941,7 +942,7 @@ private fun UploadErrorIndicator(
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
-                contentDescription = "Error",
+                contentDescription = null,
                 tint = Color(0xFFC62828),
                 modifier = Modifier.size(24.dp)
             )
@@ -950,7 +951,7 @@ private fun UploadErrorIndicator(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Upload failed",
+                    text = t("sdk.upload.failedTitle"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFFC62828)
                 )
@@ -964,7 +965,7 @@ private fun UploadErrorIndicator(
 
             TextButton(onClick = onRetry) {
                 Text(
-                    text = "Retry",
+                    text = t("common.tryAgain"),
                     color = Color(0xFFC62828),
                     style = MaterialTheme.typography.labelLarge
                 )
@@ -1194,7 +1195,7 @@ fun MultipleChoiceNode(
                 ) {
                     Icon(Icons.Default.Check, null, Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Submit (${selectedIds.size})", fontSize = 13.sp)
+                    Text(t("sdk.select.submit", "n" to selectedIds.size), fontSize = 13.sp)
                 }
             }
         }
@@ -1300,7 +1301,7 @@ fun ImageChoiceNode(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
+                                    contentDescription = t("sdk.select.selected"),
                                     tint = Color.White,
                                     modifier = Modifier.size(14.dp)
                                 )
@@ -1427,7 +1428,7 @@ private fun StarRating(
             ) {
                 Icon(
                     imageVector = if (isActive) Icons.Filled.Star else Icons.Filled.StarOutline,
-                    contentDescription = "Rating $index",
+                    contentDescription = t("sdk.rating.rate", "n" to index, "max" to maxRating),
                     tint = starColor,
                     modifier = Modifier
                         .size(36.dp)
@@ -1614,7 +1615,7 @@ fun DropdownNode(
                     .menuAnchor(),
                 placeholder = {
                     Text(
-                        "Select an option",
+                        t("sdk.select.placeholder"),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 },
@@ -1743,7 +1744,7 @@ fun RangeNode(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp),
                 enabled = !submitted
             ) {
-                Text("Submit", style = MaterialTheme.typography.labelLarge)
+                Text(t("common.submit"), style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -1787,7 +1788,7 @@ fun CalendarNode(
             Column(modifier = Modifier.padding(16.dp)) {
                 // Date selection
                 Text(
-                    text = "Select Date",
+                    text = t("booking.selectDate"),
                     style = MaterialTheme.typography.labelLarge,
                     color = theme.colors.onSurfaceVariant
                 )
@@ -1810,7 +1811,7 @@ fun CalendarNode(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = selectedDate.ifEmpty { "Choose a date" },
+                        text = selectedDate.ifEmpty { t("sdk.date.placeholder") },
                         color = if (selectedDate.isEmpty())
                             theme.colors.onSurfaceVariant
                         else
@@ -1823,7 +1824,7 @@ fun CalendarNode(
                 if (state.showTimeSelection) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Select Time",
+                        text = t("booking.selectTime"),
                         style = MaterialTheme.typography.labelLarge,
                         color = theme.colors.onSurfaceVariant
                     )
@@ -1846,7 +1847,7 @@ fun CalendarNode(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = selectedTime.ifEmpty { "Choose a time" },
+                            text = selectedTime.ifEmpty { t("sdk.time.placeholder") },
                             color = if (selectedTime.isEmpty())
                                 theme.colors.onSurfaceVariant
                             else
@@ -1875,7 +1876,7 @@ fun CalendarNode(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp),
                 enabled = selectedDate.isNotEmpty() && !submitted
             ) {
-                Text("Confirm", style = MaterialTheme.typography.labelLarge)
+                Text(t("action.confirm"), style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -1901,12 +1902,12 @@ fun CalendarNode(
                         showDatePicker = false
                     }
                 ) {
-                    Text("OK")
+                    Text(t("sdk.common.ok"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) {
-                    Text("Cancel")
+                    Text(t("common.cancel"))
                 }
             }
         ) {
@@ -1918,7 +1919,7 @@ fun CalendarNode(
     if (showTimePicker) {
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
-            title = { Text("Select Time") },
+            title = { Text(t("booking.selectTime")) },
             text = {
                 Box(
                     modifier = Modifier.fillMaxWidth(),
@@ -1938,12 +1939,12 @@ fun CalendarNode(
                         showTimePicker = false
                     }
                 ) {
-                    Text("OK")
+                    Text(t("sdk.common.ok"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) {
-                    Text("Cancel")
+                    Text(t("common.cancel"))
                 }
             }
         )
@@ -2174,7 +2175,7 @@ fun HumanHandoverNode(
             NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE -> {
                 // The owner's fallback, as the bot says it; leave a message follows.
                 Text(
-                    text = state.handoverMessage ?: "No agents are available at the moment.",
+                    text = state.handoverMessage ?: t("sdk.handover.noAgentsShort"),
                     color = theme.colors.botBubbleText,
                     style = androidx.compose.ui.text.TextStyle(fontFamily = theme.typography.fontFamily, fontSize = theme.typography.messageSize, lineHeight = theme.typography.messageSize * 1.4f),
                     modifier = Modifier
@@ -2206,7 +2207,7 @@ fun HumanHandoverNode(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Loading survey...",
+                            text = t("sdk.survey.loading"),
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center,
                             color = theme.colors.onSurfaceVariant
@@ -2315,7 +2316,7 @@ fun PaymentNode(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Payment",
+                text = t("pay.payment"),
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -2362,7 +2363,7 @@ fun PaymentNode(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    "Pay Now",
+                    t("pay.payNow"),
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -2406,7 +2407,7 @@ fun RedirectNode(
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     Icon(
                         imageVector = Icons.Default.OpenInNew,
-                        contentDescription = "Redirect",
+                        contentDescription = null,
                         tint = ConferbotThemeAmbient.current.colors.primary,
                         modifier = Modifier.size(16.dp)
                     )
@@ -2414,7 +2415,7 @@ fun RedirectNode(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Redirecting...",
+                text = t("sdk.redirect.redirecting"),
                 style = MaterialTheme.typography.bodyMedium
             )
         }
