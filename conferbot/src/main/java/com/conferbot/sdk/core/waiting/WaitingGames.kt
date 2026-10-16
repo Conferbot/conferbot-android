@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.waiting
 
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.livechat.SignalTimer
 
 /**
@@ -28,23 +29,33 @@ import com.conferbot.sdk.core.livechat.SignalTimer
  */
 object WaitingGames {
 
-    data class GameMeta(val id: String, val emoji: String, val name: String, /** One line for the menu. */ val blurb: String)
+    /** A game's entry; its name and line are read in the active language (web ui.ts gameName, games.<id>.name / .blurb). */
+    data class GameMeta(val id: String, val emoji: String) {
+        val name: String get() = t("games.$id.name")
+
+        /** One line for the menu. */
+        val blurb: String get() = t("games.$id.blurb")
+    }
 
     val GAMES: List<GameMeta> = listOf(
-        GameMeta("rps", "✊", "Rock paper scissors", "Best of three against the bot"),
-        GameMeta("ttt", "⭕", "Tic-tac-toe", "Three in a row beats the bot"),
-        GameMeta("quiz", "🧠", "Quick quiz", "Three quick questions"),
-        GameMeta("memory", "🃏", "Memory match", "Find the six pairs"),
-        GameMeta("reaction", "⚡", "Reflex test", "Tap the moment it turns green"),
-        GameMeta("emoji", "🤔", "Emoji riddles", "Guess the phrase from the emoji"),
-        GameMeta("scramble", "🔤", "Word scramble", "Unscramble the letters")
+        GameMeta("rps", "✊"),
+        GameMeta("ttt", "⭕"),
+        GameMeta("quiz", "🧠"),
+        GameMeta("memory", "🃏"),
+        GameMeta("reaction", "⚡"),
+        GameMeta("emoji", "🤔"),
+        GameMeta("scramble", "🔤")
     )
 
     val GAME_IDS: List<String> = GAMES.map { it.id }
 
     fun gameMeta(id: String): GameMeta? = GAMES.firstOrNull { it.id == id }
 
+    /** The stock offer as stored (English); drawn as [offerLine] (web ui.ts: the stock line is t("games.offer")). */
     const val DEFAULT_OFFER_TEXT = "While you wait - fancy a quick game? 🎮"
+
+    /** The offer as drawn: the stock line in the active language, the owner's own as written. */
+    fun offerLine(offerText: String): String = if (offerText == DEFAULT_OFFER_TEXT) t("games.offer") else offerText
     const val OFFER_TEXT_MAX = 140
 
     /**
