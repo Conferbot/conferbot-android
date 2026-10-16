@@ -143,8 +143,9 @@ object FlowStepAnswer {
 
     private val MONTHS = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
-    /** "2026-10" -> "October 2026" */
-    fun monthTitle(ym: String): String = "${MONTHS[ym.substring(5, 7).toInt() - 1]} ${ym.take(4)}"
+    /** "2026-10" -> "October 2026" (in the widget's language: "Oktober 2026"). */
+    fun monthTitle(ym: String): String =
+        "${com.conferbot.sdk.core.i18n.I18n.monthNames("long", MONTHS)[ym.substring(5, 7).toInt() - 1]} ${ym.take(4)}"
 
     /** A day within a date step's minDate / maxDate (today is the visitor's "YYYY-MM-DD"). */
     fun dayInBounds(data: Map<String, Any?>?, day: String, today: String): Boolean {
