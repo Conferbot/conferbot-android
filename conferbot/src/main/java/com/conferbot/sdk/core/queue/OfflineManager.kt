@@ -29,23 +29,27 @@ interface OfflineManagerListener {
  * Central manager for offline mode functionality.
  * Coordinates NetworkMonitor, OfflineMessageQueue, QueueProcessor, and QueuePersistence.
  */
-class OfflineManager(
+class OfflineManager internal constructor(
     private val context: Context,
-    private val enabled: Boolean = true
+    private val enabled: Boolean,
+    private val networkMonitor: NetworkMonitor,
+    dispatcher: CoroutineDispatcher
 ) : QueueProcessorCallback {
+
+    constructor(context: Context, enabled: Boolean = true) :
+        this(context, enabled, NetworkMonitor(context), Dispatchers.IO)
 
     companion object {
         private const val TAG = "OfflineManager"
     }
 
     // Core components
-    private val networkMonitor = NetworkMonitor(context)
     private val messageQueue = OfflineMessageQueue()
     private val persistence = QueuePersistence(context)
     private lateinit var processor: QueueProcessor
 
     // Coroutine scope for background operations
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(dispatcher + SupervisorJob())
 
     // State flows
     private val _isOnline = MutableStateFlow(true)
