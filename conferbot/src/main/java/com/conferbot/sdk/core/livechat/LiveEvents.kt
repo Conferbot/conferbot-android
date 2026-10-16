@@ -15,6 +15,8 @@ import com.conferbot.sdk.core.i18n.t
  *                             the same end, and draws nothing
  *   ts/chat/closedState.ts    the closed chat ("This conversation has been
  *                             closed."), index.ts _applyVisitorBlock
+ *   agentListeners.ts         ai-agent-inactive-close: "Chat paused" or,
+ *                             for continue_flow, "Chat ended"
  *
  * Pure: works on the record's types and the socket maps.
  */
@@ -82,6 +84,63 @@ object LiveEvents {
     /** The conversation's record as [endedSinceLastLive] reads it. */
     fun kindsOf(record: List<com.conferbot.sdk.core.state.RecordEntry>): List<Pair<String?, String?>> =
         record.map { (it.type?.takeIf { t -> t.isNotEmpty() }) to it.shape }
+
+    // ---- The AI let an idle visitor go (ai-agent-inactive-close) ----
+
+    /**
+     * What an inactivity close does (web agentListeners.ts
+     * ai-agent-inactive-close; server aiInactivityHandler.js
+     * closeInactiveWebChat, which sends `action`: the agent's onCloseAction).
+     *
+     *   paused       only paused: "Chat paused" with "Send a message to pick
+     *                up where you left off". The composer stays on and the
+     *                visitor's next message reopens it (the server's
+     *                ai-agent-resumed). Always for an agent bot (no flow), and
+     *                for any action but continue_flow.
+     *   continueFlow the AI moved on for good: "Chat ended", the live chat is
+     *                over and the flow carries on from its handover step along
+     *                the next edge (web _handoverProceedToNextStep: no survey).
+     */
+    data class InactiveClosePlan(val paused: Boolean, val continueFlow: Boolean)
+
+    fun inactiveClosePlan(data: Map<String, Any?>?, agentBotChat: Boolean): InactiveClosePlan {
+        val continueFlow = data?.get("action") == "continue_flow" && !agentBotChat
+        return InactiveClosePlan(paused = !continueFlow, continueFlow = continueFlow)
+    }
+
+    const val INACTIVE_CLOSE = "ai-agent-inactive-close"
+
+    /** The entry's English text (the record's copy); drawn with [inactiveCloseLine]. */
+    const val CHAT_PAUSED_TEXT = "Chat paused"
+
+    /**
+     * Its record entry: its own id (a second pause must not merge into the
+     * first), the server's `action`, and `paused` so a restart draws the same
+     * line. Returns the id, the English text and the entry's data.
+     */
+    data class InactiveCloseEntry(val id: String, val text: String, val paused: Boolean, val data: Map<String, Any?>)
+
+    fun inactiveCloseEntry(data: Map<String, Any?>?, agentBotChat: Boolean, now: Long = System.currentTimeMillis()): InactiveCloseEntry {
+        val paused = inactiveClosePlan(data, agentBotChat).paused
+        val action = data?.get("action") as? String
+        return InactiveCloseEntry(
+            id = eventId(INACTIVE_CLOSE, now),
+            text = if (paused) CHAT_PAUSED_TEXT else CHAT_ENDED_TEXT,
+            paused = paused,
+            data = buildMap {
+                action?.let { put("action", it) }
+                put("paused", paused)
+            }
+        )
+    }
+
+    /** The line as drawn, in the active language: its words and the note under them (none for an end). */
+    data class InactiveCloseLine(val text: String, val note: String?, val paused: Boolean)
+
+    /** web system.chatPaused + system.chatPausedNote, or system.chatEnded. An entry without `paused` (older records) is a pause. */
+    fun inactiveCloseLine(paused: Boolean?): InactiveCloseLine =
+        if (paused == false) InactiveCloseLine(t("system.chatEnded"), null, false)
+        else InactiveCloseLine(t("system.chatPaused"), t("system.chatPausedNote"), true)
 
     // ---- Blocked, and the closed chat ----
 
