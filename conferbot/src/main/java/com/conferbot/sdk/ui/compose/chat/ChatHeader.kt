@@ -81,7 +81,11 @@ fun ChatHeader(
     val spacing = theme.spacing
 
     var showMenu by remember { mutableStateOf(false) }
-    var soundEnabled by remember { mutableStateOf(true) }
+    // The visitor's Sound on / off, kept on the device; offered only when the bot has a sound (core/sound).
+    val soundEnabled by com.conferbot.sdk.core.Conferbot.sounds.soundOn.collectAsState()
+    val customizationMap by com.conferbot.sdk.core.Conferbot.serverCustomizationMap.collectAsState()
+    val hasSounds = remember(customizationMap) { com.conferbot.sdk.core.sound.MessageSound.hasAnySound(customizationMap) }
+    LaunchedEffect(Unit) { com.conferbot.sdk.core.Conferbot.sounds.load() }
     val coroutineScope = rememberCoroutineScope()
 
     Surface(
@@ -274,9 +278,10 @@ fun ChatHeader(
                             Icon(Icons.Filled.Close, null, Modifier.size(18.dp))
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text(if (soundEnabled) I18n.t("chat.menu.soundOff") else I18n.t("chat.menu.soundOn"), fontSize = 14.sp) },
-                        onClick = { soundEnabled = !soundEnabled; showMenu = false },
+                    if (hasSounds) DropdownMenuItem(
+                        // The switch's state, as the web's menu words it.
+                        text = { Text(if (soundEnabled) I18n.t("chat.menu.soundOn") else I18n.t("chat.menu.soundOff"), fontSize = 14.sp) },
+                        onClick = { com.conferbot.sdk.core.Conferbot.sounds.toggle(); showMenu = false },
                         leadingIcon = {
                             Icon(
                                 if (soundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
