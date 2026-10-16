@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.knowledgebase
 
+import com.conferbot.sdk.core.i18n.t
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,7 +53,7 @@ fun ArticleSearchBar(
     onArticleClick: (KnowledgeBaseArticle) -> Unit,
     onSearch: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Search for articles...",
+    placeholder: String = t("kb.searchPlaceholder"),
     primaryColor: Color = Color(0xFF0100EC),
     maxResults: Int = 5
 ) {
@@ -85,7 +86,7 @@ fun ArticleSearchBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
+                    contentDescription = t("kb.searchLabel"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
@@ -142,7 +143,7 @@ fun ArticleSearchBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear search",
+                            contentDescription = t("kb.clearSearch"),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
                         )
@@ -206,7 +207,7 @@ fun ArticleSearchBar(
                                 .padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
                             Text(
-                                text = "View all ${searchResults.size} results",
+                                text = t("sdk.kb.viewAll", "n" to searchResults.size),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = primaryColor
                             )
@@ -245,7 +246,7 @@ fun ArticleSearchBar(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "No articles found",
+                        text = t("kb.noResults"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -345,7 +346,7 @@ private fun SearchResultItem(
 fun CompactSearchBar(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "Search articles..."
+    placeholder: String = t("kb.searchPlaceholder")
 ) {
     Surface(
         modifier = modifier
@@ -362,7 +363,7 @@ fun CompactSearchBar(
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
-                contentDescription = "Search",
+                contentDescription = t("kb.searchLabel"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
             )
