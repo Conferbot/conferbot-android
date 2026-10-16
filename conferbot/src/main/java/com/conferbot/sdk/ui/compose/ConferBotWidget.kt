@@ -236,7 +236,13 @@ fun ConferBotWidget(
     val serverCustomization by Conferbot.serverCustomization.collectAsState()
 
     // Synchronise visibility with the singleton so the SDK can suppress in-app notifications.
+    // Opening and closing: the launcher sound, or the pack's open / close (core/sound).
+    var wasOpen by remember { mutableStateOf(isChatOpen) }
     LaunchedEffect(isChatOpen) {
+        if (wasOpen != isChatOpen) {
+            wasOpen = isChatOpen
+            Conferbot.sounds.play(if (isChatOpen) com.conferbot.sdk.core.sound.MessageSound.Event.OPEN else com.conferbot.sdk.core.sound.MessageSound.Event.CLOSE)
+        }
         Conferbot.setChatVisible(isChatOpen)
         if (isChatOpen) {
             Conferbot.resetUnreadCount()
