@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
@@ -61,7 +62,7 @@ fun ChatBottomBar(
     modifier: Modifier = Modifier,
     /** Off while the agent turned replies off or locked the conversation. */
     enabled: Boolean = true,
-    placeholder: String = "Type a message...",
+    placeholder: String = I18n.t("chat.composer.placeholder"),
     /** The paperclip: shown when given (a live chat that takes visitor files). */
     onAttach: (() -> Unit)? = null
 ) {
@@ -123,7 +124,7 @@ fun ChatBottomBar(
                 IconButton(onClick = onAttach, enabled = enabled, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Filled.AttachFile,
-                        contentDescription = "Attach a file",
+                        contentDescription = I18n.t("chat.composer.attach"),
                         tint = colors.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f)
                     )
                 }
@@ -190,7 +191,7 @@ fun ChatBottomBar(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Send,
-                        contentDescription = "Send",
+                        contentDescription = I18n.t("chat.composer.send"),
                         // Readable on whatever the header colour is.
                         tint = sendInk,
                         modifier = Modifier.size(20.dp)
@@ -230,7 +231,7 @@ fun ChatBottomBar(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "Powered by ",
+                            text = I18n.t("chat.poweredBy") + " ",
                             style = TextStyle(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
