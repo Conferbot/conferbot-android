@@ -481,6 +481,18 @@ object Conferbot {
         }
     }
 
+    // ========== Sounds ==========
+    // A message arriving, the chat opening and closing, the visitor sending,
+    // under the owner's messageSound / soundPack / launcher sound, and the
+    // visitor's Sound on / off kept on the device (core/sound).
+    val sounds: com.conferbot.sdk.core.sound.ChatSounds by lazy {
+        com.conferbot.sdk.core.sound.ChatSounds(
+            prefs = { appContext?.getSharedPreferences("conferbot_prefs", Context.MODE_PRIVATE) },
+            context = { appContext },
+            customizations = { _serverCustomizationMap.value }
+        )
+    }
+
     /**
      * A row of the while-you-wait card: an article opens in the chat's help
      * centre while it is on, else it is fetched by id and shown on its own
@@ -833,6 +845,8 @@ object Conferbot {
                 connectSocket()
             }
             startRequests()
+            // A message arriving plays the owner's message sound (core/sound).
+            scope.launch { _record.collect { sounds.onRecord(it) } }
 
             _isInitialized.value = true
             Log.d(TAG, "SDK initialized with pagination support")
@@ -2394,6 +2408,9 @@ object Conferbot {
             Log.w(TAG, "Cannot send message: no session or empty text")
             return
         }
+
+        // A sound pack's send sound (web messageSound.ts mountSoundPack).
+        sounds.play(com.conferbot.sdk.core.sound.MessageSound.Event.SEND)
 
         // Waiting for a person: "play" or "games" opens the games menu instead
         // of being sent (core/waiting/WaitingGames.kt, web games/wire.ts).
