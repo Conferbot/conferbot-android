@@ -1,5 +1,7 @@
 package com.conferbot.sdk.ui.compose.knowledgebase
 
+import com.conferbot.sdk.core.i18n.tPlural
+import com.conferbot.sdk.core.i18n.t
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -64,7 +66,7 @@ fun KnowledgeBaseScreen(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     primaryColor: Color = Color(0xFF0100EC),
-    title: String = "Help Center",
+    title: String = t("home.helpCentre"),
     embedded: Boolean = false,
     showRecent: Boolean = true,
     openRequest: Conferbot.HelpArticleRequest? = null,
@@ -190,7 +192,7 @@ fun KnowledgeBaseScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Dismiss",
+                                contentDescription = t("common.dismiss"),
                                 tint = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
@@ -321,8 +323,8 @@ private fun EmbeddedBackRow(
 ) {
     val label = when (navState) {
         is KnowledgeBaseNavState.ArticleList -> navState.category.name
-        is KnowledgeBaseNavState.ArticleDetail -> navState.category?.name ?: navState.article.categoryName ?: "Help Center"
-        is KnowledgeBaseNavState.SearchResults -> "Search: ${navState.query}"
+        is KnowledgeBaseNavState.ArticleDetail -> navState.category?.name ?: navState.article.categoryName ?: t("home.helpCentre")
+        is KnowledgeBaseNavState.SearchResults -> t("sdk.kb.searchTitle", "query" to navState.query)
         else -> ""
     }
     Row(
@@ -330,7 +332,7 @@ private fun EmbeddedBackRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBackClick) {
-            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = primaryColor)
+            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = t("common.back"), tint = primaryColor)
         }
         Text(
             text = label,
@@ -358,7 +360,7 @@ private fun KnowledgeBaseTopBar(
         is KnowledgeBaseNavState.Categories -> title
         is KnowledgeBaseNavState.ArticleList -> navState.category.name
         is KnowledgeBaseNavState.ArticleDetail -> navState.article.title
-        is KnowledgeBaseNavState.SearchResults -> "Search: ${navState.query}"
+        is KnowledgeBaseNavState.SearchResults -> t("sdk.kb.searchTitle", "query" to navState.query)
     }
 
     val showBackButton = navState !is KnowledgeBaseNavState.Categories
@@ -376,21 +378,21 @@ private fun KnowledgeBaseTopBar(
                 IconButton(onClick = onBackClick) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = t("common.back")
                     )
                 }
             } else if (backAtRoot) {
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = t("common.back")
                     )
                 }
             } else {
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close"
+                        contentDescription = t("common.close")
                     )
                 }
             }
@@ -463,7 +465,7 @@ private fun CategoriesScreen(
                 if (showRecent && recent.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Recent articles",
+                            text = t("home.recentArticles"),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -477,7 +479,7 @@ private fun CategoriesScreen(
                 // Section header
                 item {
                     Text(
-                        text = "Browse by Category",
+                        text = t("sdk.kb.browseCategories"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -577,7 +579,7 @@ private fun SearchResultsScreen(
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "Search Results",
+                    text = t("sdk.kb.searchResults"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -586,7 +588,7 @@ private fun SearchResultsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "${results.size} result${if (results.size != 1) "s" else ""} for \"$query\"",
+                    text = tPlural("kb.resultsFor", results.size, mapOf("query" to "“$query”")),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -598,7 +600,7 @@ private fun SearchResultsScreen(
             articles = results,
             onArticleClick = onArticleClick,
             primaryColor = primaryColor,
-            emptyMessage = "No articles found for \"$query\"",
+            emptyMessage = t("kb.noResultsFor", "query" to query),
             modifier = Modifier.fillMaxSize()
         )
     }
