@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.models.RecordItem
 
@@ -90,26 +91,38 @@ data class RestoredLiveChat(
 
 object HandoverState {
 
-    /** The web's English strings (ts/i18n/en.ts handover.*, system.*). */
-    const val PENDING_TEXT = "Connecting you with the team…"
+    /** The web's strings (ts/i18n handover.*), read in the active language. */
+    val PENDING_TEXT: String get() = t("handover.pending")
+
+    /**
+     * The note under a person's join after an AI handed the visitor on. Kept
+     * in English as the marker (the web's HANDED_OVER_NOTE); [handedOverNote]
+     * draws it in the active language.
+     */
     const val HANDED_OVER_NOTE = "They can see your conversation so far"
 
+    /** That note as drawn, in the active language (web system.handedOverNote). */
+    val handedOverNote: String get() = t("system.handedOverNote")
+
+    /** A join's note as drawn: the marker in the active language, else as written. */
+    fun handedOverNoteText(note: String): String = if (note == HANDED_OVER_NOTE) handedOverNote else note
+
     fun outcomeText(o: HandoverOutcome): String = when (o) {
-        HandoverOutcome.JOINED -> "Connected with the team"
-        HandoverOutcome.UNAVAILABLE -> "The team couldn't join just now"
-        HandoverOutcome.CANCELLED -> "You left the queue"
-        HandoverOutcome.ENDED -> "Chat ended before the team joined"
+        HandoverOutcome.JOINED -> t("handover.joined")
+        HandoverOutcome.UNAVAILABLE -> t("handover.unavailable")
+        HandoverOutcome.CANCELLED -> t("handover.cancelled")
+        HandoverOutcome.ENDED -> t("handover.ended")
     }
 
     /** The line's words: pending, or how the wait ended. */
     fun lineText(settled: HandoverOutcome?): String = settled?.let(::outcomeText) ?: PENDING_TEXT
 
     /** "<name> joined the chat" (web agentJoinedDivider.ts). */
-    fun joinedText(name: String?): String = "${name?.trim().orEmpty().ifEmpty { "An agent" }} joined the chat"
+    fun joinedText(name: String?): String = "${name?.trim().orEmpty().ifEmpty { t("agent.anAgent") }}${t("system.joined")}"
 
     /** "<name> left the chat", or the pending line for a handover (web agentLeftDivider.ts). */
     fun agentLeftText(name: String?, handover: Boolean): String =
-        if (handover) lineText(null) else "${name?.trim().orEmpty().ifEmpty { "The agent" }} left the chat"
+        if (handover) lineText(null) else "${name?.trim().orEmpty().ifEmpty { t("agent.theAgent") }}${t("system.left")}"
 
     // ---------- reading the record ----------
 
