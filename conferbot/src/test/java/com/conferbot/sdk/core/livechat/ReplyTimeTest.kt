@@ -119,4 +119,32 @@ class ReplyTimeTest {
         assertThat(p(online("few_minutes").copy(state = "offline"), agent = true)).isEqualTo(ReplyLine("Answers instantly, day or night", ReplyTone.ONLINE))
         assertThat(p(ReplyTimeInfo(mode = "hide", handover = true), agent = true).text).isEqualTo("Answers instantly, day or night")
     }
+
+    // ---- typicalWait (the wait card, web replyTime.ts typicalWait) ----
+
+    @Test
+    fun `the wait card says the routed team's usual wait first, else the workspace's`() {
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "auto", bucket = "few_hours"), mapOf("bucket" to "under_minute"))).isEqualTo("Typical wait: under a minute")
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "auto", bucket = "few_hours"), null)).isEqualTo("Typical wait: a few hours")
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "auto", bucket = "unknown", wait = "about 3 minutes"), null)).isEqualTo("Typical wait: about 3 minutes")
+        assertThat(ReplyTime.typicalWait(null, mapOf("bucket" to "day"))).isEqualTo("Typical wait: up to a day")
+    }
+
+    @Test
+    fun `the wait card says nothing when the owner chose Fixed or Hide, or there is no data`() {
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "hide", bucket = "few_minutes"), mapOf("bucket" to "few_minutes"))).isNull()
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "fixed", text = "Within a day", bucket = "few_minutes"), null)).isNull()
+        assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "auto"), null)).isNull()
+        assertThat(ReplyTime.typicalWait(null, null)).isNull()
+    }
+
+    @Test
+    fun `the usual wait in the visitor's language`() {
+        com.conferbot.sdk.core.i18n.I18n.setWidgetLanguage("de", emptyList())
+        try {
+            assertThat(ReplyTime.typicalWait(ReplyTimeInfo(mode = "auto", bucket = "few_minutes"))).doesNotContain("Typical")
+        } finally {
+            com.conferbot.sdk.core.i18n.I18n.setWidgetLanguage("en", emptyList())
+        }
+    }
 }
