@@ -1,5 +1,6 @@
 package com.conferbot.sdk.services
 
+import com.conferbot.sdk.core.livechat.EmailTranscript
 import com.conferbot.sdk.models.ChatSession
 import com.conferbot.sdk.models.RecordItem
 import com.conferbot.sdk.models.RecordItemDeserializer
@@ -45,6 +46,12 @@ interface ConferBotApiService {
         @Path("chatSessionId") chatSessionId: String,
         @Body body: Map<String, @JvmSuppressWildcards Any?>
     ): Response<ApiResponse<Any>>
+
+    /** "Email me this chat" (embed-server #193; the bot is the X-Bot-ID header's). */
+    @POST(EmailTranscript.PATH)
+    suspend fun transcriptEmail(
+        @Body body: Map<String, String>
+    ): Response<Map<String, @JvmSuppressWildcards Any?>>
 
     @POST("push/register")
     suspend fun registerPushToken(
@@ -238,6 +245,24 @@ class ApiClient(
                 success = false,
                 error = e.message ?: "Unknown error"
             )
+        }
+    }
+
+    /**
+     * "Email me this chat": the server sends the conversation to this address
+     * only (POST {mobile base}/chat/transcript-email). Never throws: a
+     * failure reads as not sent, with the server's reason when it gave one
+     * (a 400 invalid address, a 429 rate limit).
+     */
+    suspend fun sendTranscriptEmail(chatSessionId: String, email: String): EmailTranscript.Result {
+        return try {
+            val response = api.transcriptEmail(EmailTranscript.body(chatSessionId, email))
+            val data: Map<String, Any?>? = if (response.isSuccessful) response.body() else response.errorBody()?.string()?.let { raw ->
+                runCatching { gson.fromJson<Map<String, Any?>>(raw, object : TypeToken<Map<String, Any?>>() {}.type) }.getOrNull()
+            }
+            EmailTranscript.result(response.code(), data)
+        } catch (e: Exception) {
+            EmailTranscript.Result(false)
         }
     }
 }
