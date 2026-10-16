@@ -14,11 +14,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.conferbot.sdk.core.customization.MascotMoods
+import com.conferbot.sdk.ui.compose.mascot.TypingMascot
+import com.conferbot.sdk.ui.compose.mascot.TypingPencil
 import com.conferbot.sdk.ui.compose.messages.BotAvatar
 import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
 
 /**
- * Typing indicator with animated bouncing dots and bot avatar.
+ * Typing indicator with the bot avatar, in the owner's typing style
+ * (typingStyle, web chatChrome.ts): dots, an equaliser wave, a shimmering
+ * "Typing...", a pencil writing a line, or the bot's mascot swaying beside
+ * three thought dots ("<name> is typing" when the owner named it).
  */
 @Composable
 fun TypingIndicator(modifier: Modifier = Modifier) {
@@ -74,16 +82,24 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
         val loaded = map.isNotEmpty()
         val shape = com.conferbot.sdk.ui.compose.messages.botBubbleShape()
         val ink = if (loaded) colors.botBubbleText else colors.typing
+        val typing = if (loaded) look.typingStyle else "dots"
+        val reduced = com.conferbot.sdk.ui.compose.rememberReducedMotion()
+        // "Pip is typing" when the owner named their mascot (chatChrome.ts typingBubbleHtml).
+        val label = if (typing == "mascot" && look.mascot.name.isNotEmpty()) MascotMoods.typingLabel("mascot", look.mascot.name) else "Agent is typing"
         Box(
             modifier = Modifier
+                .semantics { contentDescription = label }
                 .shadow(1.dp, shape)
                 .background(color = colors.botBubble, shape = shape)
-                .heightIn(min = 36.dp)
-                .widthIn(min = 54.dp)
-                .padding(horizontal = 12.dp),
+                .heightIn(min = if (typing == "mascot") 42.dp else 36.dp)
+                .widthIn(min = if (typing == "pencil") 70.dp else 54.dp)
+                // The mascot's bubble: 42 tall, 6 / 12 at the sides.
+                .padding(start = if (typing == "mascot") 6.dp else 12.dp, end = 12.dp),
             contentAlignment = Alignment.Center
         ) {
-            when (if (loaded) look.typingStyle else "dots") {
+            when (typing) {
+                "mascot" -> TypingMascot(look.mascot, look.mascotAccent, ink, reduced)
+                "pencil" -> TypingPencil(look.mascotAccent, ink, reduced)
                 "shimmer" -> androidx.compose.material3.Text(
                     text = "Typing...",
                     color = ink.copy(alpha = 0.55f + 0.45f * dotAlphas[0].value),
