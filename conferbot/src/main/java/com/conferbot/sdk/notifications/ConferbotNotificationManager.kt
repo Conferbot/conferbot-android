@@ -40,6 +40,9 @@ class ConferbotNotificationManager(
 
         // Notification IDs
         private const val BASE_NOTIFICATION_ID = 100000
+
+        // With the conversation as the tag: one notification per conversation.
+        private const val PUSH_NOTIFICATION_ID = 99999
         private val notificationIdCounter = AtomicInteger(BASE_NOTIFICATION_ID)
 
         // Intent extras
@@ -189,6 +192,36 @@ class ConferbotNotificationManager(
 
         val notificationId = getNotificationId()
         showNotification(notificationId, notification)
+    }
+
+    /**
+     * A Conferbot push that arrived while the app is in the foreground (the
+     * system shows it itself in the background): on the server's channel
+     * `conferbot_messages`, one per conversation (tag = chatSessionId, as
+     * the server's collapse key), the tap opening that conversation.
+     */
+    fun showPushNotification(push: ConferbotPush, data: Map<String, String> = emptyMap()) {
+        if (!settings.enabled || !settings.showNewMessages) return
+        val title = push.senderName.ifBlank { NotificationText.newMessage }
+        val body = if (settings.showPreview && push.body.isNotBlank()) push.body else NotificationText.newMessage
+        val notification = buildNotificationBuilder(
+            channelId = CHANNEL_ID_MESSAGES,
+            title = title,
+            body = body,
+            chatSessionId = push.chatSessionId,
+            data = data,
+            priority = NotificationCompat.PRIORITY_HIGH
+        ).build()
+        try {
+            notificationManager.notify(push.chatSessionId, PUSH_NOTIFICATION_ID, notification)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Permission denied to show notification", e)
+        }
+    }
+
+    /** The push notification of one conversation, gone (it was opened). */
+    fun cancelPushNotification(chatSessionId: String) {
+        notificationManager.cancel(chatSessionId, PUSH_NOTIFICATION_ID)
     }
 
     /**
@@ -440,7 +473,8 @@ class ConferbotNotificationManager(
 
         return PendingIntent.getActivity(
             context,
-            System.currentTimeMillis().toInt(),
+            // One per conversation, so its notification's tap stays its own.
+            chatSessionId?.hashCode() ?: System.currentTimeMillis().toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -475,9 +509,7 @@ class ConferbotNotificationManager(
      * Cancel notifications for a specific chat session
      */
     fun cancelNotificationsForSession(chatSessionId: String) {
-        // For Android N+, we could use notification groups
-        // For now, just log
-        Log.d(TAG, "Cancelling notifications for session: $chatSessionId")
+        cancelPushNotification(chatSessionId)
     }
 
     /**
