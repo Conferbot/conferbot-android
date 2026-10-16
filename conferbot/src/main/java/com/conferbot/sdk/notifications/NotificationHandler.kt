@@ -238,6 +238,11 @@ class NotificationHandler(
             createSimpleBannerView(activity, notification)
         }
 
+        // The dismiss button's label in the visitor's language (the icon is decorative).
+        bannerView.findViewById<android.view.View>(R.id.bannerDismiss)?.contentDescription =
+            com.conferbot.sdk.core.i18n.t("common.dismiss")
+        bannerView.findViewById<android.view.View>(R.id.bannerIcon)?.contentDescription = null
+
         // Set content
         when (notification) {
             is ConferbotNotification.NewMessage -> {
@@ -245,28 +250,28 @@ class NotificationHandler(
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text = notification.content
             }
             is ConferbotNotification.AgentJoined -> {
-                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = "Agent Joined"
+                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = NotificationText.agentJoined
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text =
-                    "${notification.agentName} has joined the chat"
+                    NotificationText.hasJoined(notification.agentName)
             }
             is ConferbotNotification.AgentLeft -> {
-                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = "Agent Left"
+                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = NotificationText.agentLeft
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text =
-                    "${notification.agentName} has left the chat"
+                    NotificationText.hasLeft(notification.agentName)
             }
             is ConferbotNotification.ChatEnded -> {
-                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = "Chat Ended"
+                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = NotificationText.chatEnded
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text = notification.reason
             }
             is ConferbotNotification.HandoverQueued -> {
-                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = "Waiting for Agent"
+                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = NotificationText.waiting
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text =
-                    "You are #${notification.position} in queue"
+                    NotificationText.position(notification.position, null)
             }
             is ConferbotNotification.QueuePositionUpdate -> {
-                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = "Queue Update"
+                bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = NotificationText.queueUpdate
                 bannerView.findViewById<TextView>(R.id.bannerMessage)?.text =
-                    "Your position: #${notification.newPosition}"
+                    NotificationText.newPosition(notification.newPosition, null)
             }
             is ConferbotNotification.SystemNotification -> {
                 bannerView.findViewById<TextView>(R.id.bannerTitle)?.text = notification.title
@@ -291,15 +296,15 @@ class NotificationHandler(
                     is ConferbotNotification.NewMessage ->
                         "${notification.from}: ${notification.content}"
                     is ConferbotNotification.AgentJoined ->
-                        "${notification.agentName} has joined the chat"
+                        NotificationText.hasJoined(notification.agentName)
                     is ConferbotNotification.AgentLeft ->
-                        "${notification.agentName} has left the chat"
+                        NotificationText.hasLeft(notification.agentName)
                     is ConferbotNotification.ChatEnded ->
-                        "Chat ended: ${notification.reason}"
+                        NotificationText.chatEndedReason(notification.reason)
                     is ConferbotNotification.HandoverQueued ->
-                        "You are #${notification.position} in queue"
+                        NotificationText.position(notification.position, null)
                     is ConferbotNotification.QueuePositionUpdate ->
-                        "Queue position: #${notification.newPosition}"
+                        NotificationText.queuePosition(notification.newPosition)
                     is ConferbotNotification.SystemNotification ->
                         "${notification.title}: ${notification.message}"
                 }
