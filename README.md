@@ -31,6 +31,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Real-time messaging** - Socket.IO powered communication with the Conferbot flow engine
 - **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
 - **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", help articles and games while the visitor waits, and "Your requests" to follow and answer their conversations with the team
+- **Home screen** - when the owner turns it on, the chat opens on the web widget's home: a greeting, "Ask anything", "Talk to us" with the team's reply time, your requests, help articles and your customer logos
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
@@ -342,6 +343,35 @@ Conferbot.openRequests(requestId)    // one request
 
 `openRequests()` opens the screens where `RequestsPortalView()` is placed: the Compose chat has it; put it over your own Compose screen to open them there. The XML chat has no entry or screens yet (#76).
 
+With a home screen, the home has its own **Your requests** card as well (below).
+
+### Home screen (Compose)
+
+When the owner turns on the home screen in the dashboard (**Home screen**, `enableInitialPage`), `ConferBotChatScreen` and the floating widget open on it, as the web widget does. With it off the chat opens on the conversation, as before.
+
+- **The top:** "Good morning" / "Good afternoon" / "Good evening" by the phone's clock, or "Welcome back, Jamie" when the visitor comes back (30 minutes after they last wrote; the device remembers their first name and their last question for 60 days). The logo and name (none with **Hide logo**), the owner's title and description, over a band in the launcher's colours.
+- **Ask anything** (`homeAskBox`, on unless turned off): for an AI agent bot it asks the agent (the chat opens and sends the question); the help articles that answer it come under it, with matches inside article text from the server. A flow bot with nothing found offers **Chat with us**.
+- **Pick up where you left off** (AI agent bots): opens the conversation still on the device, else asks the question again.
+- **Your requests:** up to two, **See all (n)** when there are more; above **Talk to us** when a reply is new. They open over the home; Back returns there.
+- **Talk to us:** the bot's avatar with the online dot and "Online" (both gone with **Hide online status**), the team's reply time ("Usually replies in a few minutes", "Team back tomorrow 9 AM"; none when the owner hides it), the team's photos, up to three of the AI agent's questions, the button (the owner's words, else "Chat with us") and the rating.
+- **Help:** recent articles (unless **Hide recent articles**), topics, **See all**; its own search when the ask box is off. An article or a topic opens the help centre; Back returns to the home.
+- **Trust:** the owner's customer logos with their line, once one has loaded.
+- **Moving around:** the chat header's ‹ and the system back go to the home; the home's cross closes the chat. Views switch in the owner's **View transition**: fade, slide, and the other kinds as a slide; with the phone's animations off, a short fade and no motion on the home.
+- **Greet by name:** `{{first_name|there}}`, `{{name}}` and `{{company}}` in the owner's texts (home title, description, button, greeting card) are filled from the `ConferBotUser` (`name`, `metadata`) or a name the chat asked for; the fallback after the bar otherwise.
+
+For your own screens:
+
+```kotlin
+Conferbot.homeView                // StateFlow<HomeView>: HOME, CHAT or HELP
+Conferbot.showHome()              // nothing when the owner has no home screen
+Conferbot.showChat("Do you ship abroad?")  // to the conversation, asking it
+Conferbot.showHelp(categoryId)    // the help centre, on one topic or its list
+
+HomeScreenView(onClose = { /* close */ })  // com.conferbot.sdk.ui.compose.home
+```
+
+The XML chat opens on the conversation (no home screen there yet).
+
 ### How bot flows run
 
 The flow engine runs a bot the way the web widget does. It passes the shared flow-node spec: all 156 of its cases, each produced by running the widget's own code.
@@ -438,6 +468,8 @@ Conferbot.identify(
 ```
 
 The user ID is sent when the chat session is created (`initSession(userId = user?.id)`), so identify the user **before** the chat is opened. Calling `identify()` after a session exists updates the SDK's local user but does not retroactively re-tag the running session.
+
+The user's `name` and `metadata` (`firstName`, `company`, ...) also fill the owner's "greet by name" placeholders, such as `Hi {{first_name|there}}` (see Home screen).
 
 The user (its `metadata`, then `id`, `name`, `email`, `phone`) also travels with every message record as the chat's visitor context, as the web widget's `visitorContext` does, so the dashboard shows the visitor's name, email and your own fields.
 
@@ -602,7 +634,7 @@ In headless UIs call `Conferbot.loadMoreMessages()` when the user scrolls near t
 
 The help centre follows the bot's settings in the dashboard, as on the web widget:
 
-- It shows only while **Help articles** (`enableKnowledgeBase`) is on and at least one article is published. `ConferBotChatScreen` then shows a **Chat / Articles** switch under the header.
+- It shows only while **Help articles** (`enableKnowledgeBase`) is on and at least one article is published. `ConferBotChatScreen` then shows a **Chat / Articles** switch under the header; with a home screen, the help centre is its own view instead, opened from the home.
 - Recent articles head the list unless the owner hid them (`hideRecentArticles`).
 - An AI reply that cites a help article, and an agent's article card without a public link, open that article in the Articles tab. Back returns to the conversation.
 
