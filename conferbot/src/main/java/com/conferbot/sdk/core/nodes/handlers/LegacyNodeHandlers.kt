@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowInputs
 import com.conferbot.sdk.core.flow.FlowInputs.EN
 import com.conferbot.sdk.core.flow.FlowText
@@ -127,9 +128,9 @@ class UserInputNodeHandler : BaseNodeHandler() {
             if (url == null) {
                 val file = pickedFileOf(r)
                 if (file != null) {
-                    if ((file.size ?: 0.0) > 5_000_000) return NodeResult.Invalid("Please upload a file smaller than 5MB", ui(nodeData, nodeId))
+                    if ((file.size ?: 0.0) > 5_000_000) return NodeResult.Invalid(I18n.t("upload.tooBig", "mb" to 5), ui(nodeData, nodeId))
                     val up = ctx.upload(file)
-                    if (!up.ok) return NodeResult.Invalid("Couldn't upload this file. Please try again.", ui(nodeData, nodeId))
+                    if (!up.ok) return NodeResult.Invalid(I18n.t("upload.failed"), ui(nodeData, nodeId))
                     url = up.url
                 }
             }
@@ -145,10 +146,10 @@ class UserInputNodeHandler : BaseNodeHandler() {
             return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectEmailResponse"], EN.emailInvalid, listOf("Please enter a valid email")), ui(nodeData, nodeId))
         }
         if (type == "number" && (value.trim().isEmpty() || Js.number(value.trim()).isNaN())) {
-            return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectNumberResponse"], "Please enter a valid number"), ui(nodeData, nodeId))
+            return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectNumberResponse"], EN.numberInvalid), ui(nodeData, nodeId))
         }
         if (type == "url" && !LEGACY_URL_RE.matches(value.lowercase())) {
-            return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectUrlResponse"], "Please enter a valid url"), ui(nodeData, nodeId))
+            return NodeResult.Invalid(FlowInputs.ownerTextOr(nodeData["incorrectUrlResponse"], EN.urlInvalid), ui(nodeData, nodeId))
         }
         if (type == "name") ChatState.setUserMetadata("name", value)
         if (type == "email") ChatState.setUserMetadata("email", value)
