@@ -36,7 +36,9 @@ class LiveChatExtras(
     /** The flow carries on from the handover (a message was left, or skipped). */
     private val continueFlow: () -> Unit = {},
     /** "Email me this chat": the server's transcript email (ApiClient.sendTranscriptEmail). */
-    private val postTranscriptEmail: suspend (chatSessionId: String, email: String) -> EmailTranscript.Result = { _, _ -> EmailTranscript.Result(false) }
+    private val postTranscriptEmail: suspend (chatSessionId: String, email: String) -> EmailTranscript.Result = { _, _ -> EmailTranscript.Result(false) },
+    /** Every queue-status as the server sent it, the event or the poll's answer (its `help`: core/waiting/WaitingExtras). */
+    private val onQueueStatus: (Map<String, Any?>?) -> Unit = {}
 ) {
     private val _queue = MutableStateFlow<QueueStatus?>(null)
     val queue: StateFlow<QueueStatus?> = _queue.asStateFlow()
@@ -114,7 +116,12 @@ class LiveChatExtras(
         val s = socket() ?: return
         fun on(event: String, fn: (JSONObject?) -> Unit) = s.on(event, Emitter.Listener { args -> fn(args.firstOrNull() as? JSONObject) })
 
-        on("queue-status") { if (own(it)) _queue.value = LiveChat.queueStatusOf(toMap(it)) }
+        on("queue-status") {
+            if (!own(it)) return@on
+            val data = toMap(it)
+            _queue.value = LiveChat.queueStatusOf(data)
+            onQueueStatus(data)
+        }
         on("handover-waiting") {
             if (!own(it)) return@on
             _queue.value = null
@@ -230,7 +237,11 @@ class LiveChatExtras(
                 val id = sessionId()
                 if (id != null) {
                     socket()?.emitWithAck("queue-status", JSONObject().put("chatSessionId", id), 10_000L) { res ->
-                        (res as? JSONObject)?.let { json -> LiveChat.queueStatusOf(toMap(json))?.let { _queue.value = it } }
+                        (res as? JSONObject)?.let { json ->
+                            val data = toMap(json)
+                            LiveChat.queueStatusOf(data)?.let { _queue.value = it }
+                            onQueueStatus(data)
+                        }
                     }
                 }
                 delay(LiveChat.QUEUE_POLL_MS)
