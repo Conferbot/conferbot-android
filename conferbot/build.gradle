@@ -104,9 +104,10 @@ dependencies {
     implementation 'androidx.room:room-ktx:2.6.1'
     kapt 'androidx.room:room-compiler:2.6.1'
 
-    // Firebase Cloud Messaging (FCM) for Push Notifications
-    implementation platform('com.google.firebase:firebase-bom:32.7.0')
-    implementation 'com.google.firebase:firebase-messaging-ktx'
+    // Firebase Cloud Messaging: optional for the app (compile only). An app
+    // that uses ConferbotNotificationService adds firebase-messaging itself.
+    compileOnly platform('com.google.firebase:firebase-bom:32.7.0')
+    compileOnly 'com.google.firebase:firebase-messaging-ktx'
 
     // CardView for notification banner
     implementation 'androidx.cardview:cardview:1.0.0'
