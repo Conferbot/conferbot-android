@@ -17,13 +17,13 @@ object FlowLogic {
     // "${name}" / "{name}" typed into the variable field still means `name`
     private fun variableKey(raw: Any?): String {
         val key = stringify(raw).trim()
-        val wrapped = Regex("^\\$?\\{(\\w+)}$").find(key)
+        val wrapped = Regex("^\\$?\\{(\\w+)\\}$").find(key)
         return wrapped?.groupValues?.get(1) ?: key
     }
 
     /** Fill `${name}` placeholders in a typed value; unknown names stay as written. */
     fun interpolate(text: Any?, lookup: VariableLookup): String =
-        Regex("\\$\\{(\\w+)}").replace(stringify(text)) { m ->
+        Regex("\\$\\{(\\w+)\\}").replace(stringify(text)) { m ->
             val value = lookup(m.groupValues[1])
             if (value == null) m.value else stringify(value)
         }
@@ -150,9 +150,9 @@ object FlowLogic {
     private val BOOLEAN_WORDS = setOf("true", "false", "yes", "no", "on", "off")
 
     /** A ${name} or {name} placeholder (the "$" is optional). */
-    private val PLACEHOLDER = Regex("\\$?\\{([A-Za-z_][\\w.]*)}")
+    private val PLACEHOLDER = Regex("\\$?\\{([A-Za-z_][\\w.]*)\\}")
 
-    private fun wholePlaceholder(text: String): String? = Regex("^\\$?\\{([A-Za-z_][\\w.]*)}$").find(text)?.groupValues?.get(1)
+    private fun wholePlaceholder(text: String): String? = Regex("^\\$?\\{([A-Za-z_][\\w.]*)\\}$").find(text)?.groupValues?.get(1)
 
     /** A saved value as text: lists read "a, b", other objects stay JSON. */
     private fun asText(value: Any?): String {
