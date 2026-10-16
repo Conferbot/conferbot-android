@@ -1770,7 +1770,12 @@ class MessageAdapter(
         override fun bind(message: RecordItem) {
             messageText.movementMethod = null
             when (message) {
-                is RecordItem.SystemMessage -> messageText.text = message.text
+                // The AI let an idle visitor go: "Chat paused" and its note, or
+                // "Chat ended" (core/livechat/LiveEvents.kt).
+                is RecordItem.SystemMessage -> messageText.text =
+                    if (message.kind == com.conferbot.sdk.core.livechat.LiveEvents.INACTIVE_CLOSE) {
+                        com.conferbot.sdk.core.livechat.LiveEvents.inactiveCloseLine(message.paused).let { l -> l.text + (l.note?.let { "\n$it" } ?: "") }
+                    } else message.text
                 // Agent events and files drew as empty bubbles: say what they are.
                 // A person's join, with "They can see your conversation so far"
                 // after an AI handover (core/livechat/HandoverState.kt).
