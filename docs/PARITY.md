@@ -31,6 +31,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #52 | Markdown as the web's `utils/agentHtml.ts`: tables (sideways scroll), h3-h6 (# and ## drawn as 4), quotes, pre, `~~strike~~` (from a person's `<blockquote>`, `<pre>`, `<s>`/`<del>` too); the "That took too long..." notice when the 45s AI wait runs out (not after the AI leaves or the chat ends); `isFallback` replies italic at 85% (Compose + XML) | `utils/ChatMarkdown.kt`, `ui/compose/messages/AgentReply.kt` `ChatMarkdownText`, `ui/views/ChatMarkdownSpans.kt`, `core/agent/AgentBot.kt` (`AWAIT_REPLY_MS`, `REPLY_TIMEOUT_TEXT`), `MessageBubble.kt`, `MessageAdapter.kt` |
 | #42 | "Email me this chat" in the chat menu: one card (email filled in when known), the server's reason when it does not go, "Sent! Check your inbox at ...", the address kept as the visitor's. `POST {mobile base}/chat/transcript-email` (embed-server #193) | `core/livechat/EmailTranscript.kt`, `services/ApiClient.kt` `sendTranscriptEmail`, `LiveChatExtras.kt`, `LiveChatCards.kt` `EmailTranscriptCard`, `ChatHeader.kt` |
 | #72 | A live chat's end asks the handover step's post-chat survey questions (`enablePostChatSurveyQuestions`, the builder's key) before the flow carries on from the step. RN's #66 (the end resetting the flow) never applied here: `NodeFlowEngine.handleChatEnded` already carried on | `core/nodes/handlers/SpecialNodeHandlers.kt` `onChatEnded` |
+| #40 | While you wait, ported from RN #44, #41 (Compose): the help card 6s into a wait for a person (up to two help-centre articles for the visitor's last real question, only with the help centre on), the server's `queue-help` pick (or a waiting `queue-status`'s `help`) with "That solved it" (`queue-self-resolve {chatSessionId, articleId}`, then "You left the queue. Glad that helped.", recorded "Resolved while waiting"), the games offer 2.5s after `cb:waiting-for-human` with 3 retries (owner setting `waitingGames`; seven games with the web's rules), "Not now" / x for the app session, "play" typed while waiting opens the menu, a game saved when a person joins ("Finish my game"), reduced motion, cards never saved | `core/waiting/WaitArticles.kt`, `WaitingGames.kt`, `GamesLogic.kt`, `GamesCard.kt`, `WaitingExtras.kt`; `core/livechat/HandoverLifecycle.kt` (`WaitHooks`, `leftQueueHelped`), `LiveChatExtras.kt` (`onQueueStatus`), `core/Conferbot.kt` (`waiting`, `openWaitHelpItem`, "play" in `sendMessage`), `ui/compose/chat/WaitingCards.kt`, `MessageList.kt` |
 | #53, #36, #45 | Help centre: loads from `fetched-chatbot-data`, bodies on open, follows `enableKnowledgeBase` / `hideRecentArticles`, Chat / Articles tabs, AI sources and article cards open by id (Compose) | `core/helpcentre/HelpCentre.kt`, `services/KnowledgeBaseService.kt`, `ui/compose/ChatScreen.kt`, `ui/compose/knowledgebase/KnowledgeBaseScreen.kt`, `ui/compose/messages/AgentReply.kt` |
 
 ## Left in this SDK
@@ -45,7 +46,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - It shows only while `enableKnowledgeBase` is on and an article is published (`HelpCentre.visible`). The app has no home screen, so recent articles head the Articles tab unless `hideRecentArticles` is set.
    - AI sources with an `articleId`, and article cards without a `url`, call `Conferbot.openHelpArticle`. Back returns to the chat (web `agentSources.ts`, `agentRich.ts`).
    - Checked on the emulator against the local embed-server (bot 6ab686f8d47ff029b76892f7, 26 articles): the list, an article's body and an AI source opening it. An injected `agent-message` was used for the source, not a real AI reply. `HelpCentreTest` has 11 tests on a captured payload (`src/test/resources/help-centre-payload.json`).
-   - **Gaps left:** no help centre in the XML chat. No "While you wait" articles. No public `REST /mobile/chatbot/:id/kb` fallback (the socket path is used, as on the web). Article HTML is shown as plain text.
+   - **Gaps left:** no help centre in the XML chat. No public `REST /mobile/chatbot/:id/kb` fallback (the socket path is used, as on the web). Article HTML is shown as plain text.
 3. **Handover lifecycle (#24-#28, #37, #59-#62): done, ported from RN.**
    - An AI escalating (`agent-left` with `reason: escalated`, `handover: true` or an AI leaver) draws "Connecting you with the team…" with its dots; `visitor_inactive` draws nothing. The line settles in place: "Connected with the team", "The team couldn't join just now", "You left the queue", "Chat ended before the team joined". A person after an AI handover gets "They can see your conversation so far". A repeat accept is not announced.
    - `cb:waiting-for-human` 20s into a wait (held while the chat is closed), `cb:human-joined`, `cb:wait-over`: `Conferbot.onWidgetSignal(name) { }`.
@@ -56,7 +57,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - `initiate-handover` carries the step's `enableHandoverEmail`, sound settings, `assignmentMethod` / `requiredSkills` (#59).
    - Tests: `HandoverStateTest` 16, `HandoverWaitingTest` 5, `HandoverLifecycleTest` 12, `ReplyTimeTest` 7, `HandoverPayloadTest` 3, `LiveChatTest` +1.
    - Checked on the emulator against the local embed-server with a node script playing the agent (temp bot, handover email off, deleted after): wait card and Cancel (the ticket closed `self_service`, `handoverData.enableHandoverEmail: false`), header reply time, agent joined with the header still the bot, the Connecting line, its settled outcome with the note, and a restart while live (live again, one ticket, agent messages arrive).
-   - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. #63: Clear History draws flow messages twice (found during the check), and "Start a new chat" goes the same way.
+   - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` is done with while you wait (#40). #63: Clear History draws flow messages twice (found during the check), and "Start a new chat" goes the same way.
 4. **Flow nodes (#29-#34, #48, #54, #64-#67): done, ported from RN, with a Compose card for every step.** See "Flow nodes" below.
 5. **Live chat extras (#42-#44, #46, #47, #52, #72): done, ported from RN.** See the table above and "Porting the live chat extras" in RN's `docs/PARITY.md`.
    - Tests: `DeviceLanguageTest` 5, `AnswerFeedbackTest` 9, `LiveEventsTest` 7, `EmailTranscriptTest` 4, `SocketHandshakeTest` 2, `ChatMarkdownTest` 8, `HandoverLifecycleTest` +4, `NodeFlowEngineTest` +2, `AgentBotParserTest` +1.
@@ -68,12 +69,22 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - The rules (`LauncherFxControllers.kt`, plain Kotlin on an `FxScheduler`; `LauncherFxControllersTest` 13 on a fake clock): entrance decided when the settings arrive, once per app session per bot and entrance, held invisible (still tappable) until `revealAt`, the greeting hidden until `settleAt` then faded up; attention 1.5s after the launcher (or card) shows, paused during an idle / message moment, over once the chat opens, not within 30 minutes of an opening, holding the idle moments and the three load ripples; idle call after the delay, every 4s while blocked (chat open, app paused, keyboard up, entrance busy, greeting up under 15s), twice per session 3 minutes apart, then 3 days of rest in SharedPreferences (`conferbot_idlecall_rest_<bot>`), also after an opening; closing the greeting stops calls. Reduced motion is the animator duration scale at 0.
    - Drawing: one frame clock while an effect plays, read only in `graphicsLayer` / draw lambdas (redraws, no recomposition). Sprites and the mascot are SVG markup drawn by `FxSvg` on the platform canvas; full-screen canvases behind and in front of the launcher hold the stage.
    - **Gaps left:** web filters (brightness, glows, blur, the mascot's bevel) are not drawn, as in RN and Flutter; the waving hand is the system emoji; the keyboard is seen only when the app lets Compose see the IME insets. Not checked on a device yet (no emulator run in this batch).
-7. The rest of the list below.
-8. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
-9. **Test debt:**
+7. **While you wait (#40): done in Compose, ported from RN #44, #41.** See "Porting while you wait" in RN's `docs/PARITY.md`; the four core files are RN's, with their tests.
+   - **Where the wait starts and stops** (`HandoverLifecycle` through `WaitHooks`): starts on a flow handover with no `assignedAIAgents` (`flowWaitStarted`, which also covers a restored chat still in the queue, since `waitAt` puts the step back in its waiting state), and on every AI escalation (`agent-left` handover); not on a requeue. Stops on `agent-accepted`, `handover-waiting`, `no-agents-available`, `chat-ended`, `ai-agent-inactive-close`, a blocked visitor, leaving the queue, and `cb:human-joined` / `cb:wait-over`.
+   - **The question** is read from `ChatState.getRecordForServer()`: the newest entry whose `type` or `shape` is a typed message (`user-message`, `user-input-response`, `user-live-message`, `user-input`). RN reads `type || shape`; this record leaves `type` empty on some answers, so both are looked at.
+   - **The help centre** is `fetched-chatbot-data`'s `knowledgeBaseData` as sent (raw maps, `WaitingExtras.setKnowledgeBase`), for the articles and the quiz; `HelpCentre.parse` still feeds the Articles tab.
+   - **Where the cards sit:** `WaitingExtras` keeps each card with the id of the item that was last on screen when it was drawn (`PlacedCard.after`). `MessageList` draws it after that item; a card whose item is not on screen is drawn at the end. Nothing goes into `_record`, the Room store or the server record.
+   - **Threads:** socket callbacks and the handover's signals are posted to the main thread (`post`); timers are `Conferbot`'s coroutine timer on `Dispatchers.Main`.
+   - **Articles:** a row calls `Conferbot.openWaitHelpItem`, which opens the article in the chat's help centre (`openHelpArticle`, the Articles tab); a page opens in the browser.
+   - **The look** (`WaitingCards.kt`): the help card in the bot bubble's colours (radius 14, padding 10, rows at 10% of the text colour, "Read", the pill button with a 1pt line at 45%); the games card on the theme's card tokens (`rememberStepLook`) with `pickAccent` and the theme font, max width 320, radius 18, a 1.5pt accent line on a win. Motion: the card rises 8dp in 450ms, the hands shake three times in 900ms, a 1.5% cheer, 34 confetti pieces on a win, the scramble's nudge; all off when the animator duration scale is 0 (also passed to `GamesCard` so the bot moves at 250ms and the hands show at once). Memory cards turn without the web's 3D flip, as in RN.
+   - Tests: `GamesLogicTest` 17, `WaitingGamesTest` 14, `WaitArticlesTest` 12, `GamesCardTest` 25, `WaitingExtrasTest` 13 (the handover and the cards together on a fake clock and socket).
+   - **Gaps left:** the XML chat draws neither card, and there the offer is never made and "play" is sent as words (`canDraw` is the Compose list being on screen). An article that the help centre does not list, with the help centre off, does not open (RN fetches `GET /mobile/knowledge-base/article/:id`). The scramble takes taps only (no hardware keys wired in the view; `GameInput.Key` exists). Not checked on a device (no emulator run in this batch) nor against the local server from this SDK; the server side was checked from RN.
+8. The rest of the list below.
+9. **XML gaps:** initials avatar, the wave typing style, the step cards (XML draws the rich steps with its generic cards), and the while-you-wait help card and games (#40).
+10. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
    - `SessionPersistenceManagerTest` (27) and 2 of `MemoryManagerTest` already failed before the flow work: their setup touches `ChatState` without `Dispatchers.setMain`.
-10. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+11. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## Flow nodes
 
@@ -112,6 +123,7 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
   - Results are in `conferbot/build/test-results/testDebugUnitTest/`.
   - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes"); the step cards' answers: `--tests '*FlowStepViewAnswerTest'`.
   - The launcher entrance, attention and idle call: `LauncherFxGoldenTest` (RN's Chrome golden) and `LauncherFxControllersTest` (the rules on a fake clock).
+  - While you wait: `GamesLogicTest`, `WaitingGamesTest`, `WaitArticlesTest`, `GamesCardTest`, `WaitingExtrasTest` (`--tests 'com.conferbot.sdk.core.waiting.*'`, one class at a time).
   - The live chat extras: `DeviceLanguageTest`, `AnswerFeedbackTest`, `LiveEventsTest`, `EmailTranscriptTest`, `SocketHandshakeTest`, `ChatMarkdownTest`, `HandoverLifecycleTest`, `NodeFlowEngineTest`.
   - "Email me this chat" on a device: the route sends a real email, so stub `Conferbot.liveChat`'s poster (or point the app at a server whose mailer is off), or check its validation answers only (a bad address is a 400).
 - **Example app:**
@@ -129,7 +141,7 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
 
 Every web widget feature works the same in the 4 mobile SDKs: customization, launcher, greeting and the live chat / agent features. The web widget (`conferbot-widget/src`) is the reference. Each feature is built and checked against the web in React Native first, then ported to Android, iOS and Flutter. The web source file it came from is named in a comment.
 
-## Status across the SDKs (2026-10-15)
+## Status across the SDKs (2026-10-16)
 
 | Feature | RN | Android | iOS | Flutter |
 |---|---|---|---|---|
@@ -156,6 +168,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | Flow nodes: shared spec, 156 fixtures | 156/156 | 156/156 | todo | todo |
 | Flow step cards (every waiting step answered as on the web) | done | done in Compose (#48); XML generic | done | done |
 | Handover lifecycle (Connecting line, outcomes, waiting signals, leave queue, restore) | done | done (#24-#27, #37) | todo | todo |
+| While you wait: help articles at 6s, `queue-help` + "That solved it", the waiting games at 2.5s | done | done in Compose (#40); XML none | todo | todo |
 
 Live chat / agent features (handover, queue card, receipts, rating, files, prefill, max-wait timeout, agent bot replies, suggestion chips) are done in all 4.
 
