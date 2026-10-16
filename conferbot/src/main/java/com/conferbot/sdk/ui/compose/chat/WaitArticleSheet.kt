@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,7 +65,7 @@ fun WaitArticleSheet(modifier: Modifier = Modifier, waiting: WaitingExtras = Con
                 TextButton(
                     onClick = { waiting.retryArticle() },
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)
-                ) { Text("Try again") }
+                ) { Text(I18n.t("common.tryAgain")) }
             }
         }
     }
