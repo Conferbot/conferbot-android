@@ -32,6 +32,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
 - **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", help articles and games while the visitor waits, and "Your requests" to follow and answer their conversations with the team
 - **Home screen** - when the owner turns it on, the chat opens on the web widget's home: a greeting, "Ask anything", "Talk to us" with the team's reply time, your requests, help articles and your customer logos
+- **Widget languages** - the SDK's own words (buttons, hints, errors, handover lines, queue card, help centre, step cards, home, requests, games, dates and times) in English, Dutch, French, German or Spanish, chosen as the web widget chooses
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
@@ -422,7 +423,8 @@ ConferBotConfig(
     enableOfflineMode = true,
     autoConnect = true,
     reconnectionAttempts = 5,
-    reconnectionDelay = 1000
+    reconnectionDelay = 1000,
+    widgetLanguage = null // "en", "nl", "fr", "de", "es" or "auto"
 )
 ```
 
@@ -434,6 +436,18 @@ ConferBotConfig(
 | `reconnectionAttempts` | `Int?` | `null` (5) | Max socket reconnection attempts |
 | `reconnectionDelay` | `Int?` | `null` (1000 ms) | Delay between reconnection attempts |
 | `aiSettings` | `AISettings` | `AISettings()` | Provider settings for GPT/LLM flow nodes |
+| `widgetLanguage` | `String?` | `null` | The language of the SDK's own words: `"en"`, `"nl"`, `"fr"`, `"de"`, `"es"` or `"auto"` (the phone's languages). Wins over the owner's setting; `null` keeps it |
+
+### Widget languages
+
+The SDK draws its own words in English, Dutch, French, German or Spanish, with the web widget's wording:
+
+1. `ConferBotConfig.widgetLanguage`, when the app sets it.
+2. Otherwise the language the owner picked in the dashboard (`widgetLanguage`).
+3. "Auto" (and every bot that never chose): the first of the phone's languages the widget speaks (all of `LocaleList` on Android 7+).
+4. Otherwise English.
+
+What the owner wrote (greetings, questions, buttons, articles) is shown as written; the stock English texts a new bot starts with ("We're here to help", "Hi there 👋") are shown in the visitor's language. Dates, times and "5 min ago" follow the language too. `Conferbot.widgetLanguage` says which one is in force, and the screens redraw when it changes. The words come from the table all Conferbot SDKs share (`scripts/sync-i18n.sh` rebuilds it from the React Native SDK's `scripts/parity/i18n/strings.json`).
 
 ### Endpoints and network tuning
 
