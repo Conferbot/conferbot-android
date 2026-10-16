@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
+
 /**
  * Live chat events beyond the handover line ([HandoverState]): the chat
  * going back to the queue, a transfer, the same end again, a blocked visitor
@@ -25,12 +27,13 @@ object LiveEvents {
 
     // ---- Back in the queue (live-chat-requeued) ----
 
+    /** The record entry's English text (the web's en takeover.requeued); drawn with [requeuedText]. */
     const val REQUEUED_TEXT = "Connecting you to another agent..."
 
     /** What the visitor reads when the chat goes back to the queue (web requeuedText). */
     fun requeuedText(teamName: Any?): String {
         val team = (teamName as? String)?.replace(Regex("[<>]"), "")?.trim()?.take(60).orEmpty()
-        return if (team.isNotEmpty()) "Connecting you to $team..." else REQUEUED_TEXT
+        return if (team.isNotEmpty()) t("takeover.requeuedTeam", "team" to team) else t("takeover.requeued")
     }
 
     // ---- Transferred (live-chat-transferred) ----
@@ -85,14 +88,27 @@ object LiveEvents {
     /** The neutral line a blocked visitor sees (embed-server visitorBlock CLOSED_TEXT, web system.closed). */
     const val CLOSED_TEXT = "This conversation has been closed."
     const val CHAT_ENDED_TEXT = "Chat ended"
-    const val NEW_CHAT_TEXT = "Start a new chat"
+
+    /** The closed chat's button, in the active language (the SDK's own words). */
+    val NEW_CHAT_TEXT: String get() = t("sdk.live.newChat")
+
+    /**
+     * The same words in the active language (web system.closed,
+     * system.chatEnded). The English constants above stay as what the record
+     * and the server say.
+     */
+    object Text {
+        val closed: String get() = t("system.closed")
+        val chatEnded: String get() = t("system.chatEnded")
+        val newChat: String get() = t("sdk.live.newChat")
+    }
 
     /** The handshake refused a blocked visitor (connect_error "visitor_blocked"). */
     fun isBlockedError(message: String?): Boolean = message == "visitor_blocked"
 
     /** The visitor-blocked event's line: the server's words, else ours. */
     fun blockedText(data: Map<String, Any?>?): String =
-        (data?.get("message") as? String)?.trim()?.take(200)?.takeIf { it.isNotEmpty() } ?: CLOSED_TEXT
+        (data?.get("message") as? String)?.trim()?.take(200)?.takeIf { it.isNotEmpty() } ?: Text.closed
 
     enum class ClosedKind { BLOCKED, ENDED }
 
@@ -118,6 +134,6 @@ object LiveEvents {
         if (!blocked.isNullOrEmpty()) return ClosedState(ClosedKind.BLOCKED, blocked, newChat = false, inputOff = true)
         if (stepWaiting || live) return null
         if (!endedSinceLastLive(entries)) return null
-        return ClosedState(ClosedKind.ENDED, CHAT_ENDED_TEXT, newChat = true, inputOff = true)
+        return ClosedState(ClosedKind.ENDED, Text.chatEnded, newChat = true, inputOff = true)
     }
 }
