@@ -171,6 +171,9 @@ private fun ConferBotChatScreenContent(
     val articleRequest by Conferbot.helpArticleRequest.collectAsState()
     val sessionId by Conferbot.chatSessionId.collectAsState()
     var showArticles by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // "Your requests" (core/requests): the chat menu's item and the portal over the chat.
+    val requestsList by Conferbot.requests.requests.collectAsState()
+    val requestsUnread by Conferbot.requests.unread.collectAsState()
     LaunchedEffect(helpOn) { if (!helpOn) showArticles = false }
     // An AI source or an article card asked for an article: the help pane shows it.
     LaunchedEffect(articleRequest, helpOn) { if (articleRequest != null && helpOn) showArticles = true }
@@ -185,6 +188,7 @@ private fun ConferBotChatScreenContent(
         }
     }
 
+    androidx.compose.foundation.layout.Box(modifier) {
     Scaffold(
         topBar = {
             ChatHeader(
@@ -199,10 +203,14 @@ private fun ConferBotChatScreenContent(
                 look = look.takeIf { hasLook },
                 statusText = statusText,
                 // The conversation to the visitor's inbox (web chat menu, emailTranscript.ts).
-                onEmailChat = if (sessionId != null && blocked == null) ({ live.openEmailTranscript() }) else null
+                onEmailChat = if (sessionId != null && blocked == null) ({ live.openEmailTranscript() }) else null,
+                // The visitor's requests to the team, once they have one (web home
+                // screen's card, ts/home/requests/card.ts; no home screen here yet).
+                requestsLabel = if (!requestsList.isNullOrEmpty()) com.conferbot.sdk.core.requests.Requests.menu(requestsUnread) else null,
+                onRequests = { Conferbot.openRequests() }
             )
         },
-        modifier = modifier
+        modifier = Modifier.fillMaxSize()
     ) { paddingValues ->
         // The bot's chat background (core/customization ChatBackground) once its
         // settings arrived; the host app's theme background before that.
@@ -309,6 +317,9 @@ private fun ConferBotChatScreenContent(
             }
         }
         }
+    }
+    // "Your requests" over the whole chat, its header too, while open; Back steps back.
+    com.conferbot.sdk.ui.compose.requests.RequestsPortalView()
     }
 }
 
