@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
@@ -70,6 +71,11 @@ fun ChatBottomBar(
 
     var text by remember { mutableStateOf("") }
     val canSend = text.isNotBlank() && enabled
+
+    // "Ask another way" under an AI answer puts the cursor here.
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val focusAsks by com.conferbot.sdk.core.Conferbot.composerFocus.collectAsState()
+    LaunchedEffect(focusAsks) { if (focusAsks > 0 && enabled) runCatching { focusRequester.requestFocus() } }
 
     // The widget theme's surfaces (white, as before, for classic in light),
     // its field radius, and the palette's send colours.
@@ -159,7 +165,7 @@ fun ChatBottomBar(
                     cursorBrush = SolidColor(inkColor),
                     maxLines = 4,
                     enabled = enabled,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
                 )
             }
 
