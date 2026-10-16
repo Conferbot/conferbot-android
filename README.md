@@ -537,7 +537,11 @@ Everything you configure in the dashboard's flow builder (**Customize** tab) is 
 
 **Calendar**: slots already booked (the bot's bookings) show greyed out and cannot be picked; a day with every slot taken is not offered.
 
-**Waiting for a person**: the wait card says the live estimate in the visitor's language, else the team's usual wait ("Typical wait: a few minutes"), unless the owner chose a fixed reply time or hides it.
+**Waiting for a person**: the wait card says the live estimate in the visitor's language, else the team's usual wait ("Typical wait: a few minutes"), unless the owner chose a fixed reply time or hides it. Under it the step's max wait counts down ("Max wait 1:05", every second, stopping at 0:00); when it runs out the server is asked to decide (`handover-timeout`). After a restart the countdown, and the timeout, go on from the time the server says is left. A max wait of 0 or unset is 2 minutes. The Compose chat and the XML chat both show it (`Conferbot.liveChat.waitEndsAt` for a custom UI).
+
+**When the AI hands the visitor on** to the team, the SDK gives the server the step's max wait plus 30 seconds, then nudges it (`handover-timeout`); nothing is drawn, and the nudge is off as soon as the wait ends (someone joins, nobody can, the visitor leaves the queue, the chat ends or is blocked). An agent bot uses its silent handover step's max wait. Only an AI handing on starts it, never a person, and a restored chat does not start it again.
+
+**When the AI lets an idle visitor go**: "Chat paused" with "Send a message to pick up where you left off"; the composer stays on and the next message brings the AI back. When the owner set the agent to carry on with the flow (`continue_flow`, flow bots only), the line is "Chat ended", the live chat is over and the flow goes on from the handover step's next step, without the post-chat survey. The line is kept once in the conversation, so a restart shows the same one. Compose and XML.
 
 **Precedence: server wins over local.** `ConferBotChatScreen` collects `Conferbot.serverTheme` and, whenever the server provides a `customizations` object, wraps the chat in that theme - even if you supplied your own theme via `ConferBotChatView` or `ConferbotThemeProvider`. Local themes therefore act as fallbacks that only apply when the bot has no server customizations. (For the FAB the same rule applies per attribute, see the table above.)
 
@@ -682,7 +686,7 @@ The help centre follows the bot's settings in the dashboard, as on the web widge
 
 - It shows only while **Help articles** (`enableKnowledgeBase`) is on and at least one article is published. `ConferBotChatScreen` then shows a **Chat / Articles** switch under the header; with a home screen, the help centre is its own view instead, opened from the home.
 - Recent articles head the list unless the owner hid them (`hideRecentArticles`).
-- An AI reply that cites a help article, and an agent's article card without a public link, open that article in the Articles tab. Back returns to the conversation.
+- An AI reply that cites a help article opens it in the app while Help articles is on: in the Articles tab when the help centre lists it, else fetched by id and shown over the chat. With Help articles off it opens the cited page in the browser, and a citation with neither is shown but not tappable. An agent's article card opens its public page first, else the article in the app. Back returns to the conversation.
 
 The categories and articles come with the bot's data. An article's body is fetched when it opens, and search adds matches found inside article text. The body is drawn from its HTML as on the web (headings, lists, bold and italic, links, pictures, simple tables), without a WebView; a link opens outside the app.
 
@@ -806,6 +810,8 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
 | `waiting.help` / `waiting.games` | `StateFlow<PlacedCard<HelpCardState>?>` / `StateFlow<PlacedCard<GamesCard>?>` | The while-you-wait cards on screen (for a custom UI); `waiting.solveWait { ok -> }` is "That solved it" |
 | `openWaitHelpItem` | `openWaitHelpItem(item: WaitArticles.HelpItem)` | Open a row of the while-you-wait card (an article in the help centre, else fetched by id and shown on its own: `waiting.article`) |
+| `openChatArticle` | `openChatArticle(articleId: String, title: String? = null): Boolean` | Open a cited help article as an AI source does (the help centre, else fetched by id); `false` while articles cannot open in the app |
+| `liveChat.waitEndsAt` | `StateFlow<Long?>` | When the handover's max wait runs out (ms since the epoch) while a flow waits for a person; `LiveChat.maxWaitText(LiveChat.secondsLeft(it))` is the card's line |
 | `identify` | `identify(user: ConferBotUser?)` | Set the current user (before session creation); `null` signs out |
 | `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
 | `on` / `off` | `on(event: String, callback: Emitter.Listener)` / `off(event: String, callback: Emitter.Listener? = null)` | Raw socket event subscription |
