@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
@@ -58,7 +59,9 @@ fun ChatHeader(
      * ("Typically replies in a few minutes", "Online · team back at 9 AM";
      * core/livechat/ReplyTime.kt headerStatus). Default "Online".
      */
-    statusText: String = "Online"
+    statusText: String = "Online",
+    /** "Email me this chat" in the menu: shown when given (a session, a visitor not blocked). */
+    onEmailChat: (() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -217,6 +220,13 @@ fun ChatHeader(
                         },
                         leadingIcon = {
                             Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+                        }
+                    )
+                    if (onEmailChat != null) DropdownMenuItem(
+                        text = { Text(com.conferbot.sdk.core.livechat.EmailTranscript.MENU, fontSize = 14.sp) },
+                        onClick = { showMenu = false; onEmailChat() },
+                        leadingIcon = {
+                            Icon(Icons.Default.Email, null, Modifier.size(18.dp))
                         }
                     )
                     DropdownMenuItem(
