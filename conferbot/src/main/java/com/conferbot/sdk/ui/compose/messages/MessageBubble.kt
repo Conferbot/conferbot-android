@@ -2,6 +2,7 @@
 
 package com.conferbot.sdk.ui.compose.messages
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
@@ -89,7 +90,7 @@ fun MessageBubble(
                 text = com.conferbot.sdk.core.livechat.HandoverState.joinedText(message.agentDetails.name)
             ),
             modifier, animationDuration,
-            note = if (message.afterAI) com.conferbot.sdk.core.livechat.HandoverState.HANDED_OVER_NOTE else null
+            note = if (message.afterAI) com.conferbot.sdk.core.livechat.HandoverState.handedOverNote else null
         )
         else -> {}
     }
@@ -330,7 +331,7 @@ fun AgentMessageBubble(
                 Spacer(Modifier.height(spacing.xs))
                 if (message.deleted) {
                     Text(
-                        text = "This message was deleted",
+                        text = I18n.t("message.removed"),
                         color = colors.agentBubbleText.copy(alpha = 0.7f),
                         style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.messageSize, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                     )
@@ -363,7 +364,7 @@ fun AgentMessageBubble(
                 }
                 Spacer(Modifier.height(spacing.xs))
                 Text(
-                    text = if (message.edited) "Edited · ${formatTime(message.time)}" else formatTime(message.time),
+                    text = if (message.edited) "${I18n.t("message.edited").replaceFirstChar { it.titlecase(I18n.locale) }} · ${formatTime(message.time)}" else formatTime(message.time),
                     color = colors.agentBubbleText.copy(alpha = 0.7f),
                     style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize)
                 )
@@ -459,7 +460,9 @@ private fun Modifier.hiddenFromAccessibility(): Modifier =
 // ─── Helpers ────────────────────────────────────────────────────────
 
 private fun formatTime(date: Date): String {
-    val format = SimpleDateFormat("hh:mm a", Locale.getDefault())
+    // English keeps its "09:41 AM"; the other languages write the time their own way.
+    val format = if (I18n.language == I18n.EN) SimpleDateFormat("hh:mm a", Locale.getDefault())
+    else java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, I18n.locale)
     return format.format(date)
 }
 
