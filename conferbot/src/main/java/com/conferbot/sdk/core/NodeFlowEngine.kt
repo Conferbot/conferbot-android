@@ -139,6 +139,46 @@ class NodeFlowEngine internal constructor(
     private val _visitorLines = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val visitorLines: SharedFlow<String> = _visitorLines.asSharedFlow()
 
+    /** A visitor's line and the step it answered (what the bot's tapback and "Edit" read). */
+    data class VisitorLine(val text: String, val nodeId: String, val type: String)
+
+    /** The same lines as [visitorLines], each with the step it answered. */
+    private val _visitorAnswers = MutableSharedFlow<VisitorLine>(extraBufferCapacity = 64)
+    val visitorAnswers: SharedFlow<VisitorLine> = _visitorAnswers.asSharedFlow()
+
+    /**
+     * A question the visitor may go back to (web index.ts _noteQuestionPoint):
+     * kept each time a step that waits for an answer is entered, before it is
+     * drawn, with a copy of the conversation's state as it was.
+     */
+    class QuestionPoint internal constructor(
+        /** Unique per point (a step asked twice has two). */
+        val id: Int,
+        val nodeId: String,
+        val type: String,
+        /** Steps entered before this question. */
+        val stepsLen: Int,
+        /** The record's length before the question. */
+        val recordLen: Int,
+        internal val snap: ChatState.Snapshot,
+        internal val flowControl: FlowControl.State
+    )
+
+    /** Questions asked, newest last, for "Edit" (only the recent past). */
+    private val points = mutableListOf<QuestionPoint>()
+    private var pointSeq = 0
+
+    /** The bot's bookings (the bot data's calendarBookings): a calendar's taken slots. */
+    @Volatile
+    var calendarBookings: List<Map<String, Any?>> = emptyList()
+        private set
+
+    /** The bot's bookings from the bot data (a calendar greys out taken slots). */
+    @Suppress("UNCHECKED_CAST")
+    fun setCalendarBookings(bookings: Any?) {
+        calendarBookings = (bookings as? List<*>)?.mapNotNull { it as? Map<String, Any?> } ?: emptyList()
+    }
+
     // Flow definition
     private val nodes = LinkedHashMap<String, FlowNode>()
     private var nodeList: List<FlowNode> = emptyList()
@@ -277,6 +317,7 @@ class NodeFlowEngine internal constructor(
 
     private fun resetFlow() {
         steps.clear()
+        points.clear()
         ended = false
         _isFlowComplete.value = false
         nodesProcessedInCycle = 0
@@ -301,6 +342,9 @@ class NodeFlowEngine internal constructor(
             return
         }
         applyCustomizations()
+
+        // A question: what "Edit" goes back to, before it is drawn.
+        if (com.conferbot.sdk.core.delight.Delight.waitsForAnswer(node.type)) notePoint(node)
 
         val token = ++moveToken
         currentNodeId = node.id
@@ -362,6 +406,54 @@ class NodeFlowEngine internal constructor(
         }
         if (token != moveToken || ended) return
         handleNodeResult(result, node, token)
+    }
+
+    private fun copyControl(f: FlowControl.State): FlowControl.State = FlowControl.State().also { c ->
+        f.loops.forEach { (k, l) -> c.loops[k] = FlowControl.LoopState(l.i, l.total, l.items, l.capped) }
+        c.stack.addAll(f.stack)
+    }
+
+    private fun notePoint(node: FlowNode) {
+        points.add(QuestionPoint(++pointSeq, node.id, node.type, steps.size, ChatState.record.value.size, ChatState.snapshot(), copyControl(flowControl)))
+        while (points.size > com.conferbot.sdk.core.delight.Delight.MAX_QUESTION_POINTS) points.removeAt(0)
+    }
+
+    /** The questions asked so far that can still be gone back to, oldest first. */
+    fun questionPoints(): List<QuestionPoint> = points.toList()
+
+    /**
+     * The step types run since a question (it excluded); "agent" when a
+     * person or the AI agent has been in the conversation since (what they
+     * saw stays). Web index.ts typesSince.
+     */
+    fun typesSince(point: QuestionPoint): List<String> {
+        val types = steps.drop(point.stepsLen + 1).map { it.type }
+        val agent = ChatState.record.value.drop(point.recordLen).any { (it.type ?: "").startsWith("agent") || it.shape.startsWith("agent") }
+        return if (agent) types + "agent" else types
+    }
+
+    /**
+     * "Edit": the conversation as it was when the question was asked, and the
+     * question asked again exactly as the forward path asks it (web index.ts
+     * _rewindToQuestion). False when the point is gone or the chat ended.
+     */
+    fun rewindTo(pointId: Int): Boolean {
+        val i = points.indexOfFirst { it.id == pointId }
+        val point = points.getOrNull(i) ?: return false
+        val node = nodes[point.nodeId] ?: return false
+        if (ended || _isFlowComplete.value) return false
+        moveToken++
+        ChatState.restore(point.snap)
+        while (steps.size > point.stepsLen) steps.removeAt(steps.size - 1)
+        flowControl = copyControl(point.flowControl)
+        while (points.size > i) points.removeAt(points.size - 1)
+        mediaWaiters.clear()
+        waiting = false
+        nodesProcessedInCycle = 0
+        _errorMessage.value = null
+        sendResponseToServer()
+        scope.launch { enter(node, "rewind") }
+        return true
     }
 
     /** A question step registers {nodeId, key, null} when shown. */
@@ -436,7 +528,7 @@ class NodeFlowEngine internal constructor(
 
     /** [ui] stamped with its step (see NodeUIState.step); [error] the card's refusal. */
     private fun stamped(ui: NodeUIState, node: FlowNode, token: Int, error: String? = null): NodeUIState =
-        ui.withStep(NodeUIState.StepInfo(type = node.type, node = node.data, extra = ui.step?.extra ?: emptyMap(), error = error, visit = token))
+        ui.withStep(NodeUIState.StepInfo(type = node.type, node = node.data, extra = ui.step?.extra ?: emptyMap(), error = error, visit = token, nodeId = node.id))
 
     private suspend fun handleDisplayUI(ui: NodeUIState, node: FlowNode, token: Int) {
         _currentUIState.value = stamped(ui, node, token)
@@ -693,7 +785,10 @@ class NodeFlowEngine internal constructor(
             val result = runHandler(handler, node, "edge", token) { h -> h.handleResponse(response, node.data, node.id) }
             if (echo) {
                 val now = ChatState.transcript.value
-                now.drop(now.indexOfLast { it === before } + 1).filter { it.by == "user" }.forEach { _visitorLines.tryEmit(it.message) }
+                now.drop(now.indexOfLast { it === before } + 1).filter { it.by == "user" }.forEach {
+                    _visitorLines.tryEmit(it.message)
+                    _visitorAnswers.tryEmit(VisitorLine(it.message, node.id, node.type))
+                }
             }
             if (token != moveToken || ended) return
             sendResponseToServer()
@@ -807,6 +902,7 @@ class NodeFlowEngine internal constructor(
         override val visitorTimeZone: String = config.visitorTimeZone ?: FlowCalendar.visitorTimeZone()
         override val pageUrl: String? = config.pageUrl
         override val pageReferrer: String? = config.pageReferrer
+        override val calendarBookings: List<Map<String, Any?>> get() = this@NodeFlowEngine.calendarBookings
 
         override suspend fun api(path: String, body: Map<String, Any?>, timeoutMs: Long?): ApiReply =
             api.post(ChatState.botId ?: "", path, body, timeoutMs)
