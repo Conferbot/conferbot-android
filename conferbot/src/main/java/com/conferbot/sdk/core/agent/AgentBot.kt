@@ -47,6 +47,16 @@ data class ResultCard(
 data class ActionSummaryLine(val label: String, val value: String)
 data class ActionRequest(val token: String, val name: String, val summary: List<ActionSummaryLine>)
 
+/**
+ * Where a cited help article or an article card opens (RN agentBot.ts
+ * OpenTarget): the article in the app by its id, a public page, or nowhere
+ * (drawn, not tappable).
+ */
+sealed class OpenTarget {
+    data class Article(val id: String, val title: String) : OpenTarget()
+    data class Url(val url: String) : OpenTarget()
+}
+
 /** An article, quick replies or a card from the agent (agent-message-rich). */
 sealed class RichEntry {
     data class Article(val articleId: String, val title: String, val snippet: String, val url: String?) : RichEntry()
@@ -195,6 +205,31 @@ object AgentBotParser {
     }
 
     /** "https://www.conferbot.com/pricing" -> "conferbot.com" */
+    /**
+     * Where a source opens (web agentSources.ts chip): a help article in the
+     * app while it can open there ([canOpenArticles]: the help centre is on
+     * and the chat can show an article), else its public http(s) page, else
+     * nowhere (drawn, not tappable).
+     */
+    fun sourceTarget(s: AgentSource?, canOpenArticles: Boolean): OpenTarget? {
+        s ?: return null
+        val id = s.articleId
+        if (id != null && OBJECT_ID.matches(id) && canOpenArticles) return OpenTarget.Article(id, s.title)
+        httpUrl(s.url)?.let { return OpenTarget.Url(it) }
+        return null
+    }
+
+    /**
+     * Where the agent's rich article card opens (web agentRich.ts): its
+     * public page when it has one, else the article in the app.
+     */
+    fun richArticleTarget(rich: RichEntry?, canOpenArticles: Boolean): OpenTarget? {
+        val a = rich as? RichEntry.Article ?: return null
+        httpUrl(a.url)?.let { return OpenTarget.Url(it) }
+        if (OBJECT_ID.matches(a.articleId) && canOpenArticles) return OpenTarget.Article(a.articleId, a.title)
+        return null
+    }
+
     fun sourceHost(url: String?): String {
         val m = Regex("^https?://([^/?#:]+)", RegexOption.IGNORE_CASE).find(url ?: "") ?: return ""
         return m.groupValues[1].lowercase().removePrefix("www.")
