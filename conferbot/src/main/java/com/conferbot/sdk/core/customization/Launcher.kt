@@ -43,6 +43,17 @@ data class ResolvedLauncher(
     val animation: String = "subtle",
     /** The greeting next to the button, when the owner turned it on. */
     val ctaText: String? = null,
+    /**
+     * How it arrives (LauncherEntrance), its "look here" loop
+     * (LauncherAttention) and the mascot's idle call (LauncherIdleCall):
+     * classic / off unless the owner chose one.
+     */
+    val entrance: String = "classic",
+    val attention: String = "off",
+    val idleCall: String = "off",
+    /** Seconds before the idle call (5-120), and its bubble's line. */
+    val idleCallDelay: Int = LauncherIdleCall.DEFAULT_DELAY,
+    val idleCallText: String = "",
 )
 
 object Launcher {
@@ -145,6 +156,11 @@ object Launcher {
             animation = (c["launcherAnimation"] as? String)?.takeIf { it == "lively" || it == "off" } ?: "subtle",
             // Only when the owner turned the greeting on (templates/shared.ts: no chatIconCta, no bubble).
             ctaText = if (c["chatIconCta"] == true) str(c["chatIconCtaText"]).ifEmpty { null } else null,
+            entrance = LauncherEntrance.normalize(c["launcherEntrance"]),
+            attention = LauncherAttention.normalize(c["launcherAttention"]),
+            idleCall = LauncherIdleCall.normalize(c["launcherIdleCall"]),
+            idleCallDelay = LauncherIdleCall.normalizeDelay(c["launcherIdleCallDelay"]),
+            idleCallText = LauncherIdleCall.line(LauncherIdleCall.normalize(c["launcherIdleCall"]), c["launcherIdleCallText"]),
         )
     }
 
