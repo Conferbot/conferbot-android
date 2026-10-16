@@ -90,7 +90,7 @@
             android:layout_height="48dp"
             android:layout_marginEnd="4dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Attach a file"
+            tools:contentDescription="Attach a file"
             android:src="@drawable/ic_attach"
             android:visibility="gone" />
 
@@ -100,7 +100,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:background="@drawable/bg_message_input"
-            android:hint="Type a message..."
+            tools:hint="Type a message..."
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="4"
             android:padding="12dp"
@@ -112,7 +112,7 @@
             android:layout_height="48dp"
             android:layout_marginStart="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Send message"
+            tools:contentDescription="Send message"
             android:src="@drawable/ic_send"
             android:tint="@color/primary" />
     </LinearLayout>
