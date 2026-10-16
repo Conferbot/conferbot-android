@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,7 +63,7 @@ fun ChatHeader(
      * ("Typically replies in a few minutes", "Online · team back at 9 AM";
      * core/livechat/ReplyTime.kt headerStatus). Default "Online".
      */
-    statusText: String = "Online",
+    statusText: String = I18n.t("status.online"),
     /** "Email me this chat" in the menu: shown when given (a session, a visitor not blocked). */
     onEmailChat: (() -> Unit)? = null,
     /**
@@ -101,8 +102,8 @@ fun ChatHeader(
                         .padding(end = 6.dp)
                         .size(width = 24.dp, height = 40.dp)
                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Back", onClick = onHome)
-                        .semantics { contentDescription = "Back" },
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = I18n.t("common.back"), onClick = onHome)
+                        .semantics { contentDescription = I18n.t("common.back") },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -124,7 +125,7 @@ fun ChatHeader(
             if (showAvatar && avatarUrl != null) {
                 AsyncImage(
                     model = avatarUrl,
-                    contentDescription = "Bot avatar",
+                    contentDescription = I18n.t("sdk.message.botAvatar"),
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape),
@@ -167,13 +168,13 @@ fun ChatHeader(
                 // Subtitle: status or tagline
                 val subtitleText = when {
                     !isOnline -> if (pendingMessageCount > 0)
-                        "Offline \u00b7 $pendingMessageCount pending" else "Offline"
-                    isSyncing -> "Syncing..."
-                    !isConnected -> "Reconnecting..."
+                        I18n.t("sdk.status.offline") + " \u00b7 " + I18n.tPlural("sdk.offline.pending", pendingMessageCount) else I18n.t("sdk.status.offline")
+                    isSyncing -> I18n.t("sdk.status.syncing")
+                    !isConnected -> I18n.t("sdk.status.reconnecting")
                     look?.tagline != null -> look.tagline
                     look == null && serverCustomization?.enableTagline == true &&
                             !serverCustomization.tagline.isNullOrBlank() ->
-                        serverCustomization.tagline
+                        I18n.stockText(serverCustomization.tagline, "header.tagline")
                     else -> null
                 }
                 // The web's "Online" line: a 7dp green dot with a soft ring, and
@@ -218,7 +219,7 @@ fun ChatHeader(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Close",
+                    contentDescription = I18n.t("launcher.close"),
                     tint = colors.headerIcon,
                     modifier = Modifier.size(20.dp)
                 )
@@ -232,7 +233,7 @@ fun ChatHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More",
+                        contentDescription = I18n.t("chat.menu.label"),
                         tint = colors.headerIcon,
                         modifier = Modifier.size(20.dp)
                     )
@@ -242,7 +243,7 @@ fun ChatHeader(
                     onDismissRequest = { showMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Restart Chat", fontSize = 14.sp) },
+                        text = { Text(I18n.t("sdk.restart.title"), fontSize = 14.sp) },
                         onClick = {
                             showMenu = false
                             Conferbot.clearHistory()
@@ -267,14 +268,14 @@ fun ChatHeader(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("End Chat", fontSize = 14.sp) },
+                        text = { Text(I18n.t("sdk.handover.endChat"), fontSize = 14.sp) },
                         onClick = { showMenu = false; onDismiss() },
                         leadingIcon = {
                             Icon(Icons.Filled.Close, null, Modifier.size(18.dp))
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(if (soundEnabled) "Sound Off" else "Sound On", fontSize = 14.sp) },
+                        text = { Text(if (soundEnabled) I18n.t("chat.menu.soundOff") else I18n.t("chat.menu.soundOn"), fontSize = 14.sp) },
                         onClick = { soundEnabled = !soundEnabled; showMenu = false },
                         leadingIcon = {
                             Icon(
