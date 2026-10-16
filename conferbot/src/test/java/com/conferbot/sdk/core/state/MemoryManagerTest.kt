@@ -26,6 +26,9 @@ class MemoryManagerTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        // MemoryManager is a singleton: no state, context or handler carried
+        // over from the test before (#69).
+        MemoryManager.resetForTests()
 
         context = mockk(relaxed = true)
         activityManager = mockk(relaxed = true)
@@ -72,6 +75,7 @@ class MemoryManagerTest {
 
     @After
     fun tearDown() {
+        MemoryManager.resetForTests()
         Dispatchers.resetMain()
         unmockkObject(ChatState)
         unmockkObject(PaginatedMessageManager)
