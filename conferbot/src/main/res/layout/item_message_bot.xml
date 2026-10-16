@@ -18,7 +18,7 @@
             android:layout_width="32dp"
             android:layout_height="32dp"
             android:layout_marginEnd="8dp"
-            android:contentDescription="Bot avatar"
+            tools:contentDescription="Bot avatar"
             android:visibility="gone"
             tools:src="@drawable/ic_bot_avatar" />
 
