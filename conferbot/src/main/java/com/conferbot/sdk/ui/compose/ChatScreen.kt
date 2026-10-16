@@ -117,6 +117,7 @@ private fun ConferBotChatScreenContent(
     val csatOpen by live.csatOpen.collectAsState()
     val csatSent by live.csatSent.collectAsState()
     val leftMessageTo by live.leftMessageTo.collectAsState()
+    val redirectLine by Conferbot.postChatRedirect.line.collectAsState()
     val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     // The system file picker: no extra library in the host app.
@@ -148,7 +149,10 @@ private fun ConferBotChatScreenContent(
     val look by Conferbot.customizations.collectAsState()
     val hasLook = customizationMap.isNotEmpty()
     // The header keeps the bot (never the agent), as the web widget does.
-    val headerTitle = look.title.takeIf { hasLook } ?: I18n.t("sdk.header.supportChat")
+    // Before them: the app's ConferBotCustomization.headerTitle, else the SDK's words.
+    val headerTitle = look.title.takeIf { hasLook }
+        ?: com.conferbot.sdk.ui.views.XmlChatBridge.headerTitle(Conferbot.getCustomization())
+        ?: I18n.t("sdk.header.supportChat")
     // "Online", the team's reply time, or plain "Online" once a person is in
     // the chat (core/livechat/ReplyTime.kt, the web's replyTime.ts / headerPresence.ts).
     val agentBot by Conferbot.agentBot.collectAsState()
@@ -317,7 +321,7 @@ private fun ConferBotChatScreenContent(
                     onNodeResponse = { response -> Conferbot.submitNodeResponse(response) },
                     modifier = Modifier.weight(1f),
                     footer = { LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }, closed = closed) },
-                    footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo, mailOpen, mailSentTo, closed?.kind)
+                    footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo, mailOpen, mailSentTo, closed?.kind, redirectLine)
                 )
 
                 lockedBy?.let { SystemLine(I18n.t("system.locked")) }
