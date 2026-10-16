@@ -760,4 +760,56 @@ class SessionRepositoryTest {
         // Then
         coVerify { chatSessionDao.deleteOldSessions(olderThan) }
     }
+
+    // ==================== REWIND TESTS (#88) ====================
+
+    @Test
+    fun `rewind cuts the transcript's newest entries and replaces record and answers`() = runTest {
+        // Given
+        val repository = SessionRepository(context)
+        val sessionId = "test-session-123"
+        val records = listOf(RecordEntry(id = "r1", shape = "bot-message", text = "Hi", data = mutableMapOf("k" to "v")))
+        val answers = listOf(AnswerVariable(nodeId = "n1", key = "name", value = "Ada"))
+        val savedRecords = slot<List<RecordEntity>>()
+        val savedAnswers = slot<List<AnswerVariableEntity>>()
+        coEvery { recordDao.insertAll(capture(savedRecords)) } just Runs
+        coEvery { answerVariableDao.insertAll(capture(savedAnswers)) } just Runs
+
+        // When
+        repository.rewind(sessionId, transcriptDropped = 3, records = records, answerVariables = answers)
+
+        // Then
+        coVerifyOrder {
+            transcriptDao.deleteNewest(sessionId, 3)
+            recordDao.deleteAllForSession(sessionId)
+            recordDao.insertAll(any())
+            answerVariableDao.deleteAllForSession(sessionId)
+            answerVariableDao.insertAll(any())
+        }
+        coVerify(exactly = 0) { transcriptDao.deleteAllForSession(any()) }
+        assertThat(savedRecords.captured.map { it.recordId }).containsExactly("r1")
+        assertThat(savedRecords.captured.single().sessionId).isEqualTo(sessionId)
+        assertThat(savedAnswers.captured.map { it.key }).containsExactly("name")
+    }
+
+    @Test
+    fun `rewind with nothing kept clears the whole transcript`() = runTest {
+        val repository = SessionRepository(context)
+
+        repository.rewind("s", transcriptDropped = -1, records = emptyList(), answerVariables = emptyList())
+
+        coVerify { transcriptDao.deleteAllForSession("s") }
+        coVerify(exactly = 0) { transcriptDao.deleteNewest(any(), any()) }
+    }
+
+    @Test
+    fun `rewind with no transcript after the point leaves it alone`() = runTest {
+        val repository = SessionRepository(context)
+
+        repository.rewind("s", transcriptDropped = 0, records = emptyList(), answerVariables = emptyList())
+
+        coVerify(exactly = 0) { transcriptDao.deleteNewest(any(), any()) }
+        coVerify(exactly = 0) { transcriptDao.deleteAllForSession(any()) }
+        coVerify { recordDao.deleteAllForSession("s") }
+    }
 }
