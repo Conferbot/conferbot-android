@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -85,14 +87,15 @@ object LiveChat {
     fun queueLine(q: QueueStatus?): String {
         val p = q?.position
         return when {
-            p == 1 -> "You're next in line"
-            p != null && p > 1 -> "You're ${ordinal(p)} in line"
-            else -> "Connecting you to the team"
+            // In the active language (web queueCard.ts positionText: queue.*; {ord} is English's "3rd").
+            p == 1 -> t("queue.next")
+            p != null && p > 1 -> t("queue.position", "n" to p, "ord" to ordinal(p))
+            else -> t("queue.connecting")
         }
     }
 
     // The server's label is already a phrase ("Under a minute", "About 2 min").
-    fun queueSubline(q: QueueStatus?): String = q?.estimateLabel ?: "Our team will be with you soon"
+    fun queueSubline(q: QueueStatus?): String = q?.estimateLabel ?: t("queue.soon")
 
     /** handover-waiting: nobody could take the chat (the AI took it back). */
     fun handoverWaitingOf(raw: Map<String, Any?>?): HandoverWaiting? {
@@ -109,8 +112,12 @@ object LiveChat {
     /** The line on that card. */
     fun handoverWaitingLine(w: HandoverWaiting, now: Date = Date(), tz: TimeZone = TimeZone.getDefault()): String {
         val back = backAtLabel(w.backAt, now, tz)
-        val first = if (w.offline) "The team is offline right now${back?.let { ", back around $it" } ?: ""}." else "Everyone's busy right now."
-        val second = w.email?.let { "They'll reply to $it." } ?: "Leave your email and they will reply."
+        val first = when {
+            !w.offline -> t("sdk.waiting.busy")
+            back != null -> t("sdk.waiting.offlineBack", "when" to back)
+            else -> t("sdk.waiting.offline")
+        }
+        val second = w.email?.let { t("sdk.waiting.replyTo", "email" to it) } ?: t("sdk.waiting.leaveEmail")
         return "$first $second"
     }
 
@@ -154,9 +161,9 @@ object LiveChat {
     }
 
     fun receiptLabel(state: ReceiptState): String = when (state) {
-        ReceiptState.SEEN -> "Seen"
-        ReceiptState.DELIVERED -> "Delivered"
-        ReceiptState.SENT -> "Sent"
+        ReceiptState.SEEN -> t("receipt.seen")
+        ReceiptState.DELIVERED -> t("receipt.delivered")
+        ReceiptState.SENT -> t("receipt.sent")
     }
 
     /** The newest agent message id: what the visitor reports delivered / seen. */
@@ -170,12 +177,12 @@ object LiveChat {
     fun backAtLabel(iso: String?, now: Date = Date(), tz: TimeZone = TimeZone.getDefault()): String? {
         iso ?: return null
         val date = parseIso(iso) ?: return null
-        val time = DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault()).apply { timeZone = tz }.format(date)
+        val time = DateFormat.getTimeInstance(DateFormat.SHORT, visitorLocale()).apply { timeZone = tz }.format(date)
         val a = Calendar.getInstance(tz).apply { this.time = date }
         val b = Calendar.getInstance(tz).apply { this.time = now }
         val sameDay = a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
         if (sameDay) return time
-        val day = SimpleDateFormat("EEEE", Locale.getDefault()).apply { timeZone = tz }.format(date)
+        val day = SimpleDateFormat("EEEE", visitorLocale()).apply { timeZone = tz }.format(date)
         return "$day $time"
     }
 
@@ -197,14 +204,15 @@ object LiveChat {
         raw ?: return null
         if (raw["enabled"] != true) return null
         val type = (raw["ratingType"] as? String)?.takeIf { it in setOf("stars", "thumbs", "emoji", "nps") } ?: "stars"
-        fun s(key: String, d: String) = str(raw[key]) ?: d
+        // The owner's words, else the web's (postChatRating.ts csat.*) in the visitor's language.
+        fun s(field: String, key: String, stock: List<String> = emptyList()) = I18n.ownerTextOr(str(raw[field]), key, stock)
         return CsatConfig(
             ratingType = type,
-            titleText = s("titleText", "How was your experience?"),
-            subtitleText = s("subtitleText", "Your feedback helps us improve"),
-            thankYouText = s("thankYouText", "Thank you for your feedback!"),
+            titleText = s("titleText", "csat.title"),
+            subtitleText = s("subtitleText", "csat.subtitle"),
+            thankYouText = s("thankYouText", "csat.thanks"),
             showFeedbackInput = raw["showFeedbackInput"] != false,
-            feedbackPlaceholder = s("feedbackPlaceholder", "Tell us more...")
+            feedbackPlaceholder = s("feedbackPlaceholder", "csat.placeholder", listOf("Tell us more..."))
         )
     }
 
@@ -316,6 +324,10 @@ object LiveChat {
         return ""
     }
 
-    const val TALK_TO_PERSON_ASK = "I'd like to talk to a person, please."
+    /** The visitor's words asking for a person, in the active language (web chat.talkToPersonAsk). */
+    val TALK_TO_PERSON_ASK: String get() = t("chat.talkToPersonAsk")
+
+    /** Dates and times the visitor reads: the widget's language and region (the device's own for English). */
+    private fun visitorLocale(): Locale = if (I18n.language == I18n.EN) Locale.getDefault() else I18n.locale
     const val QUEUE_POLL_MS = 20_000L
 }
