@@ -249,6 +249,18 @@ object MemoryManager {
             _memoryState.value = MemoryState.NORMAL
         }
     }
+
+    /**
+     * Back to as first loaded: no context, the default config, no handlers,
+     * NORMAL. The object lives for the whole test JVM, so each test starts
+     * from here instead of the last test's state (#69).
+     */
+    internal fun resetForTests() {
+        appContext = null
+        config = MemoryConfig()
+        cleanupHandlers.clear()
+        _memoryState.value = MemoryState.NORMAL
+    }
 }
 
 /**
