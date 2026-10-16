@@ -75,7 +75,10 @@ sealed class RecordItem {
         val text: String,
 
         @SerializedName("metadata")
-        val metadata: Map<String, Any>? = null
+        val metadata: Map<String, Any>? = null,
+
+        /** The flow question it answered (the bot's tapback and "Edit" read it; core/delight). */
+        val answerOf: com.conferbot.sdk.core.delight.AnswerOf? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.USER_INPUT_RESPONSE
     }
@@ -96,7 +99,10 @@ sealed class RecordItem {
         val nodeData: Map<String, Any>? = null,
 
         /** Inline media persisted with the message (welcome gif, image nodes). */
-        val imageUrl: String? = null
+        val imageUrl: String? = null,
+
+        /** The flow step that said it ("Edit" folds a question's rows away). */
+        val nodeId: String? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.BOT_MESSAGE
     }
