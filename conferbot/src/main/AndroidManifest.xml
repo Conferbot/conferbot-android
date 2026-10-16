@@ -39,29 +39,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Firebase Cloud Messaging Service -->
-        <service
-            android:name=".notifications.ConferbotNotificationService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
-
-        <!-- Default notification channel metadata -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="conferbot_messages" />
-
-        <!-- Default notification icon (can be overridden by host app) -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_send" />
-
-        <!-- Optional: Default notification color -->
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_color"
-            android:resource="@color/conferbot_primary" />
+        <!--
+            No FirebaseMessagingService or Firebase meta-data here: Firebase is
+            optional and the app's own FCM setup stays the app's. An app that
+            wants the SDK's service declares
+            com.conferbot.sdk.notifications.ConferbotNotificationService itself
+            (README "Push notifications").
+        -->
 
     </application>
 
