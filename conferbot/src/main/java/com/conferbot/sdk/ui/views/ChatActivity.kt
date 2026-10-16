@@ -157,6 +157,10 @@ class ChatActivity : AppCompatActivity() {
                 if (hasText) {
                     Conferbot.sendTypingStatus(true)
                 }
+                // The agent's typing preview and the waiting nudge (never for a password field).
+                val type = binding.messageInput.inputType and android.text.InputType.TYPE_MASK_VARIATION
+                val secret = type == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD || type == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+                Conferbot.updateVisitorDraft(s?.toString().orEmpty(), sensitive = secret)
             }
             override fun afterTextChanged(s: Editable?) {}
         })
