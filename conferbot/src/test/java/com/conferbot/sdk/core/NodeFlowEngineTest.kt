@@ -119,6 +119,34 @@ class NodeFlowEngineTest {
     }
 
     @Test
+    fun `a live chat's end carries the flow on from its handover step, never from the start`() {
+        engine.loadFlow(listOf(node("w", "welcome-node"), node("ho", "human-handover-node"), node("a", "message-node", mapOf("text" to "A"))), listOf(edge("w", "source", "ho"), edge("ho", "source", "a")))
+        engine.waitAt("ho", NodeUIState.HumanHandover(state = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT, nodeId = "ho"))
+        engine.handleAgentAccepted("Sam")
+        engine.handleChatEnded()
+        clock.settle()
+        assertThat(entered()).containsExactly("a")
+        assertThat(engine.handoverNodeId).isNull()
+    }
+
+    @Test
+    fun `a live chat's end asks the handover step's post-chat survey questions first`() {
+        val data = mapOf(
+            "enablePostChatSurveyQuestions" to true,
+            "postChatSurveyQuestions" to listOf(mapOf("id" to "q1", "questionText" to "How did we do?", "answerVariable" to "rating"))
+        )
+        engine.loadFlow(listOf(node("w", "welcome-node"), node("ho", "human-handover-node", data), node("a", "message-node", mapOf("text" to "A"))), listOf(edge("w", "source", "ho"), edge("ho", "source", "a")))
+        engine.waitAt("ho", NodeUIState.HumanHandover(state = NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT, nodeId = "ho"))
+        assertThat(engine.handoverNodeId).isEqualTo("ho")
+        engine.handleAgentAccepted("Sam")
+        engine.handleChatEnded()
+        clock.settle()
+        val survey = engine.currentUIState.value as NodeUIState.PostChatSurvey
+        assertThat(survey.questions.single().question).isEqualTo("How did we do?")
+        assertThat(entered()).isEmpty()
+    }
+
+    @Test
     fun `a greeting comes as a bot line of its own`() {
         val lines = mutableListOf<NodeUIState>()
         val job = kotlinx.coroutines.CoroutineScope(Dispatchers.Unconfined).launch { engine.botMessages.collect { lines.add(it) } }
