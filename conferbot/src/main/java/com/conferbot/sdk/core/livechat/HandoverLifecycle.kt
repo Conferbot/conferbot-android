@@ -55,6 +55,15 @@ interface HandoverHost {
 }
 
 /**
+ * Where a wait for a person begins and ends, for the help card that comes 6s
+ * in (core/waiting/WaitingExtras; web special.ts waitForPerson).
+ */
+interface WaitHooks {
+    fun start()
+    fun end()
+}
+
+/**
  * The handover's lifecycle in the chat: the "Connecting you with the
  * team…" line and how it settles, the 20s waiting signal, leaving the
  * queue, and picking a live chat back up after the app restarts. The logic
@@ -68,6 +77,8 @@ class HandoverLifecycle(
     private val flow: () -> HandoverFlow?,
     private val host: HandoverHost,
     timer: SignalTimer,
+    /** Where a wait for a person begins and ends (the while-you-wait help card). */
+    private val waitHooks: WaitHooks? = null,
     private val now: () -> Date = { Date() }
 ) {
     val bus = SignalBus()
@@ -105,9 +116,13 @@ class HandoverLifecycle(
         HandoverState.settledRecordEntries(host.record(), outcome).forEach(host::saveEntry)
     }
 
+    private fun waitStart() = waitHooks?.start()
+    private fun waitEnd() = waitHooks?.end()
+
     /** The wait ended without a person: no waiting signal, and cb:wait-over. */
     private fun waitOver(reason: String) {
         connecting.end()
+        waitEnd()
         bus.emit(WidgetSignal.WaitOver(reason))
     }
 
@@ -118,7 +133,10 @@ class HandoverLifecycle(
     fun flowWaitStarted(nodeData: Map<String, Any?>?) {
         queueLeft = false
         val ai = nodeData?.get("assignedAIAgents") as? List<*>
-        if (ai.isNullOrEmpty()) connecting.start()
+        if (ai.isNullOrEmpty()) {
+            connecting.start()
+            waitStart()
+        }
     }
 
     /**
@@ -135,6 +153,8 @@ class HandoverLifecycle(
         if (handover) {
             queueLeft = false
             connecting.start()
+            // Passed on to a person: what may help while they wait (web special.ts agent-left).
+            waitStart()
             // The same escalation again: one line is enough.
             if (HandoverState.hasPendingLine(entries())) return kind
         }
@@ -168,6 +188,7 @@ class HandoverLifecycle(
     fun onAccepted(data: Map<String, Any?>?): AcceptedPlan {
         val plan = HandoverState.acceptedPlan(entries(), data)
         connecting.end()
+        waitEnd()
         settle(plan.outcome)
         if (plan.humanJoined) {
             val name = (data?.get("agentDetails") as? Map<*, *>)?.get("name")?.toString()
@@ -193,18 +214,28 @@ class HandoverLifecycle(
         )
     }
 
-    /** Out of the queue: the line, the record, the signal, the flow moves on. Once per wait. */
-    fun leftQueue() {
+    /**
+     * Out of the queue: the line, the record, the signal, the flow moves on.
+     * Once per wait. [helped]: a help article solved it ("That solved it",
+     * web special.ts _wireQueue leave()): "You left the queue. Glad that
+     * helped.", recorded as "Resolved while waiting".
+     */
+    fun leftQueue(helped: Boolean = false) {
         if (queueLeft) return
         queueLeft = true
         waitOver("cancelled")
         settle(HandoverOutcome.CANCELLED)
         val id = entryId("queue-self-resolved")
-        val text = HandoverState.outcomeText(HandoverOutcome.CANCELLED)
+        val cancelled = HandoverState.outcomeText(HandoverOutcome.CANCELLED)
+        val text = if (helped) com.conferbot.sdk.core.waiting.WaitArticles.LEFT_HELPED else cancelled
+        val recorded = if (helped) com.conferbot.sdk.core.waiting.WaitArticles.RECORD_TEXT else cancelled
         host.addItem(RecordItem.SystemMessage(id = id, time = now(), text = text, kind = "queue-self-resolved"))
-        host.saveEntry(RecordEntry(id = id, shape = "queue-self-resolved", type = "queue-self-resolved", text = text))
+        host.saveEntry(RecordEntry(id = id, shape = "queue-self-resolved", type = "queue-self-resolved", text = recorded))
         flow()?.takeIf { it.isAtHandover }?.submitResponse(mapOf("action" to "cancel", "queueLeft" to true))
     }
+
+    /** The server let them go because an article helped (queue-self-resolve answered ok). */
+    fun leftQueueHelped() = leftQueue(helped = true)
 
     /**
      * The visitor leaves the queue (the wait card's Cancel): queue-self-resolve,
@@ -239,6 +270,7 @@ class HandoverLifecycle(
         s.on("handover-waiting") {
             if (!own(it)) return@on
             connecting.end()
+            waitEnd()
             settle(HandoverOutcome.UNAVAILABLE)
             bus.emit(HandoverSignals.waitingDetail(it))
         }
@@ -299,6 +331,7 @@ class HandoverLifecycle(
      */
     fun blocked() {
         connecting.end()
+        waitEnd()
         settle(HandoverOutcome.ENDED)
         flow()?.stop()
         host.setLiveMode(false)
@@ -306,6 +339,7 @@ class HandoverLifecycle(
 
     private fun ended(data: Map<String, Any?>?) {
         if (!own(data)) return
+        waitEnd()
         val waiting = inWait()
         settle(HandoverOutcome.ENDED)
         if (waiting) waitOver("ended")
