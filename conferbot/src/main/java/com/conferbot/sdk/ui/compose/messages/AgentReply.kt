@@ -204,20 +204,26 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
         modifier = modifier.fillMaxWidth().padding(start = theme.spacing.avatarSize + 10.dp).widthIn(max = theme.spacing.maxBubbleWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // A help centre article opens in the chat's help centre by its id
-        // (agentSources.ts openArticle); a page opens in the browser.
-        val knowledgeBase by Conferbot.knowledgeBase.collectAsState()
+        // A help article opens in the app while the help centre is on (its
+        // list, else fetched by id), else its page in the browser, else it is
+        // not tappable (agentSources.ts; AgentBotParser.sourceTarget).
+        val articleHosts by Conferbot.articleHosts.collectAsState()
+        val canOpenArticles = Conferbot.canOpenChatArticles(customizations, articleHosts)
         extras?.sources?.forEach { source ->
-            val inApp = source.articleId != null &&
-                com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(customizations, knowledgeBase, source.articleId)
+            val target = AgentBotParser.sourceTarget(source, canOpenArticles)
+            val inApp = target is com.conferbot.sdk.core.agent.OpenTarget.Article
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .background(colors.surface)
                     .border(BorderStroke(1.dp, colors.divider), RoundedCornerShape(8.dp))
-                    .clickable(enabled = inApp || source.url != null) {
-                        if (!(inApp && Conferbot.openHelpArticle(source.articleId!!, source.title))) openUrl(context, source.url)
+                    .clickable(enabled = target != null) {
+                        when (target) {
+                            is com.conferbot.sdk.core.agent.OpenTarget.Article -> if (!Conferbot.openChatArticle(target.id, target.title)) openUrl(context, source.url)
+                            is com.conferbot.sdk.core.agent.OpenTarget.Url -> openUrl(context, target.url)
+                            null -> {}
+                        }
                     }
                     .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -233,9 +239,9 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
                 if (inApp) {
                     Spacer(Modifier.width(6.dp))
                     Text(I18n.t("kb.helpArticle") + " ›", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
-                } else if (source.url != null) {
+                } else if (target is com.conferbot.sdk.core.agent.OpenTarget.Url) {
                     Spacer(Modifier.width(6.dp))
-                    Text("${AgentBotParser.sourceHost(source.url)} ↗", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
+                    Text("${AgentBotParser.sourceHost(target.url)} ↗", color = colors.onSurfaceVariant, style = TextStyle(fontSize = theme.typography.timestampSize))
                 }
             }
         }
@@ -453,7 +459,6 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
     val colors = theme.colors
     val context = LocalContext.current
     val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
-    val knowledgeBase by Conferbot.knowledgeBase.collectAsState()
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         BotAvatar()
         Spacer(Modifier.width(10.dp))
@@ -486,16 +491,18 @@ fun RichAgentMessageBubble(message: RecordItem.AgentRichMessage, modifier: Modif
                     Text(rich.title, color = colors.onSurface, style = TextStyle(fontSize = theme.typography.messageSize, fontWeight = FontWeight.SemiBold))
                     if (rich.snippet.isNotBlank()) Text(rich.snippet, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis,
                         style = TextStyle(fontSize = theme.typography.captionSize))
-                    // agentRich.ts: a public link opens it; otherwise the article
-                    // opens in the chat's help centre by its id.
-                    val url = rich.url
-                    val inApp = url == null && rich.articleId.isNotBlank() &&
-                        com.conferbot.sdk.core.helpcentre.HelpCentre.canOpen(customizationMap, knowledgeBase, rich.articleId)
-                    if (url != null || inApp) {
-                        Text(I18n.t("sdk.kb.readArticle") + if (url != null) " ↗" else " ›", color = colors.primary,
+                    // agentRich.ts: its public page first, else the article in
+                    // the app (AgentBotParser.richArticleTarget).
+                    val articleHosts by Conferbot.articleHosts.collectAsState()
+                    val target = AgentBotParser.richArticleTarget(rich, Conferbot.canOpenChatArticles(customizationMap, articleHosts))
+                    if (target != null) {
+                        Text(I18n.t("sdk.kb.readArticle") + if (target is com.conferbot.sdk.core.agent.OpenTarget.Url) " ↗" else " ›", color = colors.primary,
                             style = TextStyle(fontSize = theme.typography.captionSize, fontWeight = FontWeight.SemiBold),
                             modifier = Modifier.padding(top = 8.dp).clickable {
-                                if (url != null) openUrl(context, url) else Conferbot.openHelpArticle(rich.articleId, rich.title)
+                                when (target) {
+                                    is com.conferbot.sdk.core.agent.OpenTarget.Url -> openUrl(context, target.url)
+                                    is com.conferbot.sdk.core.agent.OpenTarget.Article -> Conferbot.openChatArticle(target.id, target.title)
+                                }
                             })
                     }
                 }
