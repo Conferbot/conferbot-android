@@ -51,6 +51,8 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The chat opened: the launcher sound, or the pack's open (core/sound).
+        if (savedInstanceState == null) Conferbot.sounds.play(com.conferbot.sdk.core.sound.MessageSound.Event.OPEN)
         binding = ActivityChatBinding.inflate(layoutInflater)
         setContentView(binding.root)
         // A theme set to "auto" follows the phone's light / dark setting.
@@ -453,6 +455,7 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (isFinishing) Conferbot.sounds.play(com.conferbot.sdk.core.sound.MessageSound.Event.CLOSE)
         Conferbot.sendTypingStatus(false)
     }
 }
