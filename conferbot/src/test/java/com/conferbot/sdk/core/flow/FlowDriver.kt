@@ -238,8 +238,18 @@ object FlowDriver {
         else -> o
     }
 
-    /** Runs one fixture through the engine and returns what it did. */
-    fun run(fx: Map<String, Any?>): Outcome {
+    /**
+     * A visitor action as a step card sends it: (action, the waiting UI state,
+     * the step's node, the card's memory per step) -> handled, answer. Not
+     * handled: the driver's own answer. Handled with a null answer: the card
+     * only changed (a ranking move, a matrix tick).
+     */
+    fun interface ViewAnswer {
+        fun answer(a: Map<String, Any?>, ui: NodeUIState?, node: FlowNode?, memo: MutableMap<String, Any?>): Pair<Boolean, Any?>
+    }
+
+    /** Runs one fixture through the engine and returns what it did. [view] plays the actions as the step cards send them. */
+    fun run(fx: Map<String, Any?>, view: ViewAnswer? = null, unhandled: MutableList<String>? = null): Outcome {
         val clock = VirtualClock()
         val server = Js.map(fx["server"]) ?: emptyMap()
         val socket = FakeSocket(server, clock)
@@ -284,7 +294,15 @@ object FlowDriver {
             }
             try {
                 if (a["do"] == "serverEvent") socket.fire(Js.str(a["event"]), Js.map(a["payload"]))
-                else answerFor(a, engine.currentUIState.value, memo, at ?: "", engine)?.let { engine.submitResponse(it) }
+                else {
+                    val ui = engine.currentUIState.value
+                    val played = view?.answer(a, ui, at?.let { engine.getNode(it) }, memo)
+                    if (played != null && played.first) played.second?.let { engine.submitStepResponse(it) }
+                    else {
+                        if (view != null) unhandled?.add(Js.str(a["do"]))
+                        answerFor(a, ui, memo, at ?: "", engine)?.let { engine.submitResponse(it) }
+                    }
+                }
             } catch (e: Exception) {
                 problems.add("input $i (${a["do"]}): ${e.message}")
             }
