@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.nodes.NodeUIState
 import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.models.Agent
@@ -393,7 +395,8 @@ class HandoverLifecycle(
                     // Ended while the app was closed: say so, as the live event would.
                     if (r.status == "ended") {
                         val id = entryId("chat-ended")
-                        host.addItem(RecordItem.SystemMessage(id = id, time = now(), text = CHAT_ENDED_TEXT, kind = "agent-chat-ended"))
+                        // Drawn in the visitor's language; the record keeps the English line.
+                        host.addItem(RecordItem.SystemMessage(id = id, time = now(), text = chatEndedLine(), kind = "agent-chat-ended"))
                         host.saveEntry(RecordEntry(id = id, shape = "agent-chat-ended", type = "agent-chat-ended", text = CHAT_ENDED_TEXT))
                     }
                     host.setLiveMode(false)
@@ -415,5 +418,8 @@ class HandoverLifecycle(
 
     companion object {
         const val CHAT_ENDED_TEXT = "Chat has ended"
+
+        /** The ended line as drawn: the English line, else the language's "Chat ended" (web system.chatEnded). */
+        fun chatEndedLine(): String = if (I18n.language == I18n.EN) CHAT_ENDED_TEXT else t("system.chatEnded")
     }
 }
