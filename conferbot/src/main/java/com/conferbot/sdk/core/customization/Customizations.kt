@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.customization
 
+import com.conferbot.sdk.core.i18n.I18n
+
 /**
  * The bot's customizations as the web widget applies them
  * (conferbot-widget core/customizations.ts buildCustomizationsRef and the
@@ -113,7 +115,9 @@ object Customizations {
         val tail = themeShape?.rTail ?: 6f
         val optionSet = num(c["optionBubbleBorderRadius"])
         val name = str(c["logoText"]).ifEmpty { str(c["botName"]) }.ifEmpty { botName }.ifEmpty { "Chat" }
-        val tagline = if (c["enableTagline"] == true && str(c["tagline"]).isNotEmpty()) str(c["tagline"]) else null
+        // The stock "We're here to help" a new bot has is shown in the visitor's
+        // language (web core/customizations.ts stockText "header.tagline").
+        val tagline = if (c["enableTagline"] == true && str(c["tagline"]).isNotEmpty()) I18n.stockText(str(c["tagline"]), "header.tagline") else null
         val avatarSet = num(c["avatarSize"])
         val avatarSize = if (avatarSet != null && avatarSet > 0f && avatarSet != 40f) avatarSet else 32f
         val shape = (c["avatarShape"] as? String).takeIf { it == "square" || it == "rounded" } ?: "circle"
