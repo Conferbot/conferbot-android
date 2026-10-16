@@ -893,4 +893,23 @@ class ChatStateTest {
         // Then
         assertThat(result).isFalse()
     }
+
+    // ==================== REWIND: THE STORED TRANSCRIPT'S CUT (#88) ====================
+
+    @Test
+    fun `transcriptDroppedBy counts the entries after the kept ones`() {
+        val a = TranscriptEntry("bot", "Name?", 1)
+        val b = TranscriptEntry("user", "Ada", 2)
+        val c = TranscriptEntry("bot", "Email?", 3)
+        val d = TranscriptEntry("user", "a@b.c", 4)
+
+        assertThat(ChatState.transcriptDroppedBy(listOf(a, b, c, d), listOf(a))).isEqualTo(3)
+        assertThat(ChatState.transcriptDroppedBy(listOf(a, b, c, d), listOf(a, b, c, d))).isEqualTo(0)
+        // Nothing kept: the whole stored transcript goes.
+        assertThat(ChatState.transcriptDroppedBy(listOf(a, b), emptyList())).isEqualTo(-1)
+        // The oldest entries trimmed from memory since: still counted from the kept one.
+        assertThat(ChatState.transcriptDroppedBy(listOf(c, d), listOf(a, b, c))).isEqualTo(1)
+        // The kept entry trimmed away too: everything in memory came after it.
+        assertThat(ChatState.transcriptDroppedBy(listOf(c, d), listOf(a))).isEqualTo(2)
+    }
 }
