@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -48,12 +49,17 @@ fun ConferBotChatScreen(
     // and an edge-to-edge host gets the keyboard's inset as padding.
     KeyboardResizesWindow()
 
+    // The SDK's own words are drawn again when the language changes (core/i18n).
+    val language by I18n.languageFlow.collectAsState()
+
     val content: @Composable () -> Unit = {
-        ConferBotChatScreenContent(
-            onDismiss = onDismiss,
-            serverCustomization = serverCustom,
-            modifier = modifier.imePadding()
-        )
+        key(language) {
+            ConferBotChatScreenContent(
+                onDismiss = onDismiss,
+                serverCustomization = serverCustom,
+                modifier = modifier.imePadding()
+            )
+        }
     }
 
     val currentServerTheme = serverTheme
@@ -142,7 +148,7 @@ private fun ConferBotChatScreenContent(
     val look by Conferbot.customizations.collectAsState()
     val hasLook = customizationMap.isNotEmpty()
     // The header keeps the bot (never the agent), as the web widget does.
-    val headerTitle = look.title.takeIf { hasLook } ?: "Support Chat"
+    val headerTitle = look.title.takeIf { hasLook } ?: I18n.t("sdk.header.supportChat")
     // "Online", the team's reply time, or plain "Online" once a person is in
     // the chat (core/livechat/ReplyTime.kt, the web's replyTime.ts / headerPresence.ts).
     val agentBot by Conferbot.agentBot.collectAsState()
@@ -314,8 +320,8 @@ private fun ConferBotChatScreenContent(
                     footerKey = listOf(noAgents, handoverWaiting, fileRequestedBy, leadOpen, csatOpen, csatSent, leftMessageTo, mailOpen, mailSentTo, closed?.kind)
                 )
 
-                lockedBy?.let { SystemLine("This conversation has been locked") }
-                agentLost?.let { SystemLine("$it's connection dropped. Hang on, they should be right back.") }
+                lockedBy?.let { SystemLine(I18n.t("system.locked")) }
+                agentLost?.let { SystemLine(I18n.t("agent.connectionLost", "name" to it)) }
                 QuickActionsStrip()
 
                 // Unified input + footer — one seamless bottom bar; none under
@@ -327,8 +333,8 @@ private fun ConferBotChatScreenContent(
                     enabled = !repliesOff,
                     placeholder = when {
                         closed?.inputOff == true -> closed.text
-                        repliesOff -> "Replies are turned off for now"
-                        else -> "Type a message..."
+                        repliesOff -> I18n.t("sdk.chat.repliesOff")
+                        else -> I18n.t("chat.composer.placeholder")
                     },
                     onAttach = if (canAttach) ({ pickFile.launch("*/*") }) else null
                 )
@@ -397,7 +403,7 @@ private fun HelpCentreTabs(articles: Boolean, onSelect: (Boolean) -> Unit) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        listOf(false to "Chat", true to "Articles").forEach { (isArticles, label) ->
+        listOf(false to I18n.t("tabs.chat"), true to I18n.t("tabs.articles")).forEach { (isArticles, label) ->
             val selected = isArticles == articles
             Surface(
                 onClick = { onSelect(isArticles) },
