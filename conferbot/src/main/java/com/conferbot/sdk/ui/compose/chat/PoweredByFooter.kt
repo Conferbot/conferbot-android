@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -76,7 +77,7 @@ fun PoweredByFooter(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "Powered by ",
+                    text = I18n.t("chat.poweredBy") + " ",
                     style = TextStyle(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
