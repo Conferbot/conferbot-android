@@ -2148,17 +2148,31 @@ object Conferbot {
         return android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
     }
 
+    /**
+     * The collectors [observeFlowEngineMessages] starts. The engine is reused
+     * across a Clear History / Start a new chat, so each start replaces the
+     * last start's collectors instead of adding to them (#63: every line
+     * drawn twice after a restart).
+     */
+    private var flowMessageWatchers: List<Job> = emptyList()
+
+    private fun stopFlowMessageWatchers() {
+        flowMessageWatchers.forEach { it.cancel() }
+        flowMessageWatchers = emptyList()
+    }
+
     private fun observeFlowEngineMessages() {
+        stopFlowMessageWatchers()
         // Bot lines besides a step's own card (a greeting, an answer, a
         // refused answer's reason, the team's fallback).
-        scope.launch {
+        val bot = scope.launch {
             nodeFlowEngine?.botMessages?.collect { ui ->
                 val text = (ui as? NodeUIState.Message)?.text ?: return@collect
                 addMessageToRecord(RecordItem.BotMessage(id = "flow-${ui.nodeId}-${System.nanoTime()}", time = java.util.Date(), text = text, nodeId = ui.nodeId))
             }
         }
         // The visitor's reply to a step card (its own line: "Agreed to Terms").
-        scope.launch {
+        val replies = scope.launch {
             nodeFlowEngine?.visitorAnswers?.collect { line ->
                 // A signature's line carries its link; the bubble just says so.
                 val text = if (line.text.startsWith("Signed: ")) "Signed" else line.text
@@ -2170,7 +2184,7 @@ object Conferbot {
         // The question is said once per visit to the step, not again when an
         // answer is refused or the card moves on a stage (an OTP's code).
         var askedVisit: String? = null
-        scope.launch {
+        val steps = scope.launch {
             nodeFlowEngine?.currentUIState?.collectLatest { uiState ->
                 if (uiState == null) return@collectLatest
                 uiState.step?.let { st ->
@@ -2236,6 +2250,7 @@ object Conferbot {
                 }
             }
         }
+        flowMessageWatchers = listOf(bot, replies, steps)
     }
 
     /**
@@ -2970,7 +2985,9 @@ object Conferbot {
         _unreadCount.value = 0
         _isLiveChatMode.value = false
         _isAgentTyping.value = false
-        // Reset flow state so it can be re-triggered with same bot data
+        // Reset flow state so it can be re-triggered with same bot data;
+        // the last flow's collectors go with it (#63).
+        stopFlowMessageWatchers()
         flowStarted = false
         restoredConversation = false
         resetAgentBotChat()
