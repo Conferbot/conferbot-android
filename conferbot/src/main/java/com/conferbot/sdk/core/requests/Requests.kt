@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.requests
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowCalendar
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -100,36 +102,36 @@ object Requests {
 
     // ------------------------------------------------------------ the words
 
-    // The web's English strings (i18n en `requests.*`, `common.*`, `transcript.you`).
-    const val TITLE = "Your requests"
-    const val ONE = "Your request"
-    const val BACK = "Back"
-    const val LOADING = "Loading..."
-    const val LOAD_FAILED = "We couldn't load this just now."
-    const val TRY_AGAIN = "Try again"
-    const val EMPTY = "Nothing here yet. When you ask us something, you can follow it here."
-    const val YOU = "You"
-    const val SUPPORT_TEAM = "Support team"
-    const val REPLY_PLACEHOLDER = "Write your reply..."
-    const val REOPEN_PLACEHOLDER = "Write here to open it again..."
-    const val YOUR_REPLY = "Your reply"
-    const val SEND = "Send"
-    const val SENDING = "Sending..."
-    const val NOT_SENT = "Not sent."
-    const val LOCKED = "This conversation is closed for replies."
-    const val NEW_REPLY = "New reply"
-    fun newReplyFrom(name: String) = "New reply from $name"
-    fun seeAll(n: Int) = "See all ($n)"
+    // The web's strings (i18n `requests.*`, `common.*`, `transcript.you`), read in the active language.
+    val TITLE: String get() = t("requests.title")
+    val ONE: String get() = t("requests.one")
+    val BACK: String get() = t("common.back")
+    val LOADING: String get() = t("common.loading")
+    val LOAD_FAILED: String get() = t("requests.loadFailed")
+    val TRY_AGAIN: String get() = t("common.tryAgain")
+    val EMPTY: String get() = t("requests.empty")
+    val YOU: String get() = t("transcript.you")
+    val SUPPORT_TEAM: String get() = t("requests.supportTeam")
+    val REPLY_PLACEHOLDER: String get() = t("requests.replyPlaceholder")
+    val REOPEN_PLACEHOLDER: String get() = t("requests.reopenPlaceholder")
+    val YOUR_REPLY: String get() = t("requests.yourReply")
+    val SEND: String get() = t("common.send")
+    val SENDING: String get() = t("common.sending")
+    val NOT_SENT: String get() = t("requests.notSent")
+    val LOCKED: String get() = t("requests.locked")
+    val NEW_REPLY: String get() = t("requests.newReply")
+    fun newReplyFrom(name: String) = t("requests.newReplyFrom", "name" to name)
+    fun seeAll(n: Int) = t("requests.seeAll", "n" to n)
 
     /** The chat menu's item (RN; the web has the home card instead). */
     fun menu(unread: Int) = if (unread > 0) "$TITLE · $NEW_REPLY" else TITLE
 
-    /** Each state in a few plain words, never a ticket status (web words.ts STATE_WORDS). */
-    val STATE_WORDS: Map<RequestState, StateWords> = mapOf(
-        RequestState.REPLIED to StateWords("We replied", "Read it below. If you need anything else, just write back."),
-        RequestState.WAITING to StateWords("We're on it", "We'll reply right here. You can close this - your message is safe with us."),
-        RequestState.SOLVED to StateWords("Solved", "Still need help with this? Write below and we'll pick it up again.")
-    )
+    /** Each state in a few plain words, never a ticket status; read when drawn (web words.ts STATE_WORDS). */
+    val STATE_WORDS: Map<RequestState, StateWords>
+        get() = RequestState.values().associateWith { s ->
+            val k = s.name.lowercase()
+            StateWords(t("requests.$k.label"), t("requests.$k.detail"))
+        }
 
     /** Milliseconds of an ISO time (or a number); 0 when it does not read. */
     fun ms(v: Any?): Long = when (v) {
@@ -152,26 +154,27 @@ object Requests {
     private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     private val DAYS = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 
-    /** "Just now", "5 min ago", "3 hours ago", "Yesterday", "Monday", "3 Oct" (web whenWords, English, the phone's time zone). */
+    /** "Just now", "5 min ago", "3 hours ago", "Yesterday", "Monday", "3 Oct", in the active language and the phone's time zone (web words.ts whenWords). */
     fun whenWords(v: Any?, now: Long = System.currentTimeMillis()): String {
-        val t = ms(v)
-        if (t == 0L) return ""
-        val diff = maxOf(0L, now - t)
-        if (diff < 60_000L) return "Just now"
-        if (diff < 3_600_000L) return "${diff / 60_000L} min ago"
+        val at = ms(v)
+        if (at == 0L) return ""
+        val diff = maxOf(0L, now - at)
+        if (diff < 60_000L) return t("when.justNow")
+        if (diff < 3_600_000L) return t("when.minutesAgo", "n" to diff / 60_000L)
         val today = Calendar.getInstance().apply { timeInMillis = now }
         val startOfToday = (today.clone() as Calendar).apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        if (t >= startOfToday) {
+        if (at >= startOfToday) {
             val h = diff / 3_600_000L
-            return if (h <= 1) "1 hour ago" else "$h hours ago"
+            return if (h <= 1) t("when.hourAgo") else t("when.hoursAgo", "n" to h)
         }
-        if (t >= startOfToday - 86_400_000L) return "Yesterday"
-        val d = Calendar.getInstance().apply { timeInMillis = t }
-        if (t >= startOfToday - 6 * 86_400_000L) return DAYS[d.get(Calendar.DAY_OF_WEEK) - 1]
+        if (at >= startOfToday - 86_400_000L) return t("when.yesterday")
+        val d = Calendar.getInstance().apply { timeInMillis = at }
+        if (at >= startOfToday - 6 * 86_400_000L) return I18n.weekdayNames("long", DAYS)[d.get(Calendar.DAY_OF_WEEK) - 1]
         val year = d.get(Calendar.YEAR)
-        return "${d.get(Calendar.DAY_OF_MONTH)} ${MONTHS[d.get(Calendar.MONTH)]}" + if (year != today.get(Calendar.YEAR)) " $year" else ""
+        val yearText = if (year != today.get(Calendar.YEAR)) " $year" else ""
+        return "${d.get(Calendar.DAY_OF_MONTH)} ${I18n.monthNames("short", MONTHS)[d.get(Calendar.MONTH)]}$yearText"
     }
 
     /** The line under a request's title (web rowLine). */
