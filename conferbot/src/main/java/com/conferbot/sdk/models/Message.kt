@@ -293,7 +293,10 @@ sealed class RecordItem {
         val text: String,
 
         /** The record type it stands for (agent-chat-ended, queue-self-resolved), when it is one. */
-        val kind: String? = null
+        val kind: String? = null,
+
+        /** An inactivity close (kind ai-agent-inactive-close): only paused, or ended (LiveEvents.inactiveCloseLine). */
+        val paused: Boolean? = null
     ) : RecordItem() {
         override val type: MessageType = MessageType.SYSTEM_MESSAGE
     }
