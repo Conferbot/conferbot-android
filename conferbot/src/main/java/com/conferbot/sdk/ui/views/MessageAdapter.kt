@@ -25,6 +25,8 @@ import com.conferbot.sdk.core.nodes.NodeTypes
 import com.conferbot.sdk.core.nodes.NodeUIState
 import com.conferbot.sdk.models.RecordItem
 import java.text.SimpleDateFormat
+import com.conferbot.sdk.core.i18n.I18n
+import com.conferbot.sdk.core.i18n.t
 import java.util.*
 
 /**
@@ -176,6 +178,7 @@ class MessageAdapter(
             messageText.setTextColor(ink)
             timeText.setTextColor((ink and 0x00FFFFFF) or (0xA6 shl 24))
             avatarImage?.let { img ->
+                img.contentDescription = t("sdk.message.botAvatar")
                 val look = com.conferbot.sdk.core.Conferbot.customizations.value
                 if (look.hideAvatar) {
                     img.visibility = android.view.View.GONE
@@ -197,7 +200,9 @@ class MessageAdapter(
         }
 
         protected fun formatTime(date: Date): String {
-            val format = SimpleDateFormat("hh:mm a", Locale.getDefault())
+            // English keeps its 12-hour clock; other languages their own short time.
+            val format = if (com.conferbot.sdk.core.i18n.I18n.language == "en") SimpleDateFormat("hh:mm a", Locale.getDefault())
+            else java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, com.conferbot.sdk.core.i18n.I18n.locale)
             return format.format(date)
         }
     }
@@ -482,7 +487,7 @@ class MessageAdapter(
                 ?: ""
             val fileName = nodeData["fileName"]?.toString()
                 ?: nodeData["name"]?.toString()
-                ?: "File"
+                ?: t("file.file")
 
             return LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -579,8 +584,8 @@ class MessageAdapter(
             isResponded: Boolean
         ): View {
             val questionText = extractText(nodeData)
-            val yesText = nodeData["yesText"]?.toString() ?: "Yes"
-            val noText = nodeData["noText"]?.toString() ?: "No"
+            val yesText = I18n.stockText(nodeData["yesText"]?.toString(), "sdk.common.yes").ifBlank { t("sdk.common.yes") }
+            val noText = I18n.stockText(nodeData["noText"]?.toString(), "sdk.common.no").ifBlank { t("sdk.common.no") }
             val answerKey = nodeData["answerKey"]?.toString() ?: "yesNo"
 
             return LinearLayout(context).apply {
@@ -675,7 +680,7 @@ class MessageAdapter(
                     )
                     isEnabled = !isResponded
 
-                    val items = listOf("Select an option") + options.map { it.text }
+                    val items = listOf(t("sdk.select.placeholder")) + options.map { it.text }
                     adapter = ArrayAdapter(
                         context,
                         android.R.layout.simple_spinner_dropdown_item,
@@ -754,7 +759,7 @@ class MessageAdapter(
 
                 // Submit button
                 addView(Button(context).apply {
-                    text = "Submit"
+                    text = t("common.submit")
                     isEnabled = !isResponded
                     setBackgroundColor(primaryColor)
                     setTextColor(Color.WHITE)
@@ -994,7 +999,7 @@ class MessageAdapter(
                 addView(editText)
 
                 addView(Button(context).apply {
-                    text = "Submit"
+                    text = t("common.submit")
                     isEnabled = !isResponded
                     setBackgroundColor(primaryColor)
                     setTextColor(Color.WHITE)
@@ -1063,7 +1068,7 @@ class MessageAdapter(
                     })
 
                     addView(TextView(context).apply {
-                        text = "Tap to upload file"
+                        text = t("sdk.file.tapToUpload")
                         setTextColor(XmlLook.botText(Color.BLACK))
                         textSize = 14f
                         gravity = Gravity.CENTER
@@ -1071,7 +1076,7 @@ class MessageAdapter(
                     })
 
                     addView(TextView(context).apply {
-                        text = "Max ${maxSizeMb}MB"
+                        text = t("sdk.file.maxSize", "mb" to maxSizeMb)
                         setTextColor(Color.GRAY)
                         textSize = 12f
                         gravity = Gravity.CENTER
@@ -1110,8 +1115,9 @@ class MessageAdapter(
                     })
                 }
 
+                var current = defaultValue
                 val valueText = TextView(context).apply {
-                    text = "Selected: $defaultValue"
+                    text = t("sdk.slider.selected", "n" to defaultValue)
                     gravity = Gravity.CENTER
                     setTextColor(Color.BLACK)
                     textSize = 16f
@@ -1134,7 +1140,8 @@ class MessageAdapter(
                         isEnabled = !isResponded
                         setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                                valueText.text = "Selected: ${progress + minValue}"
+                                current = progress + minValue
+                                valueText.text = t("sdk.slider.selected", "n" to current)
                             }
                             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -1150,7 +1157,7 @@ class MessageAdapter(
                 addView(valueText)
 
                 addView(Button(context).apply {
-                    text = "Submit"
+                    text = t("common.submit")
                     isEnabled = !isResponded
                     setBackgroundColor(primaryColor)
                     setTextColor(Color.WHITE)
@@ -1161,7 +1168,7 @@ class MessageAdapter(
                         topMargin = dpToPx(8)
                     }
                     setOnClickListener {
-                        val currentValue = valueText.text.toString().replace("Selected: ", "").toIntOrNull() ?: defaultValue
+                        val currentValue = current
                         listener?.onNodeResponse(nodeId, NodeTypes.USER_RANGE, currentValue, answerKey)
                     }
                 })
@@ -1230,7 +1237,7 @@ class MessageAdapter(
                 timeEditText?.let { addView(it) }
 
                 addView(Button(context).apply {
-                    text = "Confirm"
+                    text = t("action.confirm")
                     isEnabled = !isResponded
                     setBackgroundColor(primaryColor)
                     setTextColor(Color.WHITE)
@@ -1351,7 +1358,7 @@ class MessageAdapter(
                 })
 
                 addView(TextView(context).apply {
-                    text = "Opening link..."
+                    text = t("sdk.link.opening")
                     setTextColor(XmlLook.botText(Color.BLACK))
                     textSize = 14f
                     setPadding(dpToPx(8), 0, 0, 0)
@@ -1367,7 +1374,7 @@ class MessageAdapter(
             val state = nodeData["state"]?.toString() ?: "waiting"
             val message = nodeData["handoverMessage"]?.toString()
                 ?: nodeData["message"]?.toString()
-                ?: "Connecting you to an agent..."
+                ?: t("sdk.wait.connecting")
             val agentName = nodeData["agentName"]?.toString()
 
             return LinearLayout(context).apply {
@@ -1396,7 +1403,7 @@ class MessageAdapter(
                             setColorFilter(Color.parseColor("#4CAF50"))
                         })
                         addView(TextView(context).apply {
-                            text = "${agentName ?: "Agent"} has joined the chat"
+                            text = t("system.hasJoined", "name" to (agentName ?: t("agent.agent")))
                             setTextColor(XmlLook.botText(Color.BLACK))
                             textSize = 14f
                             gravity = Gravity.CENTER
@@ -1676,12 +1683,12 @@ class MessageAdapter(
 
         private fun getPlaceholderForType(nodeType: String): String {
             return when (nodeType) {
-                NodeTypes.ASK_NAME -> "Enter your name"
-                NodeTypes.ASK_EMAIL -> "Enter your email"
-                NodeTypes.ASK_PHONE -> "Enter your phone number"
-                NodeTypes.ASK_NUMBER -> "Enter a number"
-                NodeTypes.ASK_URL -> "Enter a URL"
-                else -> "Type here..."
+                NodeTypes.ASK_NAME -> t("sdk.prechat.namePlaceholder")
+                NodeTypes.ASK_EMAIL -> t("sdk.prechat.emailPlaceholder")
+                NodeTypes.ASK_PHONE -> t("sdk.input.phone")
+                NodeTypes.ASK_NUMBER -> t("composer.number")
+                NodeTypes.ASK_URL -> t("sdk.input.url")
+                else -> t("composer.answer")
             }
         }
 
@@ -1734,6 +1741,8 @@ class MessageAdapter(
         override fun bind(message: RecordItem) {
             if (message is RecordItem.AgentMessage) {
                 agentName.text = message.agentDetails.name
+                avatarImage.contentDescription = message.agentDetails.name.takeIf { it.isNotBlank() }
+                    ?.let { t("sdk.agent.avatarOf", "name" to it) } ?: t("sdk.agent.avatar")
                 // Lists, bold, tables and tappable links (utils/ChatMarkdown.kt).
                 messageText.text = com.conferbot.sdk.ui.views.ChatMarkdownSpans.toSpanned(message.text)
                 messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
@@ -1767,7 +1776,7 @@ class MessageAdapter(
                 // after an AI handover (core/livechat/HandoverState.kt).
                 is RecordItem.AgentJoinedMessage -> messageText.text =
                     com.conferbot.sdk.core.livechat.HandoverState.joinedText(message.agentDetails.name) +
-                        if (message.afterAI) "\n" + com.conferbot.sdk.core.livechat.HandoverState.HANDED_OVER_NOTE else ""
+                        if (message.afterAI) "\n" + com.conferbot.sdk.core.livechat.HandoverState.handedOverNote else ""
                 // An AI handing the visitor on: "Connecting you with the team…",
                 // then how the wait ended.
                 is RecordItem.AgentLeftMessage -> messageText.text =
@@ -1779,7 +1788,7 @@ class MessageAdapter(
                     messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 }
                 is RecordItem.AgentMessageAudio -> {
-                    messageText.text = linkText("\uD83C\uDFA4 Voice message", message.url)
+                    messageText.text = linkText("\uD83C\uDFA4 " + t("sdk.voice.message"), message.url)
                     messageText.movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 }
                 else -> messageText.text = ""
@@ -1788,7 +1797,7 @@ class MessageAdapter(
         }
 
         private fun fileNameOf(url: String): String =
-            url.substringAfterLast('/').substringBefore('?').replace("%20", " ").ifBlank { "File" }
+            url.substringAfterLast('/').substringBefore('?').replace("%20", " ").ifBlank { t("file.file") }
 
         private fun linkText(label: String, url: String): android.text.Spanned =
             android.text.SpannableString(label).apply {
