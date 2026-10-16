@@ -430,7 +430,9 @@ private data class SerializableMessage(
     val handover: Boolean? = null,
     val settled: String? = null,
     val afterAI: Boolean? = null,
-    val kind: String? = null
+    val kind: String? = null,
+    /** An inactivity close's line: paused or ended. */
+    val paused: Boolean? = null
 ) {
     private fun agent(): com.conferbot.sdk.models.AgentDetails = com.conferbot.sdk.models.AgentDetails(
         id = agentDetailsId ?: "",
@@ -535,7 +537,8 @@ private data class SerializableMessage(
                 id = id,
                 time = date,
                 text = text ?: "",
-                kind = kind
+                kind = kind,
+                paused = paused
             )
             else -> RecordItem.SystemMessage(
                 id = id,
@@ -680,7 +683,8 @@ private data class SerializableMessage(
                     type = "system-message",
                     time = item.time.time,
                     text = item.text,
-                    kind = item.kind
+                    kind = item.kind,
+                    paused = item.paused
                 )
             }
         }
