@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -73,7 +74,7 @@ fun ChatInput(
             ) {
                 if (text.isEmpty()) {
                     Text(
-                        "Type a message...",
+                        I18n.t("chat.composer.placeholder"),
                         style = TextStyle(
                             fontSize = 16.sp,
                             color = Color(0xFF4D4D4D) // #4d4d4d from web widget
@@ -118,7 +119,7 @@ fun ChatInput(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Send,
-                        contentDescription = "Send",
+                        contentDescription = I18n.t("chat.composer.send"),
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
