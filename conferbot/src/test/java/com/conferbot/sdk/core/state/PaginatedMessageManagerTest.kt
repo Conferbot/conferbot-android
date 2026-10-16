@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
@@ -289,14 +290,16 @@ class PaginatedMessageManagerTest {
         manager.initialize()
         advanceUntilIdle()
 
-        // When - Call twice
-        manager.loadMoreMessages()
+        // When - A second call while the first is still loading
+        val first = async { manager.loadMoreMessages() }
         advanceTimeBy(100)
         val result = manager.loadMoreMessages() // Should return immediately
         advanceUntilIdle()
 
-        // Then - Second call returns empty
+        // Then - Second call returns empty, the first one loads the page
         assertThat(result).isEmpty()
+        assertThat(first.await()).hasSize(5)
+        coVerify(exactly = 1) { mockRepository.loadOlderMessages(any()) }
     }
 
     @Test
@@ -673,8 +676,9 @@ class PaginatedMessageManagerTest {
     private fun createManagerWithMockedRepository(
         config: PaginationConfig = testConfig
     ): PaginatedMessageManager {
-        // Create manager that uses our mocked repository
-        return PaginatedMessageManager(context, testSessionId, config)
+        // The manager on the mocked repository: the real one keeps files and an
+        // android.util.LruCache, which is a stub on the JVM.
+        return PaginatedMessageManager(testSessionId, config, mockRepository)
     }
 
     private fun createTestMessage(id: String): RecordItem {
