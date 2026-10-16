@@ -52,6 +52,10 @@ sealed class KnowledgeBaseNavState {
  * web's openArticle); [onBackToChat] is where Back goes from an article
  * opened from the conversation. [showRecent] follows the owner's
  * hideRecentArticles (core/helpcentre/HelpCentre.kt).
+ *
+ * As the home screen's help centre (core/home): [initialCategoryId] opens
+ * on that topic (a home topic chip), and [backAtRoot] puts a back arrow
+ * (to [onDismiss], the home) where the list's close would be.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +69,9 @@ fun KnowledgeBaseScreen(
     showRecent: Boolean = true,
     openRequest: Conferbot.HelpArticleRequest? = null,
     onOpenRequestHandled: (Conferbot.HelpArticleRequest) -> Unit = {},
-    onBackToChat: (() -> Unit)? = null
+    onBackToChat: (() -> Unit)? = null,
+    initialCategoryId: String? = null,
+    backAtRoot: Boolean = false
 ) {
     val scope = rememberCoroutineScope()
 
@@ -87,6 +93,16 @@ fun KnowledgeBaseScreen(
         knowledgeBaseService.loadArticleBody(article.id)
         knowledgeBaseService.trackArticleView(article)
         knowledgeBaseService.startArticleEngagement(article.id)
+    }
+
+    // A topic picked on the home screen: open on it, once.
+    var openedTopic by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(initialCategoryId, knowledgeBaseData) {
+        val id = initialCategoryId ?: return@LaunchedEffect
+        if (openedTopic == id) return@LaunchedEffect
+        val category = knowledgeBaseData?.getCategoryById(id) ?: return@LaunchedEffect
+        openedTopic = id
+        navState = KnowledgeBaseNavState.ArticleList(category)
     }
 
     // One article by id: an AI source or an article card in the chat.
@@ -136,7 +152,8 @@ fun KnowledgeBaseScreen(
                     title = title,
                     onBackClick = goBack,
                     onDismiss = onDismiss,
-                    primaryColor = primaryColor
+                    primaryColor = primaryColor,
+                    backAtRoot = backAtRoot
                 )
             } else if (navState !is KnowledgeBaseNavState.Categories) {
                 EmbeddedBackRow(navState = navState, onBackClick = goBack, primaryColor = primaryColor)
@@ -334,7 +351,8 @@ private fun KnowledgeBaseTopBar(
     title: String,
     onBackClick: () -> Unit,
     onDismiss: () -> Unit,
-    primaryColor: Color
+    primaryColor: Color,
+    backAtRoot: Boolean = false
 ) {
     val displayTitle = when (navState) {
         is KnowledgeBaseNavState.Categories -> title
@@ -356,6 +374,13 @@ private fun KnowledgeBaseTopBar(
         navigationIcon = {
             if (showBackButton) {
                 IconButton(onClick = onBackClick) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back"
+                    )
+                }
+            } else if (backAtRoot) {
+                IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
                         contentDescription = "Back"
