@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.state.ChatState
 import com.conferbot.sdk.core.state.RecordEntry
 import com.conferbot.sdk.models.RecordItem
@@ -143,11 +144,11 @@ class LiveChatExtras(
         on("conversation-locked") { if (own(it)) _lockedBy.value = it?.optString("lockedByName", "").orEmpty().ifBlank { "the team" } }
         on("conversation-unlocked") { if (own(it)) _lockedBy.value = null }
         on("visitor-input-toggled") { if (own(it)) _visitorInputEnabled.value = it?.optBoolean("isInputEnabled", true) != false }
-        on("agent-connection-lost") { if (own(it)) _agentConnectionLost.value = it?.optString("agentName", "").orEmpty().ifBlank { "The agent" } }
+        on("agent-connection-lost") { if (own(it)) _agentConnectionLost.value = it?.optString("agentName", "").orEmpty().ifBlank { t("agent.theAgent") } }
         on("agent-connection-restored") { if (own(it)) _agentConnectionLost.value = null }
         on("file-upload-requested") {
             if (!own(it)) return@on
-            val who = it?.optString("agentName", "").orEmpty().trim().ifEmpty { "The team" }
+            val who = it?.optString("agentName", "").orEmpty().trim().ifEmpty { t("agent.theTeam") }
             _fileRequestedBy.value = who
             ChatState.pushToRecord(
                 RecordEntry(
