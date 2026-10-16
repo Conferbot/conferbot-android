@@ -174,9 +174,25 @@ private fun ConferBotChatScreenContent(
     // "Your requests" (core/requests): the chat menu's item and the portal over the chat.
     val requestsList by Conferbot.requests.requests.collectAsState()
     val requestsUnread by Conferbot.requests.unread.collectAsState()
+    // The owner's home screen (core/home; web ts/home/): the chat opens on it,
+    // the header's back and the system back return there, the help centre is
+    // its own view, and the views switch in the owner's transition.
+    val homeOn = com.conferbot.sdk.core.home.Home.on(customizationMap)
+    val view by Conferbot.homeView.collectAsState()
+    val helpCategoryId by Conferbot.home.helpCategoryId.collectAsState()
+    androidx.activity.compose.BackHandler(enabled = homeOn && view != com.conferbot.sdk.core.home.HomeView.HOME) {
+        if (!Conferbot.home.back()) onDismiss()
+    }
+    // The home came into view: its requests card reads again (at most every 15s).
+    LaunchedEffect(view) { if (view == com.conferbot.sdk.core.home.HomeView.HOME) Conferbot.home.homeShown() }
     LaunchedEffect(helpOn) { if (!helpOn) showArticles = false }
-    // An AI source or an article card asked for an article: the help pane shows it.
-    LaunchedEffect(articleRequest, helpOn) { if (articleRequest != null && helpOn) showArticles = true }
+    // An AI source or an article card asked for an article: the help pane
+    // shows it (with a home screen, the help centre view, Back to where it was).
+    LaunchedEffect(articleRequest, helpOn, homeOn) {
+        if (articleRequest == null || !helpOn) return@LaunchedEffect
+        if (!homeOn) showArticles = true
+        else if (Conferbot.home.view() != com.conferbot.sdk.core.home.HomeView.HELP) Conferbot.home.showHelp(from = Conferbot.home.view())
+    }
 
     // A theme set to "auto" follows the phone's light / dark setting.
     val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -188,7 +204,7 @@ private fun ConferBotChatScreenContent(
         }
     }
 
-    androidx.compose.foundation.layout.Box(modifier) {
+    val conversation: @Composable () -> Unit = {
     Scaffold(
         topBar = {
             ChatHeader(
@@ -207,7 +223,9 @@ private fun ConferBotChatScreenContent(
                 // The visitor's requests to the team, once they have one (web home
                 // screen's card, ts/home/requests/card.ts; no home screen here yet).
                 requestsLabel = if (!requestsList.isNullOrEmpty()) com.conferbot.sdk.core.requests.Requests.menu(requestsUnread) else null,
-                onRequests = { Conferbot.openRequests() }
+                onRequests = { Conferbot.openRequests() },
+                // Back to the home screen, when the bot has one.
+                onHome = if (homeOn) ({ Conferbot.showHome() }) else null
             )
         },
         modifier = Modifier.fillMaxSize()
@@ -257,11 +275,12 @@ private fun ConferBotChatScreenContent(
                     )
                 }
 
-                if (helpOn) {
+                // Without a home screen the help centre is the chat's Articles tab.
+                if (helpOn && !homeOn) {
                     HelpCentreTabs(articles = showArticles, onSelect = { showArticles = it })
                 }
 
-                if (helpOn && showArticles) {
+                if (helpOn && !homeOn && showArticles) {
                     val kbService = remember(sessionId) { if (sessionId != null) Conferbot.initKnowledgeBaseService() else null }
                     if (kbService == null) {
                         androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
@@ -318,8 +337,48 @@ private fun ConferBotChatScreenContent(
         }
         }
     }
-    // "Your requests" over the whole chat, its header too, while open; Back steps back.
-    com.conferbot.sdk.ui.compose.requests.RequestsPortalView()
+    }
+
+    androidx.compose.foundation.layout.Box(modifier) {
+        if (homeOn) {
+            com.conferbot.sdk.ui.compose.home.ViewSwitch(
+                view = view,
+                kind = customizationMap["viewTransition"],
+                sweep = customizationMap["viewTransitionDirection"]
+            ) { v ->
+                when (v) {
+                    com.conferbot.sdk.core.home.HomeView.HOME -> com.conferbot.sdk.ui.compose.home.HomeScreenView(onClose = onDismiss)
+                    com.conferbot.sdk.core.home.HomeView.HELP -> {
+                        val kbService = remember(sessionId) { if (sessionId != null) Conferbot.initKnowledgeBaseService() else null }
+                        if (kbService == null) {
+                            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                CircularProgressIndicator(color = colors.primary)
+                            }
+                        } else {
+                            com.conferbot.sdk.ui.compose.knowledgebase.KnowledgeBaseScreen(
+                                knowledgeBaseService = kbService,
+                                onDismiss = { Conferbot.home.leaveHelp() },
+                                primaryColor = colors.primary,
+                                title = com.conferbot.sdk.core.home.Home.HELP_CENTRE,
+                                showRecent = showRecentArticles,
+                                openRequest = articleRequest,
+                                onOpenRequestHandled = { Conferbot.consumeHelpArticleRequest(it) },
+                                // An article opened from the home or the chat: Back goes there.
+                                onBackToChat = { Conferbot.home.leaveHelp() },
+                                initialCategoryId = helpCategoryId,
+                                backAtRoot = true,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    com.conferbot.sdk.core.home.HomeView.CHAT -> conversation()
+                }
+            }
+        } else {
+            conversation()
+        }
+        // "Your requests" over the whole chat (or the home), its header too, while open; Back steps back.
+        com.conferbot.sdk.ui.compose.requests.RequestsPortalView()
     }
 }
 
