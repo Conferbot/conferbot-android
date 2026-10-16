@@ -36,6 +36,11 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun WaitArticleSheet(modifier: Modifier = Modifier, waiting: WaitingExtras = Conferbot.waiting) {
+    // This chat can show an article by id: AI sources and article cards open in the app (#90).
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        Conferbot.setArticlesShown(true)
+        onDispose { Conferbot.setArticlesShown(false) }
+    }
     val shown by waiting.article.collectAsState()
     val view = shown ?: return
     val colors = ConferbotThemeAmbient.current.colors
