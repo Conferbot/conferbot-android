@@ -36,6 +36,14 @@ data class ResolvedLauncher(
     val style: String = "icon",
     val label: String = Launcher.DEFAULT_LABEL,
     val avatar: String? = null,
+    /**
+     * The "mascot" style (launcherStyle.ts): the owner's mascot, its bust at
+     * `scale`% of the button, centred and lifted 6% so its ears and hat peek
+     * over the rim, in `accent` (widgetIconBgColor, else the header's), on a
+     * soft light button (`light`: a radial white to the launcher colour at
+     * 14% from 35% 30%). Open, the button is the brand colour with its cross.
+     */
+    val mascot: LauncherMascotLook = LauncherMascotLook(),
     val imageUrl: String? = null,
     val iconId: String? = null,
     /** Icon size inside the button. */
@@ -54,6 +62,14 @@ data class ResolvedLauncher(
     /** Seconds before the idle call (5-120), and its bubble's line. */
     val idleCallDelay: Int = LauncherIdleCall.DEFAULT_DELAY,
     val idleCallText: String = "",
+)
+
+/** The launcher's mascot: the owner's look, its size (% of the button), its colour and the light button's outer colour. */
+data class LauncherMascotLook(
+    val look: MascotArt.Look = MascotArt.Look(),
+    val scale: Int = MascotArt.SCALE_DEFAULT,
+    val accent: String = "#4f46e5",
+    val light: String = "#dfe7fd",
 )
 
 object Launcher {
@@ -149,6 +165,12 @@ object Launcher {
             style = style,
             label = normalizeLabel(c["launcherLabel"]).ifEmpty { DEFAULT_LABEL },
             avatar = avatar,
+            mascot = LauncherMascotLook(
+                look = MascotArt.lookOf(c),
+                scale = MascotArt.scaleOf(c),
+                accent = Customizations.mascotAccent(c),
+                light = MascotArt.mixColor(solid, 14, "#ffffff"),
+            ),
             imageUrl = imageUrl,
             iconId = str(c["widgetIconSVG"]).ifEmpty { null },
             // The icon at 70% of the round button (css/liveChat/index.css), 50% of a tab.
