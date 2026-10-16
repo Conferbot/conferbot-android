@@ -1,5 +1,6 @@
 package com.conferbot.sdk.models
 
+import com.conferbot.sdk.core.i18n.tPlural
 import com.google.gson.annotations.SerializedName
 
 /**
@@ -41,7 +42,7 @@ data class KnowledgeBaseCategory(
      * Get formatted article count text
      */
     fun getArticleCountText(): String {
-        return if (articleCount == 1) "1 article" else "$articleCount articles"
+        return tPlural("kb.articles", articleCount)
     }
 
     /**
