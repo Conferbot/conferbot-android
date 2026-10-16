@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.agent
 
+import com.conferbot.sdk.core.i18n.t
+
 /**
  * AI agent bots (Agent Studio): bots with no flow of their own, answered by
  * an AI agent from the first message.
@@ -86,10 +88,18 @@ object AgentBotParser {
     /** Said when that ceiling is hit, so the dots do not just vanish (web chat.replyTimeout). */
     const val REPLY_TIMEOUT_TEXT = "That took too long. Try again, or ask for a human."
 
+    /** The same in the active language (the line drawn). */
+    fun replyTimeoutText(): String = t("chat.replyTimeout")
+
+    /** The greeting when the owner wrote none, in the active language (web index.ts t("agent.defaultGreeting")). */
+    fun defaultGreeting(): String = t("agent.defaultGreeting")
+
     /** The notice's id: an on-screen line, not part of the conversation's record (as on the web). */
     fun replyTimeoutId(now: Long = System.currentTimeMillis()) = "reply-timeout-$now"
     const val MAX_SOURCES = 3
-    val FEEDBACK_REASONS = listOf("wrong" to "Wrong", "outdated" to "Outdated", "unanswered" to "Didn't answer", "other" to "Other")
+    /** The reasons and their words, read in the active language (web FEEDBACK_REASONS, i18n helpful.reason.*). */
+    val FEEDBACK_REASONS: List<Pair<String, String>>
+        get() = listOf("wrong", "outdated", "unanswered", "other").map { it to t("helpful.reason.$it") }
 
     private val OBJECT_ID = Regex("^[a-f0-9]{24}$", RegexOption.IGNORE_CASE)
     private val HTTP_URL = Regex("^https?://[^\\s\"'<>]+$", RegexOption.IGNORE_CASE)
@@ -122,7 +132,7 @@ object AgentBotParser {
             .take(4)
         return AgentBot(
             agentId = agentId,
-            displayName = clean(a["displayName"], 60).ifEmpty { clean(chatbotData?.get("name"), 60) }.ifEmpty { DEFAULT_AGENT_NAME },
+            displayName = clean(a["displayName"], 60).ifEmpty { clean(chatbotData?.get("name"), 60) }.ifEmpty { t("agent.defaultName") },
             greeting = (a["greeting"] as? String)?.trim() ?: "",
             starters = starters,
             avatar = (a["avatar"] as? String)?.takeIf { it.isNotBlank() }
@@ -202,7 +212,7 @@ object AgentBotParser {
             if ((articleId == null && !url.startsWith("http://", true) && !url.startsWith("https://", true)) || !seen.add(key)) continue
             val snippet = clean(m["snippet"] ?: m["description"] ?: m["excerpt"], 220).ifEmpty { null }
             out += if (articleId != null) {
-                AgentSource(clean(m["title"], 160).ifEmpty { "Help article" }, httpUrl(url), articleId, snippet)
+                AgentSource(clean(m["title"], 160).ifEmpty { t("kb.helpArticle") }, httpUrl(url), articleId, snippet)
             } else {
                 AgentSource(clean(m["title"], 160).ifEmpty { sourceHost(url) }, url, null, snippet)
             }
@@ -249,12 +259,12 @@ object AgentBotParser {
         val link = mapOf(m["link"])
         val url = httpsUrl(link?.get("url"))
         return ResultCard(
-            title = clean(m["title"], 50).ifEmpty { "Done" },
+            title = clean(m["title"], 50).ifEmpty { t("result.done") },
             status = status,
             tone = tone,
             rows = rows,
             linkUrl = url,
-            linkLabel = if (url != null) clean(link?.get("label"), 24).ifEmpty { "Open" } else null
+            linkLabel = if (url != null) clean(link?.get("label"), 24).ifEmpty { t("result.open") } else null
         )
     }
 
