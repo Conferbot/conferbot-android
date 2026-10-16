@@ -138,4 +138,11 @@ class AgentBotParserTest {
         val back = Gson().fromJson(Gson().toJson(extras), AIReplyExtras::class.java)
         assertThat(back).isEqualTo(extras)
     }
+
+    @Test
+    fun `the AI wait ends after 45s with the web's took-too-long notice`() {
+        assertThat(AgentBotParser.AWAIT_REPLY_MS).isEqualTo(45_000L)
+        assertThat(AgentBotParser.REPLY_TIMEOUT_TEXT).isEqualTo("That took too long. Try again, or ask for a human.")
+        assertThat(AgentBotParser.replyTimeoutId(7)).isEqualTo("reply-timeout-7")
+    }
 }
