@@ -58,6 +58,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.key
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.conferbot.sdk.core.customization.FxValues
+import com.conferbot.sdk.core.customization.Keyframes
+import com.conferbot.sdk.core.customization.LauncherAttention
+import com.conferbot.sdk.core.customization.LauncherEntrance
+import com.conferbot.sdk.core.customization.MascotArt
+import kotlin.math.roundToInt
 
 // ============================================================
 // CONSTANTS
@@ -276,6 +307,17 @@ fun ConferBotWidget(
     val avatarUrl = if (hasLook && look.style == "avatar") look.avatar else null
     val imageUrl = if (hasLook) look.imageUrl else null
 
+    // The entrance, the attention loop and the idle call (LauncherFxControllers):
+    // all off unless the owner chose one; nothing with the phone's animations off.
+    val context = LocalContext.current
+    val reduced = rememberReducedMotion()
+    val botId = Conferbot.activeBotId ?: "default"
+    val fx = remember(botId) { LauncherFxHolder(context.applicationContext.getSharedPreferences("conferbot", android.content.Context.MODE_PRIVATE)) }
+    DisposableEffect(fx) { onDispose { fx.dispose() } }
+    // Decided as the settings arrive, before the launcher is drawn with them (so it never flashes in first).
+    if (hasLook) fx.entrance.decide(look.entrance, botId, reduced, isChatOpen)
+    @Suppress("UNUSED_VARIABLE") val fxVersion = fx.version
+
     // The icon's idle and new-message moments and the ripple (core LauncherMotion).
     val motion = com.conferbot.sdk.ui.compose.rememberLauncherMotion(
         iconId = iconName,
@@ -283,7 +325,75 @@ fun ConferBotWidget(
         chatOpen = isChatOpen,
         unreadCount = unreadCount,
         enabled = hasLook && imageUrl == null && avatarUrl == null,
+        holdForAttention = { fx.attention.onLauncher },
     )
+    val inMoment = motion.inMoment
+    val accent = if (hasLook) look.solid else String.format("#%06x", fabColor.toArgb() and 0xFFFFFF)
+    val cardShown = greeting.card != null && !isChatOpen
+    val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    SideEffect {
+        if (hasLook) {
+            fx.attention.update(look.attention, true, reduced, isChatOpen, cardShown, inMoment, fx.entrance.busy, fx.launcher != null, showLabel)
+        }
+        val r = fx.launcher
+        fx.idle.chatOpen = isChatOpen
+        fx.idle.keyboard = imeUp
+        fx.idle.entranceBusy = fx.entrance.busy
+        fx.idle.cardShown = cardShown
+        fx.idle.width = r?.width?.toDouble()
+        fx.idle.height = r?.height?.toDouble()
+        fx.idle.position = position.let { if (it == WidgetPosition.BOTTOM_LEFT) "left" else "right" }
+        if (r != null && hasLook) {
+            val screen = fx.screen
+            fx.entrance.laidOut {
+                LauncherEntrance.stage(
+                    width = r.width.toDouble(),
+                    height = r.height.toDouble(),
+                    position = if (position == WidgetPosition.BOTTOM_LEFT) "left" else "right",
+                    screenWidth = screen.width.toDouble(),
+                    screenHeight = screen.height.toDouble(),
+                    side = if (position == WidgetPosition.BOTTOM_LEFT) r.left.toDouble() else (screen.width - r.right).toDouble(),
+                    bottom = (screen.height - r.bottom).toDouble(),
+                    accent = accent,
+                )
+            }
+        }
+    }
+    LaunchedEffect(fx, hasLook) {
+        if (hasLook) fx.idle.start(look.idleCall, look.idleCallDelay, botId, reduced)
+    }
+    // Opening the chat by any route: the entrance ends at once, and no call comes for a few days.
+    LaunchedEffect(fx, isChatOpen) {
+        if (isChatOpen) {
+            fx.entrance.chatOpened()
+            fx.idle.chatOpened()
+            fx.idle.stop()
+        }
+    }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, fx) {
+        val observer = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_RESUME) fx.idle.appActive = true
+            if (e == Lifecycle.Event.ON_PAUSE) fx.idle.appActive = false
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    // One clock for the three effects: it redraws (not recomposes) while any of them plays.
+    val fxLive = fx.entrance.active || fx.attention.running || fx.idle.perf != null
+    LaunchedEffect(fx, fxLive) {
+        while (fxLive) withFrameMillis { fx.tick = it }
+    }
+    val attentionOn = fx.attention.running && !isChatOpen
+    val perf = fx.idle.perf?.takeIf { !isChatOpen }
+    if (perf != null) {
+        val mc = MascotArt.color(customizationMap, accent)
+        val key = "$mc ${perf.mascot.arm} $accent"
+        if (key != fx.mascotKey) {
+            fx.mascotKey = key
+            fx.mascot = MascotArt.layers(mc, perf.mascot.arm, accent)
+        }
+    }
 
     // FAB press scale animation
     val fabScale by animateFloatAsState(
@@ -297,7 +407,7 @@ fun ConferBotWidget(
         WidgetPosition.BOTTOM_LEFT -> Alignment.BottomStart
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().onGloballyPositioned { fx.root = it }) {
 
         // ---- Scrim ----
         AnimatedVisibility(
@@ -357,7 +467,16 @@ fun ConferBotWidget(
                         end = if (position == WidgetPosition.BOTTOM_RIGHT) edge else 0.dp,
                         bottom = offsetY + size + 12.dp,
                     )
-                    .widthIn(max = screenWidth - 24.dp),
+                    .widthIn(max = screenWidth - 24.dp)
+                    // Hidden until the launcher lands, then fading up; the wave / float loop.
+                    .graphicsLayer {
+                        fx.tick
+                        val l = fx.entrance.lookAt(fx.entrance.elapsed)
+                        val self = if (attentionOn && fx.attention.target == "greeting") fx.attention.part("self", fx.attention.elapsed) else null
+                        alpha = (l?.greetingO ?: 1.0).toFloat().coerceIn(0f, 1f)
+                        translationX = (self?.tx ?: 0.0).toFloat().dp.toPx()
+                        translationY = ((l?.greetingTy ?: 0.0) + (self?.ty ?: 0.0)).toFloat().dp.toPx()
+                    },
             ) {
                 key(card) {
                     GreetingCard(
@@ -372,7 +491,10 @@ fun ConferBotWidget(
                                 if (card.click == "send") sendWhenReady(card.text)
                             }
                         },
-                        onClose = { greeting.dismiss() },
+                        onClose = {
+                            greeting.dismiss()
+                            fx.idle.greetingClosed()
+                        },
                         onStarter = { text ->
                             greeting.closeForNow()
                             com.conferbot.sdk.ui.compose.LauncherOpened.at = System.currentTimeMillis()
@@ -381,13 +503,34 @@ fun ConferBotWidget(
                         },
                     )
                 }
+                // The wave: a waving hand on the card's corner, unless its text has its own.
+                if (attentionOn && fx.attention.has("hand") && !card.text.contains(LauncherAttention.WAVING_HAND)) {
+                    Text(
+                        text = LauncherAttention.WAVING_HAND,
+                        fontSize = 20.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(x = (-9).dp, y = (-13).dp)
+                            .size(LauncherFxDraw.HAND_W.dp, LauncherFxDraw.HAND_H.dp)
+                            .graphicsLayer {
+                                fx.tick
+                                rotationZ = (fx.attention.part("hand", fx.attention.elapsed)?.r ?: 0.0).toFloat()
+                                transformOrigin = TransformOrigin(LauncherFxDraw.HAND_OX / LauncherFxDraw.HAND_W, LauncherFxDraw.HAND_OY / LauncherFxDraw.HAND_H)
+                            },
+                    )
+                }
             }
         }
+
+        // ---- Behind the launcher: the bounce's shadow, the idle call's mascot, the portal ----
+        if (!isChatOpen) LauncherFxStage(fx, front = false, attentionOn = attentionOn, perf = perf)
 
         // ---- FAB ----
         // Hidden while the chat is open - the chat sheet has its own close
         // control and the toggle would overlap the send button
         if (!isChatOpen) {
+        val density = LocalDensity.current.density
         Box(
             modifier = Modifier
                 .align(fabAlignment)
@@ -395,8 +538,90 @@ fun ConferBotWidget(
                     start = if (position == WidgetPosition.BOTTOM_LEFT) offsetX else 0.dp,
                     end = if (position == WidgetPosition.BOTTOM_RIGHT) offsetX else 0.dp,
                     bottom = offsetY,
-                ),
+                )
+                // Where the launcher sits (dp in the widget's box), before the effects move it.
+                .onGloballyPositioned { c ->
+                    val root = fx.root ?: return@onGloballyPositioned
+                    if (!root.isAttached || !c.isAttached) return@onGloballyPositioned
+                    val p = root.localPositionOf(c, Offset.Zero)
+                    val r = Rect(p.x / density, p.y / density, (p.x + c.size.width) / density, (p.y + c.size.height) / density)
+                    val old = fx.launcher
+                    if (old == null || kotlin.math.abs(old.left - r.left) > 0.5f || kotlin.math.abs(old.top - r.top) > 0.5f ||
+                        kotlin.math.abs(old.width - r.width) > 0.5f || kotlin.math.abs(old.height - r.height) > 0.5f) fx.launcher = r
+                    val s = Size(root.size.width / density, root.size.height / density)
+                    if (s != fx.screen) fx.screen = s
+                }
+                // The entrance: hidden until its reveal, then its arrival.
+                .graphicsLayer {
+                    fx.tick
+                    val l = fx.entrance.lookAt(fx.entrance.elapsed) ?: return@graphicsLayer
+                    alpha = l.o.toFloat().coerceIn(0f, 1f)
+                    translationX = l.tx.toFloat().dp.toPx()
+                    translationY = l.ty.toFloat().dp.toPx()
+                    rotationZ = l.r.toFloat()
+                    scaleX = l.sx.toFloat()
+                    scaleY = l.sy.toFloat()
+                }
+                // The saucer's beam draws it top to bottom.
+                .drawWithContent {
+                    val shown = fx.entrance.lookAt(fx.entrance.elapsed)?.shown ?: 1.0
+                    if (shown < 0.999) {
+                        clipRect(-this.size.width, -this.size.height, this.size.width * 2, (this.size.height * shown).toFloat()) { this@drawWithContent.drawContent() }
+                    } else drawContent()
+                }
+                // The attention loop moves the button.
+                .graphicsLayer {
+                    fx.tick
+                    if (!attentionOn || !fx.attention.onLauncher) return@graphicsLayer
+                    val v = fx.attention.part("self", fx.attention.elapsed) ?: return@graphicsLayer
+                    translationX = (v.tx + v.txp / 100 * this.size.width / density).toFloat().dp.toPx()
+                    translationY = v.ty.toFloat().dp.toPx()
+                    rotationZ = v.r.toFloat()
+                    scaleX = v.sx.toFloat()
+                    scaleY = v.sy.toFloat()
+                }
+                // A knock or a tap jolts it.
+                .graphicsLayer {
+                    fx.tick
+                    val p = perf ?: return@graphicsLayer
+                    if (p.launcher.isEmpty()) return@graphicsLayer
+                    val v = Keyframes.evaluate(p.launcher, fx.idle.elapsed)
+                    translationX = v.tx.toFloat().dp.toPx()
+                    translationY = v.ty.toFloat().dp.toPx()
+                    scaleX = v.sx.toFloat()
+                    scaleY = v.sy.toFloat()
+                }
+                // The orbit's spark round the button.
+                .drawWithContent {
+                    drawContent()
+                    if (!attentionOn || !fx.attention.has("orbit")) return@drawWithContent
+                    val v = fx.attention.part("orbit", fx.attention.elapsed) ?: return@drawWithContent
+                    drawIntoCanvas { cv ->
+                        val c = cv.nativeCanvas
+                        val save = c.save()
+                        c.scale(density, density)
+                        LauncherFxDraw.orbit(c, this.size.width / density, this.size.height / density, v, fabColor.toArgb())
+                        c.restoreToCount(save)
+                    }
+                },
         ) {
+            // The pulse's two rings in the launcher's colour, under the button.
+            if (attentionOn && fx.attention.has("ring")) {
+                for (part in listOf("ring", "ring2")) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                fx.tick
+                                val v = fx.attention.part(part, fx.attention.elapsed)
+                                alpha = (v?.o ?: 0.0).toFloat().coerceIn(0f, 1f)
+                                scaleX = (v?.sx ?: 1.0).toFloat()
+                                scaleY = (v?.sy ?: 1.0).toFloat()
+                            }
+                            .border(2.5.dp, fabColor, fabShape),
+                    )
+                }
+            }
             // The ripple: rings of the launcher's colour growing out from behind it.
             motion.rings.forEach { ring ->
                 if (ring != null) {
@@ -455,6 +680,19 @@ fun ConferBotWidget(
                         modifier = Modifier
                             .then(if (showLabel) Modifier.fillMaxHeight() else Modifier.fillMaxSize())
                             .then(if (fabBrush != null) Modifier.background(fabBrush, fabShape) else Modifier)
+                            // The shine's gloss sweeping across the button (the button clips it).
+                            .drawWithContent {
+                                drawContent()
+                                if (!attentionOn || !fx.attention.has("shine")) return@drawWithContent
+                                val v = fx.attention.part("shine", fx.attention.elapsed) ?: return@drawWithContent
+                                drawIntoCanvas { cv ->
+                                    val c = cv.nativeCanvas
+                                    val save = c.save()
+                                    c.scale(density, density)
+                                    LauncherFxDraw.gloss(c, this.size.width / density, this.size.height / density, v)
+                                    c.restoreToCount(save)
+                                }
+                            }
                             .then(if (showLabel) Modifier.padding(horizontal = ((size - size * 0.52f) / 2)) else Modifier),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -511,6 +749,100 @@ fun ConferBotWidget(
                 }
             }
         }
+        }
+
+        // ---- In front of the launcher: a knock / tap mascot and the other entrances ----
+        if (!isChatOpen) LauncherFxStage(fx, front = true, attentionOn = attentionOn, perf = perf)
+
+        // ---- The idle call's speech bubble, kept on the screen, its tail on the mascot (none while the greeting is up) ----
+        val rect = fx.launcher
+        if (perf != null && perf.talks && rect != null) {
+            var bubbleSize by remember(perf) { mutableStateOf(IntSize.Zero) }
+            val density = LocalDensity.current.density
+            val bw = bubbleSize.width / density
+            val bh = bubbleSize.height / density
+            val screenW = fx.screen.width
+            val left = (rect.left + perf.sayX.toFloat() - bw / 2).coerceIn(8f, maxOf(8f, screenW - bw - 8))
+            val tail = (perf.sayX.toFloat() - (left - rect.left)).coerceIn(14f, maxOf(14f, bw - 14))
+            fun bubbleNow(): FxValues = Keyframes.evaluate(listOf(perf.bubble), fx.idle.elapsed, mapOf("o" to 0.0))
+            IdleCallBubble(
+                line = look.idleCallText,
+                tail = tail,
+                onTap = {
+                    if (bubbleNow().o > 0.05) {
+                        fx.idle.stop()
+                        LauncherOpened.at = System.currentTimeMillis()
+                        isChatOpen = true
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .onSizeChanged { bubbleSize = it }
+                    .offset { IntOffset((left * density).roundToInt(), ((rect.top + perf.sayY.toFloat() - 10 - bh) * density).roundToInt()) }
+                    .graphicsLayer {
+                        fx.tick
+                        val v = bubbleNow()
+                        alpha = if (bubbleSize == IntSize.Zero) 0f else v.o.toFloat().coerceIn(0f, 1f)
+                        translationY = v.ty.toFloat().dp.toPx()
+                        scaleX = v.sx.toFloat()
+                        scaleY = v.sy.toFloat()
+                    },
+            )
+        }
+    }
+}
+
+/**
+ * What the launcher's effects keep between frames: the three controllers,
+ * a version bumped when what to draw changes (recomposes), a frame tick
+ * (redraws only), and where the launcher sits.
+ */
+internal class LauncherFxHolder(prefs: android.content.SharedPreferences?) {
+    val entrance = LauncherEntranceController()
+    val attention = LauncherAttentionController()
+    val idle = LauncherIdleCallController(store = PrefsIdleCallRestStore(prefs))
+    var version by mutableStateOf(0)
+    var tick by mutableStateOf(0L)
+    /** The launcher's box and the widget's size, in dp. */
+    var launcher by mutableStateOf<Rect?>(null)
+    var screen by mutableStateOf(Size.Zero)
+    var root: LayoutCoordinates? = null
+    var mascot: MascotArt.Layers? = null
+    var mascotKey = ""
+
+    init {
+        val bump = { version += 1 }
+        entrance.onChange = bump
+        attention.onChange = bump
+        idle.onChange = bump
+    }
+
+    fun dispose() {
+        entrance.dispose()
+        attention.onChange = null
+        idle.dispose()
+    }
+}
+
+/** The effects drawn round the launcher, behind it or in front of it, in its own box (dp); they reach past it. */
+@Composable
+private fun LauncherFxStage(fx: LauncherFxHolder, front: Boolean, attentionOn: Boolean, perf: com.conferbot.sdk.core.customization.LauncherIdleCall.Performance?) {
+    val plan = if (fx.entrance.phase == "play") fx.entrance.plan else null
+    val shadow = !front && attentionOn && fx.attention.has("shadow")
+    val mascot = perf != null && perf.front == front && fx.mascot != null
+    if (fx.launcher == null || !(shadow || mascot || (plan != null && plan.behind != front))) return
+    Canvas(Modifier.fillMaxSize()) {
+        fx.tick
+        val r = fx.launcher ?: return@Canvas
+        drawIntoCanvas { cv ->
+            val c = cv.nativeCanvas
+            val save = c.save()
+            c.scale(density, density)
+            c.translate(r.left, r.top)
+            if (shadow) fx.attention.part("shadow", fx.attention.elapsed)?.let { LauncherFxDraw.bounceShadow(c, r.width, r.height, it) }
+            if (mascot) LauncherFxDraw.idleCall(c, perf!!, fx.mascot!!, fx.idle.elapsed)
+            if (plan != null && plan.behind != front) LauncherFxDraw.entrance(c, plan, fx.entrance.elapsed)
+            c.restoreToCount(save)
         }
     }
 }
