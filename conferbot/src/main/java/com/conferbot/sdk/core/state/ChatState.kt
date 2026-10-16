@@ -1133,6 +1133,48 @@ object ChatState {
         }
     }
 
+    // ========== Going back to a question ==========
+
+    /** The conversation's state at one moment (what "Edit" on an answer returns to; core/delight). */
+    class Snapshot internal constructor(
+        internal val answerVariables: List<AnswerVariable>,
+        internal val variables: Map<String, Any>,
+        internal val userMetadata: UserMetadata,
+        internal val transcript: List<TranscriptEntry>,
+        internal val record: List<RecordEntry>,
+        internal val currentIndex: Int
+    )
+
+    private fun copyMetadata(m: UserMetadata) = m.copy(metadata = m.metadata.toMutableMap())
+    private fun copyEntry(e: RecordEntry) = e.copy(data = e.data.toMutableMap())
+
+    /** A copy of the state as it is now (RN ChatState.toJSON, for the engine's question points). */
+    fun snapshot(): Snapshot = Snapshot(
+        answerVariables = _answerVariables.value.map { it.copy() },
+        variables = _variables.value.toMap(),
+        userMetadata = copyMetadata(_userMetadata.value),
+        transcript = _transcript.value.toList(),
+        record = _record.value.map(::copyEntry),
+        currentIndex = _currentIndex.value
+    )
+
+    /**
+     * Puts a saved state back in place, the session kept (RN ChatState.restore).
+     * The answers and the visitor's details are saved again; the stored
+     * transcript and record are append-only and keep what came after.
+     */
+    fun restore(s: Snapshot) {
+        _answerVariables.value = s.answerVariables.map { it.copy() }.toMutableList()
+        _variables.value = s.variables.toMutableMap()
+        _userMetadata.value = copyMetadata(s.userMetadata)
+        _transcript.value = s.transcript.toMutableList()
+        _record.value = s.record.map(::copyEntry).toMutableList()
+        _currentIndex.value = s.currentIndex
+        persistAnswerVariables()
+        persistUserMetadata()
+        persistCurrentIndex()
+    }
+
     // ========== Reset ==========
 
     /**
