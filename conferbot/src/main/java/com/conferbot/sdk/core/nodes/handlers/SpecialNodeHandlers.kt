@@ -270,7 +270,11 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
 
     /** Called when the agent chat ends: the post-chat survey if enabled, else on. */
     fun onChatEnded(nodeId: String, nodeData: Map<String, Any?>): NodeResult {
-        val enablePostChatSurvey = getBoolean(nodeData, "enablePostChatSurvey", false)
+        // The builder's key is enablePostChatSurveyQuestions (web
+        // agentListeners.ts onChatEnded, flow-node spec); the older
+        // enablePostChatSurvey still counts.
+        val enablePostChatSurvey = getBoolean(nodeData, "enablePostChatSurveyQuestions", false) ||
+            getBoolean(nodeData, "enablePostChatSurvey", false)
         val postChatQuestions = getList<Map<String, Any?>>(nodeData, "postChatSurveyQuestions")
         if (enablePostChatSurvey && postChatQuestions.isNotEmpty()) {
             handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY
