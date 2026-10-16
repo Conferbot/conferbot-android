@@ -123,10 +123,11 @@ internal object LauncherFxDraw {
 
     /**
      * The idle call's mascot on its stage over the launcher (idleCall.ts
-     * perform), each part of the drawing its own layer, and the white rings
-     * where a knock or tap lands.
+     * perform): the owner's mascot, each part of the drawing its own layer
+     * turned about that character's joints ([origins]: its lids at its eyes),
+     * and the white rings where a knock or tap lands.
      */
-    fun idleCall(c: Canvas, perf: LauncherIdleCall.Performance, layers: MascotArt.Layers, t: Double) {
+    fun idleCall(c: Canvas, perf: LauncherIdleCall.Performance, layers: MascotArt.Layers, origins: MascotArt.Origins, t: Double) {
         val n = perf.mascot.size
         val k = n / 100
         val box = Keyframes.evaluate(perf.self, t, perf.mascot.base)
@@ -152,17 +153,21 @@ internal object LauncherFxDraw {
             // The body and everything on it move with the body.
             val b = perf.parts["body"]?.let { Keyframes.evaluate(it, t) } ?: FxValues.rest()
             val s = c.save()
-            val bo = MascotArt.ORIGINS.getValue("body")
+            val bo = origins.body
             transform(c, bo.first * k, bo.second * k, b.tx * k, b.ty * k, b.r, b.sx, b.sy)
-            layer(layers.armBack, "arm", MascotArt.ORIGINS["arm"])
+            layer(layers.tail)
+            layer(layers.armBack, "arm", origins.arm)
             layer(layers.body)
-            layer(layers.look, "look", MascotArt.ORIGINS["look"])
-            layer(layers.lids, "lid", MascotArt.ORIGINS["lid"])
-            layer(layers.brows, "brow", MascotArt.ORIGINS["brow"])
-            layer(layers.armFront, "arm", MascotArt.ORIGINS["arm"])
+            layer(layers.look, "look", origins.look)
+            layer(layers.face)
+            layer(layers.lids, "lid", origins.lid)
+            layer(layers.cover)
+            layer(layers.brows, "brow", origins.brow)
+            layer(layers.armFront, "arm", origins.arm)
             layer(layers.smile, "smile")
             layer(layers.o, "o")
             layer(layers.grin, "grin")
+            layer(layers.top)
             c.restoreToCount(s)
             c.restoreToCount(save)
         }
