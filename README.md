@@ -298,7 +298,24 @@ The flow engine runs a bot the way the web widget does. It passes the shared flo
 - Card numbers, IDs and passwords a visitor types are masked in the answers and the record, unless the bot's `redactSensitive` setting is off.
 - Typing dots last as long as on the web: longer for longer messages.
 
-A step without a native card yet (the matrix, a drawn signature, the address search list) uses the closest existing card: choices, a slider, the calendar or a text box.
+### Step cards (Compose)
+
+In the Compose chat every step that waits for the visitor is answered as on the web, in a card under the bot's question, in the bot's option colours, corner radius and font size:
+
+- **Consent:** the text with its links (they open in the browser), a box to tick and Continue.
+- **OTP:** the e-mail and Send code, then six digit boxes (a pasted or suggested code fills them and verifies by itself), Resend after its countdown, Change email and Skip when allowed.
+- **Address:** suggestions as the visitor types (their words in bold), a picked address to confirm, or the address typed by hand.
+- **Signature:** a pad to sign with a finger (Undo, Clear), sent as a PNG trimmed to the ink, or the name typed when allowed, and the full name when asked.
+- **Matrix:** a grid, one pick per row or several. **Ranking:** the items moved up and down. **Slider:** the value with its unit, on the step's steps.
+- **Date / time:** a month with the allowed days and the times between the step's bounds. **Calendar:** the open days, then that day's free times.
+- **Payment:** the item and amount, Pay now (opens Stripe Checkout in the browser), I've paid once it is open, Cancel.
+- **Carousel and product card:** cards with image, title, price and description; path buttons answer, link buttons open their page, Continue when there are only links. **Navigate:** links that open their page, then Done.
+
+The visitor's bubble is the step's own reply ("Agreed to Terms", "Verified: a@b.io", "Paid $19.99"). A refused answer keeps what was entered and says why on the card. The composer is hidden under the OTP, address and signature cards, which take the typing themselves.
+
+A custom UI can answer a step the same way: build the answer with `com.conferbot.sdk.core.flow.FlowStepAnswer` (for example `FlowStepAnswer.consent(true)`, `FlowStepAnswer.otpVerify("123456")`) and pass it to `Conferbot.answerStep(answer)`. The waiting step is `Conferbot.currentUIState.value?.step` (its type, settings, what the card shows and the reason for the last refusal).
+
+The XML Views chat still draws these steps with its generic cards.
 
 ## Configuration
 
