@@ -187,6 +187,8 @@ feature with its issue and its files.
   fetched when it opens (#53, #57).
 - `RateLimiter.acquire()` no longer spins on a timestamp exactly `perMillis` old (#89).
 - `deviceInfo` falls back when the device model is unset (#22).
+- After a reconnect the visitor is back in the chat's room, so agent messages sent after
+  a network blip arrive; a waiting visitor's queue position is asked again at once (#94).
 
 ### Security
 
