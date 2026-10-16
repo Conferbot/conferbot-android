@@ -18,18 +18,27 @@ import kotlinx.coroutines.withContext
  * This class provides a clean API for UI components to load and display messages
  * with automatic pagination and memory optimization.
  */
-class PaginatedMessageManager(
-    private val context: Context,
+class PaginatedMessageManager internal constructor(
     private val sessionId: String,
-    private val config: PaginationConfig = PaginationConfig()
+    private val config: PaginationConfig,
+    private val repository: MessageRepository
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val repository = MessageRepository(
-        context = context,
-        sessionId = sessionId,
-        maxMemoryMessages = config.maxMemoryMessages,
-        pageSize = config.pageSize
+    constructor(
+        context: Context,
+        sessionId: String,
+        config: PaginationConfig = PaginationConfig()
+    ) : this(
+        sessionId,
+        config,
+        MessageRepository(
+            context = context,
+            sessionId = sessionId,
+            maxMemoryMessages = config.maxMemoryMessages,
+            pageSize = config.pageSize
+        )
     )
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Current messages visible to UI
     private val _messages = MutableStateFlow<List<RecordItem>>(emptyList())
