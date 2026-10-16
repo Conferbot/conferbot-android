@@ -45,6 +45,8 @@ class HandoverLifecycleTest {
         override fun resumeFrom(nodeId: String) { calls += "resumeFrom:$nodeId" }
         override fun submitResponse(response: Any) { calls += "submit:$response" }
         override fun handleAgentAccepted(agentName: String) { calls += "accepted:$agentName" }
+        override val handoverNodeId: String? get() = if (isAtHandover) "ho" else null
+        override fun stop() { calls += "stop" }
     }
 
     private class FakeHost : HandoverHost {
@@ -252,5 +254,53 @@ class HandoverLifecycleTest {
         life.resumeRestored(null) { step = it }
         assertThat(step).isEqualTo(RestoreStep.START)
         assertThat(socket.joined).containsExactly("s1")
+    }
+
+    @Test
+    fun `back in the queue - the requeued line, no agent, and the handover step waits again`() {
+        host.current = Agent(id = "u1", name = "Sam")
+        host.live = true
+        flow.isAtHandover = true
+        socket.fire("live-chat-requeued", mapOf("chatSessionId" to "s1", "teamName" to "Billing"))
+        val line = host.screen.filterIsInstance<RecordItem.SystemMessage>().single()
+        assertThat(line.text).isEqualTo("Connecting you to Billing...")
+        assertThat(line.kind).isEqualTo("live-chat-requeued")
+        assertThat(host.saved.values.single().type).isEqualTo("live-chat-requeued")
+        assertThat(host.current).isNull()
+        assertThat(host.live).isFalse()
+        assertThat(flow.calls).containsExactly("waitAt:ho")
+        assertThat((flow.ui as NodeUIState.HumanHandover).state).isEqualTo(NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT)
+        // Another session's requeue is not ours.
+        socket.fire("live-chat-requeued", mapOf("chatSessionId" to "other"))
+        assertThat(host.screen).hasSize(1)
+    }
+
+    @Test
+    fun `back in the queue without a flow says another agent`() {
+        socket.fire("live-chat-requeued", mapOf("chatSessionId" to "s1"))
+        assertThat(host.screen.filterIsInstance<RecordItem.SystemMessage>().single().text).isEqualTo("Connecting you to another agent...")
+        assertThat(flow.calls).isEmpty()
+    }
+
+    @Test
+    fun `a transfer is kept in the record, not drawn`() {
+        socket.fire("live-chat-transferred", mapOf("chatSessionId" to "s1", "entry" to mapOf("id" to "transfer-1", "text" to "Transferred from Maya to Sales", "kind" to "team")))
+        assertThat(host.screen).isEmpty()
+        val e = host.saved.getValue("transfer-1")
+        assertThat(e.type).isEqualTo("live-chat-transfer")
+        assertThat(e.text).isEqualTo("Transferred from Maya to Sales")
+        assertThat(e.data["kind"]).isEqualTo("team")
+        socket.fire("live-chat-transferred", mapOf("chatSessionId" to "s1", "entry" to mapOf("id" to 3)))
+        assertThat(host.saved).hasSize(1)
+    }
+
+    @Test
+    fun `blocked - the Connecting line settles ended, the flow stops, no live chat`() {
+        life.onAgentLeft(escalation)
+        host.live = true
+        life.blocked()
+        assertThat(leftLines.single().settled).isEqualTo("ended")
+        assertThat(flow.calls).containsExactly("stop")
+        assertThat(host.live).isFalse()
     }
 }
