@@ -242,6 +242,8 @@ fun ConferBotWidget(
         if (wasOpen != isChatOpen) {
             wasOpen = isChatOpen
             Conferbot.sounds.play(if (isChatOpen) com.conferbot.sdk.core.sound.MessageSound.Event.OPEN else com.conferbot.sdk.core.sound.MessageSound.Event.CLOSE)
+            // A close blocks auto-open for 2 minutes (core/customization/AutoOpen.kt).
+            if (!isChatOpen) com.conferbot.sdk.core.customization.AutoOpen.markClosed(Conferbot.activeBotId ?: "bot")
         }
         Conferbot.setChatVisible(isChatOpen)
         if (isChatOpen) {
@@ -258,6 +260,23 @@ fun ConferBotWidget(
         com.conferbot.sdk.core.customization.Launcher.resolve(customizationMap, screenWidthDp)
     }
     val hasLook = customizationMap.isNotEmpty()
+
+    // The owner's auto-open (botAutoOpen, botAutoOpenDelay seconds): first
+    // visit only, once per launch of the app, not within 2 minutes of a close.
+    val autoOpenKey = customizationMap["botAutoOpen"] to customizationMap["botAutoOpenDelay"]
+    LaunchedEffect(autoOpenKey) {
+        val bot = Conferbot.activeBotId ?: "bot"
+        val wait = com.conferbot.sdk.core.customization.AutoOpen.plan(
+            customizationMap,
+            chatStarted = Conferbot.chatStarted,
+            isOpen = isChatOpen,
+            alreadyAutoOpened = com.conferbot.sdk.core.customization.AutoOpen.alreadyOpened(bot),
+            closedAt = com.conferbot.sdk.core.customization.AutoOpen.closedAt(bot)
+        ) ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(wait)
+        com.conferbot.sdk.core.customization.AutoOpen.markOpened(bot)
+        if (!isChatOpen && !Conferbot.chatStarted) isChatOpen = true
+    }
 
     // The bot's greeting is the web's greeting card (core/customization/Greeting):
     // its rules, delay, frequency and style.
