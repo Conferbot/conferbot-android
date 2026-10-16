@@ -78,7 +78,7 @@ object FlowRich {
     fun t(key: String, vars: Map<String, Any?>? = null): String {
         val text = EN_TEXT[key] ?: key
         if (vars == null) return text
-        return Regex("\\{(\\w+)}").replace(text) { m -> vars[m.groupValues[1]]?.let { Js.str(it) } ?: m.value }
+        return Regex("\\{(\\w+)\\}").replace(text) { m -> vars[m.groupValues[1]]?.let { Js.str(it) } ?: m.value }
     }
 
     fun plainText(value: Any?): String = FlowText.plainText(value)
