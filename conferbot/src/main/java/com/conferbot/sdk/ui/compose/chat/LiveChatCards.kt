@@ -40,7 +40,8 @@ import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
  * owner's quick actions and "Talk to a person" above the composer, the AI's
  * follow-up email card, the queue position, the "nobody could join" email
  * ask, leave a message, a locked conversation, an agent's dropped
- * connection, an agent asking for a file, and the post-chat rating.
+ * connection, an agent asking for a file, the post-chat rating, "Email me
+ * this chat" and the closed chat (blocked, or ended with a new chat).
  * State is on [Conferbot.liveChat] (core/livechat).
  */
 
@@ -391,6 +392,72 @@ fun CsatCard() {
     }
 }
 
+/**
+ * "Email me this chat" (web emailTranscript.ts, core/livechat/EmailTranscript.kt):
+ * one card, the visitor's email filled in when known; Send, Cancel; the
+ * server's reason when it did not go; "Sent! Check your inbox at ..." once
+ * it did.
+ */
+@Composable
+fun EmailTranscriptCard() {
+    val open by Conferbot.liveChat.mailOpen.collectAsState()
+    val sentTo by Conferbot.liveChat.mailSentTo.collectAsState()
+    if (!open && sentTo == null) return
+    val theme = ConferbotThemeAmbient.current
+    val t = com.conferbot.sdk.core.livechat.EmailTranscript
+    LiveCard {
+        val done = sentTo
+        if (done != null) {
+            CardTitle(t.sentText(done))
+            return@LiveCard
+        }
+        var email by remember { mutableStateOf(Conferbot.liveChat.knownEmail()) }
+        var busy by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        fun submit() {
+            if (busy) return
+            if (!t.isEmail(email)) {
+                error = t.CHECK_EMAIL
+                return
+            }
+            error = null
+            busy = true
+            Conferbot.liveChat.emailTranscript(email) { r ->
+                busy = false
+                if (!r.ok) error = t.errorText(r)
+            }
+        }
+        CardTitle(t.TITLE)
+        CardSub(t.SUB)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Field(email, { email = it.take(120); error = null }, t.PLACEHOLDER, email = true, modifier = Modifier.weight(1f))
+            PrimaryButton(if (busy) t.SENDING else t.SEND, busy = busy) { submit() }
+        }
+        error?.let { Text(it, color = theme.colors.error, style = TextStyle(fontSize = 12.sp), modifier = Modifier.padding(top = 6.dp)) }
+        Text(
+            t.CANCEL,
+            color = theme.colors.onSurfaceVariant,
+            style = TextStyle(fontSize = 13.sp),
+            modifier = Modifier.padding(top = 8.dp).clickable { Conferbot.liveChat.closeEmailTranscript() }
+        )
+    }
+}
+
+/**
+ * The closed chat (core/livechat/LiveEvents.kt closedStateOf): a blocked
+ * visitor's neutral line, or, under an ended chat's own line, a button to
+ * start a new chat.
+ */
+@Composable
+fun ClosedChatCard(closed: com.conferbot.sdk.core.livechat.LiveEvents.ClosedState?, onNewChat: () -> Unit = { Conferbot.startNewChat() }) {
+    closed ?: return
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // An ended chat's "Chat has ended" line is in the record already.
+        if (closed.kind == com.conferbot.sdk.core.livechat.LiveEvents.ClosedKind.BLOCKED) SystemLine(closed.text)
+        if (closed.newChat) PrimaryButton(com.conferbot.sdk.core.livechat.LiveEvents.NEW_CHAT_TEXT, onClick = onNewChat)
+    }
+}
+
 /** A centred system line (locked, connection dropped). */
 @Composable
 fun SystemLine(text: String) {
@@ -408,12 +475,14 @@ fun SystemLine(text: String) {
 
 /** The cards below the messages, in the web widget's order. */
 @Composable
-fun LiveChatFooterCards(onUpload: (() -> Unit)?) {
+fun LiveChatFooterCards(onUpload: (() -> Unit)?, closed: com.conferbot.sdk.core.livechat.LiveEvents.ClosedState? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         HandoverWaitingCard()
         LeaveMessageCard()
         FileRequestCard(onUpload)
         LeadCard()
         CsatCard()
+        EmailTranscriptCard()
+        ClosedChatCard(closed)
     }
 }
