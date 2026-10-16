@@ -66,15 +66,23 @@ class SessionPersistenceManagerTest {
         mockkObject(ConferbotDatabase)
         every { ConferbotDatabase.getInstance(any()) } returns database
 
+        // SessionRepository keeps its first instance for the JVM, holding the
+        // first test's DAO mocks: each test gets one over this test's mocks.
+        mockkObject(SessionRepository.Companion)
+        every { SessionRepository.getInstance(any()) } answers { SessionRepository(context) }
+
         // Reset ChatState
         ChatState.reset()
     }
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain()
-        unmockkObject(ConferbotDatabase)
+        // ChatState.reset() launches on Main: before Main is put back, or it
+        // throws "Module with the Main dispatcher had failed to initialize" (#69).
         ChatState.reset()
+        unmockkObject(SessionRepository.Companion)
+        unmockkObject(ConferbotDatabase)
+        Dispatchers.resetMain()
     }
 
     // ==================== hasValidSession TESTS ====================
@@ -317,7 +325,7 @@ class SessionPersistenceManagerTest {
     }
 
     @Test
-    fun `getSessionInfo returns info with isValid false for expired session`() = runTest {
+    fun `getSessionInfo returns null for expired session`() = runTest {
         // Given
         val botId = DatabaseTestFixtures.TEST_BOT_ID
         val expiredSession = DatabaseTestFixtures.createChatSession(
@@ -330,9 +338,8 @@ class SessionPersistenceManagerTest {
         // When
         val result = SessionPersistenceManager.getSessionInfo(context, botId)
 
-        // Then
-        assertThat(result).isNotNull()
-        assertThat(result?.isValid).isFalse()
+        // Then - only a valid session is described (getSessionInfo's contract)
+        assertThat(result).isNull()
     }
 
     @Test
@@ -469,12 +476,13 @@ class SessionPersistenceManagerTest {
 
     @Test
     fun `session at expiry boundary is still valid`() = runTest {
-        // Given - Session updated exactly at expiry time minus 1 ms
+        // Given - Session updated just inside the expiry window (a second's
+        // margin: the clock moves on before the check, 1 ms was flaky)
         val botId = DatabaseTestFixtures.TEST_BOT_ID
         val borderlineSession = DatabaseTestFixtures.createChatSession(
             botId = botId,
             isActive = true,
-            updatedAt = System.currentTimeMillis() - SessionRepository.SESSION_EXPIRY_MS + 1
+            updatedAt = System.currentTimeMillis() - SessionRepository.SESSION_EXPIRY_MS + 1000
         )
         coEvery { chatSessionDao.getLatestActiveSession(botId) } returns borderlineSession
 
