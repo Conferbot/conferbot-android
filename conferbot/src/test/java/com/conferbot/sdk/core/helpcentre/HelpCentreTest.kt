@@ -108,6 +108,19 @@ class HelpCentreTest {
     }
 
     @Test
+    fun `a wait's article opens in the help centre while on, else by id (#75)`() {
+        val id = "6ab7ac01b03f13ff22412c4e"
+        val data = HelpCentre.parse(kb, on)
+        assertEquals(HelpCentre.WaitArticleRoute.HELP_CENTRE, HelpCentre.waitArticleRoute(on, data, id))
+        // Off, or nothing published: fetched by id and shown on its own.
+        assertEquals(HelpCentre.WaitArticleRoute.BY_ID, HelpCentre.waitArticleRoute(mapOf("enableKnowledgeBase" to false), data, id))
+        assertEquals(HelpCentre.WaitArticleRoute.BY_ID, HelpCentre.waitArticleRoute(on, null, id))
+        assertEquals(HelpCentre.WaitArticleRoute.NOWHERE, HelpCentre.waitArticleRoute(on, data, ""))
+        assertEquals(HelpCentre.WaitArticleRoute.NOWHERE, HelpCentre.waitArticleRoute(null, null, null))
+        assertEquals(mapOf("chatbotId" to "bot1", "articleId" to id), HelpCentre.articleRequest("bot1", id))
+    }
+
+    @Test
     fun `on with no published article counts as off`() {
         val empty = HelpCentre.parse(mapOf("recentArticles" to emptyList<Any>(), "categories" to emptyList<Any>()), on)
         assertFalse(HelpCentre.visible(on, empty))
