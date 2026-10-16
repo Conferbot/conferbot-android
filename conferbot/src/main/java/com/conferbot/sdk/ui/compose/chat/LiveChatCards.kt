@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -42,8 +43,8 @@ import com.conferbot.sdk.ui.theme.ConferbotThemeAmbient
  * follow-up email card, the queue position, the "nobody could join" email
  * ask, leave a message, a locked conversation, an agent's dropped
  * connection, an agent asking for a file, the post-chat rating, "Email me
- * this chat" and the closed chat (blocked, or ended with a new chat).
- * State is on [Conferbot.liveChat] (core/livechat).
+ * this chat", the closed chat (blocked, or ended with a new chat) and the
+ * post-chat redirect's countdown. State is on [Conferbot.liveChat] (core/livechat).
  */
 
 @Composable
@@ -501,6 +502,63 @@ fun SystemLine(text: String) {
     }
 }
 
+/**
+ * The owner's post-chat redirect under the ended conversation
+ * (core/livechat/PostChatRedirect.kt; web .cb-redirect): "Taking you to
+ * example.com in 10s" with Cancel. A screen reader hears the first sentence
+ * once; the ticking number is hidden from it. When the system could not
+ * open the URL, a "Continue to example.com" button.
+ */
+@Composable
+fun PostChatRedirectLine() {
+    val line by Conferbot.postChatRedirect.line.collectAsState()
+    val l = line ?: return
+    val colors = ConferbotThemeAmbient.current.colors
+    val view = androidx.compose.ui.platform.LocalView.current
+    // Said once when it starts (and once more for "Continue to" / "Taking you to…").
+    LaunchedEffect(l.href, l.phase) { view.announceForAccessibility(l.said) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (l.phase == com.conferbot.sdk.core.livechat.RedirectLine.Phase.CONTINUE) {
+            Text(
+                l.text,
+                color = colors.primary,
+                style = TextStyle(fontSize = 12.sp, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                modifier = Modifier
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) { Conferbot.postChatRedirect.continueNow() }
+                    .padding(vertical = 6.dp)
+            )
+            return@Row
+        }
+        Text(
+            l.text,
+            color = colors.onSurfaceVariant,
+            style = TextStyle(fontSize = 12.sp),
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .saidAs(l.said)
+        )
+        if (l.phase == com.conferbot.sdk.core.livechat.RedirectLine.Phase.COUNTING) {
+            Text(
+                l.cancelText,
+                color = colors.onSurface,
+                style = TextStyle(fontSize = 12.sp, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                modifier = Modifier
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) { Conferbot.postChatRedirect.cancel() }
+                    .saidAs(l.cancelLabel)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            )
+        }
+    }
+}
+
+/** Only [label] for a screen reader (not the ticking text). */
+private fun Modifier.saidAs(label: String) =
+    this.then(Modifier.clearAndSetSemantics { contentDescription = label })
+
 /** The cards below the messages, in the web widget's order. */
 @Composable
 fun LiveChatFooterCards(onUpload: (() -> Unit)?, closed: com.conferbot.sdk.core.livechat.LiveEvents.ClosedState? = null) {
@@ -512,5 +570,6 @@ fun LiveChatFooterCards(onUpload: (() -> Unit)?, closed: com.conferbot.sdk.core.
         CsatCard()
         EmailTranscriptCard()
         ClosedChatCard(closed)
+        PostChatRedirectLine()
     }
 }
