@@ -23,8 +23,9 @@ import org.json.JSONObject
  * place in the queue, what happens when nobody can join (an email for the
  * reply, leave a message), read receipts both ways, a conversation locked or
  * its composer turned off by the agent, an agent's dropped connection, an
- * agent asking for a file, the AI's follow-up email card, and the post-chat
- * rating. Owned by [com.conferbot.sdk.core.Conferbot]; the shapes are in
+ * agent asking for a file, the AI's follow-up email card, the post-chat
+ * rating, a visitor the workspace blocked ([LiveEvents]) and "Email me this
+ * chat" ([EmailTranscript]). Owned by [com.conferbot.sdk.core.Conferbot]; the shapes are in
  * [LiveChat].
  */
 class LiveChatExtras(
@@ -33,7 +34,9 @@ class LiveChatExtras(
     private val sessionId: () -> String?,
     private val addMessage: (RecordItem) -> Unit,
     /** The flow carries on from the handover (a message was left, or skipped). */
-    private val continueFlow: () -> Unit = {}
+    private val continueFlow: () -> Unit = {},
+    /** "Email me this chat": the server's transcript email (ApiClient.sendTranscriptEmail). */
+    private val postTranscriptEmail: suspend (chatSessionId: String, email: String) -> EmailTranscript.Result = { _, _ -> EmailTranscript.Result(false) }
 ) {
     private val _queue = MutableStateFlow<QueueStatus?>(null)
     val queue: StateFlow<QueueStatus?> = _queue.asStateFlow()
@@ -78,6 +81,17 @@ class LiveChatExtras(
 
     private val _csatSent = MutableStateFlow(false)
     val csatSent: StateFlow<Boolean> = _csatSent.asStateFlow()
+
+    // The workspace blocked this visitor: the closed line (LiveEvents).
+    private val _blocked = MutableStateFlow<String?>(null)
+    val blocked: StateFlow<String?> = _blocked.asStateFlow()
+
+    // "Email me this chat": the card is up, and where it went once sent.
+    private val _mailOpen = MutableStateFlow(false)
+    val mailOpen: StateFlow<Boolean> = _mailOpen.asStateFlow()
+
+    private val _mailSentTo = MutableStateFlow<String?>(null)
+    val mailSentTo: StateFlow<String?> = _mailSentTo.asStateFlow()
 
     private var queuePoll: Job? = null
     private var waitTimer: Job? = null
@@ -139,6 +153,9 @@ class LiveChatExtras(
         }
         on("agent-read-status") { if (own(it)) _receiptMarks.value = LiveChat.receiptMarksOf(toMap(it)) }
         on("chat-ended") {
+            if (!own(it)) return@on
+            // The same end again: one survey, not two (LiveEvents).
+            if (LiveEvents.endedSinceLastLive(LiveEvents.kindsOf(ChatState.record.value))) return@on
             _queue.value = null
             stopQueuePoll()
             _lockedBy.value = null
@@ -149,6 +166,59 @@ class LiveChatExtras(
             // Buying intent and no email yet: the one-field follow-up card.
             val ai = it?.optJSONObject("agentDetails")?.optBoolean("isAIAgent", false) == true
             if (ai && it?.optBoolean("leadCard", false) == true) _leadCardOpen.value = true
+        }
+    }
+
+    /**
+     * Blocked by the workspace, mid-chat (visitor-blocked) or at the
+     * handshake (web _applyVisitorBlock): the chat closes with a neutral
+     * line, whatever was waiting goes, and nothing more is taken.
+     */
+    fun block(data: Map<String, Any?>?) {
+        _blocked.value = LiveEvents.blockedText(data)
+        stopQueuePoll()
+        stopWaitTimer()
+        _queue.value = null
+        _handoverWaiting.value = null
+        _noAgentsAvailable.value = false
+        _leadCardOpen.value = false
+        _fileRequestedBy.value = null
+        _csatOpen.value = false
+        _mailOpen.value = false
+    }
+
+    /** "Email me this chat" from the menu: the card, once at a time (web mountEmailTranscript). */
+    fun openEmailTranscript() {
+        if (_blocked.value != null) return
+        _mailSentTo.value = null
+        _mailOpen.value = true
+    }
+
+    fun closeEmailTranscript() {
+        _mailOpen.value = false
+    }
+
+    /** The email the card starts with: the visitor's, when known. */
+    fun knownEmail(): String = LiveChat.knownEmail(ChatState.userMetadata.value.email, ChatState.getAnswerVariablesMap().values.toList())
+
+    /**
+     * Send the transcript to this address. Sent: the address is kept as the
+     * visitor's (user metadata, the email answer) and the record goes, as
+     * the web's rememberEmail does. [onDone] gets the result on the main thread.
+     */
+    fun emailTranscript(email: String, onDone: (EmailTranscript.Result) -> Unit) {
+        val id = sessionId()
+        val address = email.trim()
+        if (id == null) return onDone(EmailTranscript.Result(false))
+        scope.launch {
+            val r = runCatching { postTranscriptEmail(id, address) }.getOrElse { EmailTranscript.Result(false) }
+            if (r.ok) {
+                ChatState.setUserMetadata("email", address)
+                ChatState.setAnswerVariableByKey("email", address)
+                sendRecord()
+                _mailSentTo.value = address
+            }
+            withContext(Dispatchers.Main) { onDone(r) }
         }
     }
 
@@ -330,6 +400,9 @@ class LiveChatExtras(
         _leftMessageTo.value = null
         _leadEmail.value = null
         _csatSent.value = false
+        _blocked.value = null
+        _mailOpen.value = false
+        _mailSentTo.value = null
         reportedDelivered = ""
         reportedSeen = ""
     }
