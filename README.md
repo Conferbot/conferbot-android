@@ -30,7 +30,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Headless SDK** - every piece of state exposed as Kotlin `StateFlow` for fully custom UIs
 - **Real-time messaging** - Socket.IO powered communication with the Conferbot flow engine
 - **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
-- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", and "Email me this chat"
+- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", and help articles and games while the visitor waits
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
@@ -291,6 +291,19 @@ off() // stop listening
 ```
 
 `HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
+
+### While you wait (Compose)
+
+While the visitor waits for a person, the chat offers something to do, as the web widget does:
+
+- **Help articles, 6 seconds in.** The wait starts when a flow hands over with no AI agent on the step, when an AI agent passes the visitor on, or when a restored chat is still in the queue. Up to two articles from the help centre that match the visitor's last real question appear under "While you wait, this might help". Only when the help centre is on (`enableKnowledgeBase`). Nothing appears if the wait ends first.
+- **The server's pick.** When the server keeps a queue, it picks the help itself (`queue-help`, or the `help` on a waiting `queue-status`) and the card shows **That solved it**. A tap sends `queue-self-resolve {chatSessionId, articleId}` (the row last opened, else the first). If the server says ok, the visitor leaves the queue: "Glad that helped. You have left the queue." in the card, "You left the queue. Glad that helped." in the chat. Once the wait is over, the card stays under "Articles that might help" without the button.
+- **Games, 2.5 seconds after the waiting signal.** Seven games: rock paper scissors (first to two), tic-tac-toe (the bot takes a win, blocks, sometimes slips; the opener alternates), a quick quiz (from the help centre, topped up with trivia), memory match (six pairs, one to three stars), a reflex test (three rounds; under 100 ms counts as a lucky guess), emoji riddles (English only) and word scramble (Skip, or Reveal on the last word). The owner picks the games and the line with `waitingGames: {enabled, games, offerText}`. Unset means on with all seven.
+- **Not now** or the x stops the offers for the rest of the app session. Typing "play" or "games" while waiting opens the menu instead of sending the words.
+- **A person joins:** an unused offer goes. A game under way is saved ("Sam's here!", "Your game is saved - finish it later?", **Finish my game**). A finished game stays as its result.
+- The cards use the bot's colours and font. With the phone's animations off, nothing moves. The cards are never saved on the device or sent in the conversation's record.
+
+An article row opens the article in the chat's help centre; a page opens in the browser. The XML chat does not draw these cards; there "play" is sent as a message.
 
 ### AI answers
 
@@ -688,6 +701,8 @@ Core methods on `com.conferbot.sdk.core.Conferbot`:
 | `sendAnswerFeedback` | `sendAnswerFeedback(agentMessageId: String, feedback: AnswerFeedback)` | A vote on an AI answer (`helpful`, `reason`, `comment`), kept on its record entry and sent |
 | `liveChat.openEmailTranscript` | `liveChat.openEmailTranscript()` | Show the "Email me this chat" card |
 | `onWidgetSignal` | `onWidgetSignal(name: String, listener: (WidgetSignal) -> Unit): () -> Unit` | Listen to `cb:waiting-for-human`, `cb:human-joined`, `cb:wait-over`; returns the unsubscribe |
+| `waiting.help` / `waiting.games` | `StateFlow<PlacedCard<HelpCardState>?>` / `StateFlow<PlacedCard<GamesCard>?>` | The while-you-wait cards on screen (for a custom UI); `waiting.solveWait { ok -> }` is "That solved it" |
+| `openWaitHelpItem` | `openWaitHelpItem(item: WaitArticles.HelpItem)` | Open a row of the while-you-wait card (an article in the help centre) |
 | `identify` | `identify(user: ConferBotUser)` | Set the current user (before session creation) |
 | `setEventListener` | `setEventListener(listener: ConferBotEventListener)` | Register the SDK event callback |
 | `on` / `off` | `on(event: String, callback: Emitter.Listener)` / `off(event: String, callback: Emitter.Listener? = null)` | Raw socket event subscription |
