@@ -144,7 +144,26 @@ import com.conferbot.sdk.core.Conferbot
 Conferbot.openChat(this)
 ```
 
-This creates a session if needed and launches the built-in `ChatActivity`.
+This creates a session if needed and launches the built-in `ChatActivity`. It is the same chat as the Compose UI, hosted in an Activity (see [The XML chat](#the-xml-chat-chatactivity)), so an XML app gets every feature: the home screen, the help centre, "Your requests", the wait cards and games, the step cards, the typing styles, the chat menu and the post-chat redirect.
+
+### The XML chat (ChatActivity)
+
+`ChatActivity` hosts the Compose chat (`ConferBotChatScreen`, the screen `ConferBotWidget` opens) in a `ComposeView`. There is one implementation of the chat, so the XML and the Compose chat look and behave the same. The SDK brings the Compose libraries it uses; your app needs no Compose setup of its own (no Compose compiler, no `buildFeatures.compose`).
+
+What stays as it was:
+
+- `Conferbot.openChat(context)`, the Activity's class name, its manifest entry, `com.conferbot.ACTION_OPEN_CHAT` (a notification tap: its notifications are cancelled and `handleNotificationTap` gets the data in `conferbot_notification_data`) and the `conferbot://chat` deep link.
+- `setNotificationChatActivity(...)`, `setCurrentActivity(...)` and in-app banners.
+- `ConferBotCustomization` passed to `initialize()`: `primaryColor` (header, buttons, links), `botBubbleColor`, `userBubbleColor`, `bubbleRadius`, `fontFamily` (a font resource) and `headerTitle` theme the chat until the bot's settings arrive; the bot's own settings win after that, as before.
+- The open and close sounds, the chat counting as on screen while the Activity is resumed, the unread count cleared when it opens.
+- `MessageAdapter` and `NodeInteractionListener` are still public for an app that draws its own `RecyclerView` chat, but `ChatActivity` no longer uses them.
+
+Migrating from an SDK before this change:
+
+- The chat no longer inflates `activity_chat.xml`, `view_chat_header.xml`, `view_typing_indicator.xml` or `view_connection_status.xml`. An app that overrode those layouts, or their ids, colours or drawables, to restyle the chat sees the SDK's chat instead. Use `ConferBotCustomization` (above), the dashboard's settings, or embed `ConferBotChatView` / `ConferBotThemedChatScreen` in your own Activity with a `ConferbotTheme`.
+- `enableAvatar` and `avatarUrl` in `ConferBotCustomization` were not read by the old XML chat and still are not; the header shows the bot's logo from its settings.
+- Back from the conversation returns to the home screen when the owner has one; Back on the home screen closes the Activity.
+- The Activity's theme is still `Theme.AppCompat.Light.NoActionBar` with `adjustResize`; the chat follows the phone's dark mode until the bot's theme arrives.
 
 ### Pattern 2: Jetpack Compose
 
@@ -236,7 +255,7 @@ Server values always win. Per attribute the resolution order is:
 | Corner radius | `widgetBorderRadius` > `config.borderRadius` > size / 2 |
 | Icon | `widgetIconSVG` (WidgetBubbleIcon1..15) > default bubble |
 
-There is no XML-Views version of the floating bubble. In an XML app, host it in a `ComposeView`, or use `Conferbot.openChat()` from your own FAB.
+There is no XML-Views version of the floating bubble. In an XML app, host it in a `ComposeView`, or use `Conferbot.openChat()` from your own FAB (it opens the same chat).
 
 ### Pattern 4: Headless (Custom UI)
 
@@ -296,7 +315,7 @@ off() // stop listening
 
 `HandoverSignals` and `WidgetSignal` are in `com.conferbot.sdk.core.livechat`.
 
-### While you wait (Compose)
+### While you wait
 
 While the visitor waits for a person, the chat offers something to do, as the web widget does:
 
@@ -307,7 +326,7 @@ While the visitor waits for a person, the chat offers something to do, as the we
 - **A person joins:** an unused offer goes. A game under way is saved ("Sam's here!", "Your game is saved - finish it later?", **Finish my game**). A finished game stays as its result.
 - The cards use the bot's colours and font. With the phone's animations off, nothing moves. The cards are never saved on the device or sent in the conversation's record.
 
-An article row opens the article in the chat's help centre; a page opens in the browser. An article the server picked that the help centre cannot open (the help centre is off, or does not list it) is fetched by id from the server and shown on its own over the chat, with Back to the chat and **Try again** if it could not be loaded. The XML chat does not draw these cards; there "play" is sent as a message.
+An article row opens the article in the chat's help centre; a page opens in the browser. An article the server picked that the help centre cannot open (the help centre is off, or does not list it) is fetched by id from the server and shown on its own over the chat, with Back to the chat and **Try again** if it could not be loaded.
 
 ### AI answers
 
@@ -319,9 +338,9 @@ An article row opens the article in the chat's help centre; a page opens in the 
 
 ### Email me this chat
 
-The chat menu (Compose) has **Email me this chat**. It opens one card with the visitor's email filled in when known. The server sends the whole conversation to that address only (`POST /api/v1/mobile/chat/transcript-email`, at most 5 per 15 minutes). Once sent: "Sent! Check your inbox at ..."; the address is kept as the visitor's email. The XML chat shows the same card when `Conferbot.liveChat.openEmailTranscript()` is called.
+The chat menu has **Email me this chat**. It opens one card with the visitor's email filled in when known. The server sends the whole conversation to that address only (`POST /api/v1/mobile/chat/transcript-email`, at most 5 per 15 minutes). Once sent: "Sent! Check your inbox at ..."; the address is kept as the visitor's email. `Conferbot.liveChat.openEmailTranscript()` opens the same card from your own button.
 
-### Your requests (Compose)
+### Your requests
 
 Visitors can follow their conversations with your team and answer them, as on the web widget's home screen.
 
@@ -344,11 +363,11 @@ Conferbot.openRequests()             // the list
 Conferbot.openRequests(requestId)    // one request
 ```
 
-`openRequests()` opens the screens where `RequestsPortalView()` is placed: the Compose chat has it; put it over your own Compose screen to open them there. The XML chat has no entry or screens yet (#76).
+`openRequests()` opens the screens where `RequestsPortalView()` is placed: the chat (Compose and `ChatActivity`) has it; put it over your own Compose screen to open them there.
 
 With a home screen, the home has its own **Your requests** card as well (below).
 
-### Home screen (Compose)
+### Home screen
 
 When the owner turns on the home screen in the dashboard (**Home screen**, `enableInitialPage`), `ConferBotChatScreen` and the floating widget open on it, as the web widget does. With it off the chat opens on the conversation, as before.
 
@@ -380,7 +399,7 @@ HomeScreenView(mascot = { m -> Mascot(m.look, m.accent, size = 56f, mood = "wave
 Mascot(Conferbot.customizations.value.mascot, Conferbot.customizations.value.mascotAccent)  // com.conferbot.sdk.ui.compose.mascot
 ```
 
-The XML chat opens on the conversation (no home screen there yet).
+`ChatActivity` opens on the home screen too when the owner has it on.
 
 ### How bot flows run
 
@@ -393,9 +412,9 @@ The flow engine runs a bot the way the web widget does. It passes the shared flo
 - The GPT, AI and knowledge-base steps ask Conferbot's server, which holds the owner's AI key. The app never needs one.
 - Card numbers, IDs and passwords a visitor types are masked in the answers and the record, unless the bot's `redactSensitive` setting is off.
 - Typing dots last as long as on the web: longer for longer messages.
-- The typing bubble follows `typingStyle`: dots, wave, shimmer, a pencil writing a line, or your mascot swaying by three thought dots ("Pip is typing" when you named it). The XML chat shows dots.
+- The typing bubble follows `typingStyle`: dots, wave, shimmer, a pencil writing a line, or your mascot swaying by three thought dots ("Pip is typing" when you named it).
 
-### Step cards (Compose)
+### Step cards
 
 In the Compose chat every step that waits for the visitor is answered as on the web, in a card under the bot's question, in the bot's option colours, corner radius and font size:
 
@@ -412,7 +431,7 @@ The visitor's bubble is the step's own reply ("Agreed to Terms", "Verified: a@b.
 
 A custom UI can answer a step the same way: build the answer with `com.conferbot.sdk.core.flow.FlowStepAnswer` (for example `FlowStepAnswer.consent(true)`, `FlowStepAnswer.otpVerify("123456")`) and pass it to `Conferbot.answerStep(answer)`. The waiting step is `Conferbot.currentUIState.value?.step` (its type, settings, what the card shows and the reason for the last refusal).
 
-The XML Views chat still draws these steps with its generic cards.
+`ChatActivity` draws the same cards.
 
 ## Configuration
 
@@ -425,7 +444,9 @@ ConferBotConfig(
     autoConnect = true,
     reconnectionAttempts = 5,
     reconnectionDelay = 1000,
-    widgetLanguage = null // "en", "nl", "fr", "de", "es" or "auto"
+    widgetLanguage = null, // "en", "nl", "fr", "de", "es" or "auto"
+    onPostChatRedirect = null, // (url) -> Boolean: true when the app handled the URL
+    disablePostChatRedirect = false
 )
 ```
 
@@ -438,6 +459,27 @@ ConferBotConfig(
 | `reconnectionDelay` | `Int?` | `null` (1000 ms) | Delay between reconnection attempts |
 | `aiSettings` | `AISettings` | `AISettings()` | Provider settings for GPT/LLM flow nodes |
 | `widgetLanguage` | `String?` | `null` | The language of the SDK's own words: `"en"`, `"nl"`, `"fr"`, `"de"`, `"es"` or `"auto"` (the phone's languages). Wins over the owner's setting; `null` keeps it |
+| `onPostChatRedirect` | `((String) -> Boolean)?` | `null` | The owner's post-chat redirect, before the countdown: return `true` when the app handled the URL (or wants none) and no countdown is shown (see [Redirect after chat](#redirect-after-chat)) |
+| `disablePostChatRedirect` | `Boolean` | `false` | Never follow the owner's post-chat redirect |
+
+### Redirect after chat
+
+When the owner sets a URL in Customize > Conversations > Post-chat redirect, the SDK follows it as the web widget does: once the conversation ends (the flow reaches its end, or an agent ends a chat they took over; not while a handover waits or a person is in the chat, and never for a blocked visitor) and the post-chat rating is sent or put away (or right away when there is none), a quiet line under the conversation reads "Taking you to example.com in 10s" with Cancel. A screen reader hears it once. At 0 the URL opens in the system browser (an `ACTION_VIEW` intent), never inside the chat; when nothing can open it, the line becomes a "Continue to example.com" button. It stops if the visitor cancels, starts a new chat, closes the chat or leaves the conversation for the home screen, or the app goes to the background, and it is offered only once per conversation (remembered on the device, so a restored ended chat does not count down again). Only `http(s)` addresses with a host, at most 2048 characters and without a `user:password@` part, are followed.
+
+```kotlin
+Conferbot.initialize(
+    context = this,
+    apiKey = "YOUR_API_KEY",
+    botId = "YOUR_BOT_ID",
+    config = ConferBotConfig(
+        // Open it your own way (your WebView, a deep link); true = no countdown.
+        onPostChatRedirect = { url -> openInMyApp(url); true }
+        // Or turn it off: disablePostChatRedirect = true
+    )
+)
+```
+
+The flow's end also shows the post-chat rating 1.5 seconds later when the bot has one (`csatConfig.enabled`), as an agent ending the chat does.
 
 ### Widget languages
 
@@ -598,7 +640,7 @@ Conferbot.initialize(
 )
 ```
 
-`ConferBotCustomization` is used by the XML chat Activity only; the Compose UI is themed through `ConferbotTheme` and the server theme.
+`ConferBotCustomization` themes `ChatActivity` until the bot's settings arrive; `headerTitle` is also the header's title in the Compose chat until then. Embedded Compose screens are themed through `ConferbotTheme` and the server theme.
 
 ## Push Notifications
 
@@ -709,7 +751,7 @@ To open one article by id: `Conferbot.openHelpArticle(articleId, title)`. It ret
 
 Headless access: `Conferbot.searchKnowledgeBase(query)`, `trackKnowledgeBaseArticleView(article)`, `startKnowledgeBaseArticleEngagement(articleId)`, `updateKnowledgeBaseScrollDepth(depth)`, `rateKnowledgeBaseArticle(articleId, helpful)`, `hasRatedKnowledgeBaseArticle(articleId)`. On the service: `loadArticleBody(articleId)`, `articleBodies`.
 
-The XML Views chat has no help centre yet.
+`ChatActivity` has the same help centre.
 
 ### Analytics
 
@@ -846,7 +888,7 @@ UI entry points:
 | `ConferBotChatView` | `@Composable ConferBotChatView(modifier, lightTheme: ConferbotTheme = LightTheme, darkTheme: ConferbotTheme = DarkTheme, useDarkTheme: Boolean? = null, ...)` | Chat screen with local light/dark theming |
 | `ConferBotThemedChatScreen` | `@Composable ConferBotThemedChatScreen(onDismiss: () -> Unit, lightTheme, darkTheme, useDarkTheme, modifier)` | Themed modal chat with dismiss |
 | `KnowledgeBaseScreen` | `@Composable KnowledgeBaseScreen(knowledgeBaseService: KnowledgeBaseService, onDismiss: () -> Unit, modifier: Modifier = Modifier, primaryColor: Color = Color(0xFF0100EC), title: String = "Help Center", embedded: Boolean = false, showRecent: Boolean = true, openRequest: Conferbot.HelpArticleRequest? = null, ...)` | Built-in help center |
-| `ChatActivity` | `com.conferbot.sdk.ui.views.ChatActivity` | XML full-screen chat (launched by `openChat`) |
+| `ChatActivity` | `com.conferbot.sdk.ui.views.ChatActivity` | Full-screen chat Activity for XML apps (launched by `openChat`); hosts the Compose chat |
 
 More detail in the [docs/](docs/) directory: [USAGE.md](docs/USAGE.md) (step-by-step tutorial), [API.md](docs/API.md), [ARCHITECTURE.md](docs/ARCHITECTURE.md), [COMPONENTS.md](docs/COMPONENTS.md), [EXAMPLES.md](docs/EXAMPLES.md), [CHANGELOG.md](docs/CHANGELOG.md).
 
