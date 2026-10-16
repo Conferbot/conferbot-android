@@ -109,6 +109,35 @@ object LiveChat {
         return WaitLines(estimate, if (typical != null && estimate != typical) typical else "")
     }
 
+    // ---- The wait card's max-wait countdown (web queueCard.ts clock,
+    // setRemaining; special.ts _attachHandoverWait; RN core/liveChat.ts) ----
+
+    /** "1:05" (never below 0:00). */
+    fun clock(seconds: Number): String {
+        val d = seconds.toDouble()
+        val s = if (d.isNaN() || d <= 0) 0L else Math.round(d)
+        return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+    }
+
+    /** The card's countdown line: "Max wait 1:05", in the visitor's language. */
+    fun maxWaitText(seconds: Number): String = t("queue.maxWait", "time" to clock(seconds))
+
+    /**
+     * When the handover's max wait runs out (ms since the epoch): the
+     * server's seconds left for a wait picked back up after a restart
+     * (live-chat-state waitEndsAt, [HandoverState.restoredLiveChat]), else
+     * the step's max wait from now (minutes; 2 when unset, 0 or less).
+     */
+    fun waitDeadline(maxWaitTimeMinutes: Any?, remainingSeconds: Long?, now: Long = System.currentTimeMillis()): Long {
+        val ms = if (remainingSeconds != null && remainingSeconds >= 0) remainingSeconds * 1000
+        else Math.round(EscalationWait.minutesOf(maxWaitTimeMinutes) * 60_000)
+        return now + ms
+    }
+
+    /** Whole seconds left before the deadline (0 once it has passed). */
+    fun secondsLeft(deadline: Long, now: Long = System.currentTimeMillis()): Long =
+        maxOf(0L, Math.ceil((deadline - now) / 1000.0).toLong())
+
     /** "1st", "2nd", "3rd", "11th" */
     fun ordinal(n: Int): String {
         val mod100 = n % 100
