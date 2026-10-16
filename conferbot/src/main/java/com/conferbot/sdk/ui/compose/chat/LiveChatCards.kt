@@ -2,6 +2,7 @@
 
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -133,14 +134,14 @@ private fun EmailForm(
             Field(email, { email = it }, "you@example.com", email = true, modifier = Modifier.weight(1f))
             PrimaryButton(button, busy = busy) {
                 when {
-                    !LiveChat.isEmail(email) -> error = "Please enter a valid email."
-                    messagePlaceholder != null && message.isBlank() -> error = "Please write a short message."
+                    !LiveChat.isEmail(email) -> error = I18n.t("sdk.form.invalidEmail")
+                    messagePlaceholder != null && message.isBlank() -> error = I18n.t("leave.writeMessage")
                     else -> {
                         error = null
                         busy = true
                         onSubmit(email.trim(), message.trim()) { ok ->
                             busy = false
-                            if (!ok) error = "That did not go through. Please try again."
+                            if (!ok) error = I18n.t("sdk.form.notThrough")
                         }
                     }
                 }
@@ -188,7 +189,7 @@ fun QuickActionsStrip(modifier: Modifier = Modifier) {
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
-        if (human) Pill("Talk to a person") {
+        if (human) Pill(I18n.t("chat.talkToPerson")) {
             Conferbot.retireTalkToPerson()
             Conferbot.sendMessage(LiveChat.TALK_TO_PERSON_ASK)
         }
@@ -230,7 +231,7 @@ fun HandoverWaitCard(message: String?, onCancel: (() -> Unit)? = { Conferbot.lea
                     CardSub(LiveChat.queueSubline(queue))
                 }
                 if (onCancel != null) {
-                    Text("Cancel", color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.clickable(onClick = onCancel).padding(6.dp))
+                    Text(I18n.t("common.cancel"), color = theme.colors.onSurfaceVariant, style = TextStyle(fontSize = 13.sp), modifier = Modifier.clickable(onClick = onCancel).padding(6.dp))
                 }
             }
             if (!message.isNullOrBlank()) {
@@ -248,7 +249,7 @@ fun HandoverWaitingCard() {
     LiveCard {
         Text(LiveChat.handoverWaitingLine(waiting), color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
         if (waiting.email == null && waiting.askEmail) {
-            EmailForm("Send") { email, _, done -> Conferbot.liveChat.shareEmailForReply(email, done) }
+            EmailForm(I18n.t("common.send")) { email, _, done -> Conferbot.liveChat.shareEmailForReply(email, done) }
         }
     }
 }
@@ -262,18 +263,18 @@ fun LeaveMessageCard() {
     if ((!noAgents && sentTo == null) || customizations["chatLeaveMessage"] == false) return
     LiveCard {
         if (sentTo != null) {
-            CardTitle("Message sent. We'll reply to you at $sentTo.")
-            CardSub("Replies will reach your inbox, and show here if you come back.")
+            CardTitle(I18n.t("leave.sent", "email" to sentTo))
+            CardSub(I18n.t("leave.sentSub"))
         } else {
-            CardTitle("Leave a message")
-            CardSub("No one is available right now. We'll reply by email.")
+            CardTitle(I18n.t("leave.title"))
+            CardSub(I18n.t("leave.sub"))
             // Their email if known, and what they last asked in their own words.
             val (knownEmail, lastAsked) = remember { Conferbot.liveChat.leaveMessagePrefill() }
-            EmailForm("Send", messagePlaceholder = "How can we help?", initialEmail = knownEmail, initialMessage = lastAsked) { email, message, done ->
+            EmailForm(I18n.t("common.send"), messagePlaceholder = I18n.t("leave.messagePlaceholder"), initialEmail = knownEmail, initialMessage = lastAsked) { email, message, done ->
                 Conferbot.liveChat.leaveMessage(email, message, done)
             }
             Text(
-                "Not now",
+                I18n.t("common.notNow"),
                 color = ConferbotThemeAmbient.current.colors.onSurfaceVariant,
                 style = TextStyle(fontSize = 13.sp),
                 modifier = Modifier.padding(top = 8.dp).clickable { Conferbot.liveChat.skipLeaveMessage() }
@@ -290,11 +291,11 @@ fun LeadCard() {
     if (!open && done == null) return
     LiveCard {
         if (done != null) {
-            Text("Thanks! We'll follow up at $done", color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
+            Text(I18n.t("lead.done", "email" to done), color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
         } else {
-            CardTitle("Want us to follow up?")
-            CardSub("Leave your email and the team will get back to you.")
-            EmailForm("Send") { email, _, finish ->
+            CardTitle(I18n.t("lead.title"))
+            CardSub(I18n.t("lead.sub"))
+            EmailForm(I18n.t("common.send")) { email, _, finish ->
                 Conferbot.liveChat.captureLeadEmail(email)
                 finish(true)
             }
@@ -308,10 +309,10 @@ fun FileRequestCard(onUpload: (() -> Unit)?) {
     val who by Conferbot.liveChat.fileRequestedBy.collectAsState()
     val name = who ?: return
     LiveCard {
-        Text("$name asked you to send a file", color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
+        Text(I18n.t("file.requested", "name" to name), color = ConferbotThemeAmbient.current.colors.onSurface, style = TextStyle(fontSize = 14.sp))
         if (onUpload != null) {
             Spacer(Modifier.height(10.dp))
-            PrimaryButton("Choose a file", onClick = onUpload)
+            PrimaryButton(I18n.t("sdk.file.choose"), onClick = onUpload)
         }
     }
 }
@@ -349,11 +350,11 @@ fun CsatCard() {
                         "★",
                         color = if (chosen) Color(0xFFF5A623) else theme.colors.divider,
                         style = TextStyle(fontSize = 30.sp),
-                        modifier = Modifier.clickable { value = o }.semantics { contentDescription = "$o out of 5" }
+                        modifier = Modifier.clickable { value = o }.semantics { contentDescription = I18n.t("rating.outOf", "n" to o, "max" to 5) }
                     )
                 } else {
                     val label = when (c.ratingType) {
-                        "thumbs" -> if (o == true) "Yes" else "No"
+                        "thumbs" -> if (o == true) I18n.t("sdk.csat.yes") else I18n.t("sdk.csat.no")
                         "emoji" -> FACES[(o as Int) - 1]
                         else -> o.toString()
                     }
@@ -378,7 +379,7 @@ fun CsatCard() {
             Field(feedback, { feedback = it }, c.feedbackPlaceholder, minLines = 2, modifier = Modifier.fillMaxWidth())
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-            PrimaryButton("Send", enabled = value != null, modifier = Modifier.weight(1f)) {
+            PrimaryButton(I18n.t("common.send"), enabled = value != null, modifier = Modifier.weight(1f)) {
                 value?.let { Conferbot.liveChat.submitRating(it, feedback) }
             }
             Box(
@@ -387,7 +388,7 @@ fun CsatCard() {
                     .border(1.dp, theme.colors.divider, RoundedCornerShape(12.dp))
                     .clickable { Conferbot.liveChat.dismissCsat() }
                     .padding(horizontal = 16.dp, vertical = 10.dp)
-            ) { Text("Not now", color = theme.colors.onSurface, style = TextStyle(fontSize = 14.sp)) }
+            ) { Text(I18n.t("common.notNow"), color = theme.colors.onSurface, style = TextStyle(fontSize = 14.sp)) }
         }
     }
 }
