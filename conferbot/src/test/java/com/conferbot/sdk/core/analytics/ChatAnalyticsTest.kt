@@ -13,6 +13,13 @@ import org.junit.Test
 /**
  * Unit tests for ChatAnalytics
  * Tests event tracking, session analytics, and node visit tracking
+ *
+ * No runTest and no advanceUntilIdle(): an initialized session keeps a
+ * periodic engagement loop on Main, so "until idle" never comes (runTest
+ * also runs the scheduler idle when the body ends) - virtual time ran on and
+ * every tick was recorded by the relaxed socket mock until the test JVM ran
+ * out of heap (#17). The work a call launches is run with [runCurrent], time
+ * moved on with [advanceTimeBy], on the Main test dispatcher's own scheduler.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatAnalyticsTest {
@@ -35,40 +42,45 @@ class ChatAnalyticsTest {
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain()
+        // While Main is still the test dispatcher (finalizing launches on it).
         ChatAnalytics.finalizeChatAnalytics()
+        Dispatchers.resetMain()
     }
+
+    private fun runCurrent() = testDispatcher.scheduler.runCurrent()
+
+    private fun advanceTimeBy(ms: Long) = testDispatcher.scheduler.advanceTimeBy(ms)
 
     // ==================== INITIALIZATION TESTS ====================
 
     @Test
-    fun `initializeChatAnalytics sets session data`() = runTest {
+    fun `initializeChatAnalytics sets session data`() {
         // When
         ChatAnalytics.setSocketClient(socketClient)
         ChatAnalytics.initializeChatAnalytics(testSessionId, testBotId, testVisitorId)
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-chat-start", any()) }
     }
 
     @Test
-    fun `initializeChatAnalytics resets if already initialized`() = runTest {
+    fun `initializeChatAnalytics resets if already initialized`() {
         // Given - Initialize first time
         ChatAnalytics.setSocketClient(socketClient)
         ChatAnalytics.initializeChatAnalytics(testSessionId, testBotId, testVisitorId)
-        advanceUntilIdle()
+        runCurrent()
 
         // When - Initialize again
         ChatAnalytics.initializeChatAnalytics("new-session", "new-bot", "new-visitor")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then - Should emit two track-chat-start events
         verify(exactly = 2) { socketClient.emitAnalyticsEvent("track-chat-start", any()) }
     }
 
     @Test
-    fun `initializeChatAnalytics includes device info`() = runTest {
+    fun `initializeChatAnalytics includes device info`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-chat-start", capture(capturedData)) } just Runs
@@ -76,7 +88,7 @@ class ChatAnalyticsTest {
         // When
         ChatAnalytics.setSocketClient(socketClient)
         ChatAnalytics.initializeChatAnalytics(testSessionId, testBotId, testVisitorId)
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         @Suppress("UNCHECKED_CAST")
@@ -89,7 +101,7 @@ class ChatAnalyticsTest {
     // ==================== UTM PARAMETERS TESTS ====================
 
     @Test
-    fun `setUtmParameters stores attribution data`() = runTest {
+    fun `setUtmParameters stores attribution data`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-chat-start", capture(capturedData)) } just Runs
@@ -102,7 +114,7 @@ class ChatAnalyticsTest {
         )
         ChatAnalytics.setSocketClient(socketClient)
         ChatAnalytics.initializeChatAnalytics(testSessionId, testBotId, testVisitorId)
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         @Suppress("UNCHECKED_CAST")
@@ -115,33 +127,33 @@ class ChatAnalyticsTest {
     // ==================== NODE ENTRY TESTS ====================
 
     @Test
-    fun `trackNodeEntry emits node visit event`() = runTest {
+    fun `trackNodeEntry emits node visit event`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.trackNodeEntry("node-1", "message-node", "Welcome Message")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-node-visit", any()) }
     }
 
     @Test
-    fun `trackNodeEntry does nothing when not initialized`() = runTest {
+    fun `trackNodeEntry does nothing when not initialized`() {
         // Given - Not initialized
         ChatAnalytics.setSocketClient(socketClient)
 
         // When
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("track-node-visit", any()) }
     }
 
     @Test
-    fun `trackNodeEntry includes node data`() = runTest {
+    fun `trackNodeEntry includes node data`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-node-visit", capture(capturedData)) } just Runs
@@ -149,7 +161,7 @@ class ChatAnalyticsTest {
 
         // When
         ChatAnalytics.trackNodeEntry("node-123", "ask-question", "Name Question")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["nodeId"]).isEqualTo("node-123")
@@ -159,7 +171,7 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `trackNodeEntry uses nodeType as nodeName when not provided`() = runTest {
+    fun `trackNodeEntry uses nodeType as nodeName when not provided`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-node-visit", capture(capturedData)) } just Runs
@@ -167,7 +179,7 @@ class ChatAnalyticsTest {
 
         // When
         ChatAnalytics.trackNodeEntry("node-123", "message-node", "")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["nodeName"]).isEqualTo("message-node")
@@ -176,52 +188,52 @@ class ChatAnalyticsTest {
     // ==================== NODE EXIT TESTS ====================
 
     @Test
-    fun `trackNodeExit emits exit event for current node`() = runTest {
+    fun `trackNodeExit emits exit event for current node`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
         clearMocks(socketClient, answers = false)
 
         // When
         ChatAnalytics.trackNodeExit("node-1", "proceeded")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-node-exit", any()) }
     }
 
     @Test
-    fun `trackNodeExit does nothing for different node`() = runTest {
+    fun `trackNodeExit does nothing for different node`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
         clearMocks(socketClient, answers = false)
 
         // When - Try to exit different node
         ChatAnalytics.trackNodeExit("node-2", "proceeded")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("track-node-exit", any()) }
     }
 
     @Test
-    fun `trackNodeExit calculates dwell time`() = runTest {
+    fun `trackNodeExit calculates dwell time`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-node-exit", capture(capturedData)) } just Runs
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
 
         // Simulate time passing
         advanceTimeBy(5000)
 
         // When
         ChatAnalytics.trackNodeExit("node-1", "proceeded")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["dwellTime"]).isNotNull()
@@ -229,32 +241,32 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `trackNodeExit includes user input when provided`() = runTest {
+    fun `trackNodeExit includes user input when provided`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-node-exit", capture(capturedData)) } just Runs
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "ask-question")
-        advanceUntilIdle()
+        runCurrent()
 
         // When
         ChatAnalytics.trackNodeExit("node-1", "proceeded", userInput = "John Doe")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["userInput"]).isEqualTo("John Doe")
     }
 
     @Test
-    fun `trackNodeEntry exits previous node automatically`() = runTest {
+    fun `trackNodeEntry exits previous node automatically`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
 
         // When - Enter new node
         ChatAnalytics.trackNodeEntry("node-2", "ask-question")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then - Previous node should have been exited
         verify { socketClient.emitAnalyticsEvent("track-node-exit", any()) }
@@ -263,39 +275,39 @@ class ChatAnalyticsTest {
     // ==================== USER MESSAGE TRACKING TESTS ====================
 
     @Test
-    fun `trackUserMessage increments message count`() = runTest {
+    fun `trackUserMessage increments message count`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.trackUserMessage(messageLength = 50)
         ChatAnalytics.trackUserMessage(messageLength = 30)
-        advanceUntilIdle()
+        runCurrent()
 
         // Then - Tracked internally (we verify through sentiment tracking)
     }
 
     @Test
-    fun `trackUserMessage emits sentiment event when text provided`() = runTest {
+    fun `trackUserMessage emits sentiment event when text provided`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.trackUserMessage(messageLength = 50, messageText = "I love this product!")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-sentiment", any()) }
     }
 
     @Test
-    fun `trackUserMessage does nothing when not initialized`() = runTest {
+    fun `trackUserMessage does nothing when not initialized`() {
         // Given - Not initialized
         ChatAnalytics.setSocketClient(socketClient)
 
         // When
         ChatAnalytics.trackUserMessage(messageLength = 50, messageText = "test")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("track-sentiment", any()) }
@@ -304,20 +316,20 @@ class ChatAnalyticsTest {
     // ==================== INTERACTION TRACKING TESTS ====================
 
     @Test
-    fun `trackInteraction emits interaction event`() = runTest {
+    fun `trackInteraction emits interaction event`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.trackInteraction("linksClicked", mapOf("url" to "https://example.com"))
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-interaction", any()) }
     }
 
     @Test
-    fun `trackInteraction includes interaction type and data`() = runTest {
+    fun `trackInteraction includes interaction type and data`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-interaction", capture(capturedData)) } just Runs
@@ -325,7 +337,7 @@ class ChatAnalyticsTest {
 
         // When
         ChatAnalytics.trackInteraction("buttonsClicked", mapOf("buttonId" to "submit"))
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["type"]).isEqualTo("buttonsClicked")
@@ -335,7 +347,7 @@ class ChatAnalyticsTest {
     // ==================== TYPING BEHAVIOR TESTS ====================
 
     @Test
-    fun `trackTypingStart records start time`() = runTest {
+    fun `trackTypingStart records start time`() {
         // Given
         initializeAnalytics()
 
@@ -346,7 +358,7 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `trackTypingEnd calculates typing duration`() = runTest {
+    fun `trackTypingEnd calculates typing duration`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackTypingStart()
@@ -359,7 +371,7 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `trackDeletion increments deletion count`() = runTest {
+    fun `trackDeletion increments deletion count`() {
         // Given
         initializeAnalytics()
 
@@ -374,20 +386,20 @@ class ChatAnalyticsTest {
     // ==================== GOAL COMPLETION TESTS ====================
 
     @Test
-    fun `trackGoalCompletion emits goal event`() = runTest {
+    fun `trackGoalCompletion emits goal event`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.trackGoalCompletion("purchase-completed")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-goal-completion", any()) }
     }
 
     @Test
-    fun `trackGoalCompletion includes conversion data`() = runTest {
+    fun `trackGoalCompletion includes conversion data`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-goal-completion", capture(capturedData)) } just Runs
@@ -399,7 +411,7 @@ class ChatAnalyticsTest {
             conversionEvent = "checkout_complete",
             conversionValue = 99.99
         )
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["goalId"]).isEqualTo("purchase")
@@ -410,20 +422,20 @@ class ChatAnalyticsTest {
     // ==================== CHAT RATING TESTS ====================
 
     @Test
-    fun `submitChatRating emits rating event`() = runTest {
+    fun `submitChatRating emits rating event`() {
         // Given
         initializeAnalytics()
 
         // When
         ChatAnalytics.submitChatRating(csatScore = 5)
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("submit-chat-rating", any()) }
     }
 
     @Test
-    fun `submitChatRating includes all rating types`() = runTest {
+    fun `submitChatRating includes all rating types`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("submit-chat-rating", capture(capturedData)) } just Runs
@@ -437,7 +449,7 @@ class ChatAnalyticsTest {
             npsScore = 9,
             source = "end_chat_survey"
         )
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["csatScore"]).isEqualTo(4)
@@ -450,47 +462,47 @@ class ChatAnalyticsTest {
     // ==================== DROP-OFF TRACKING TESTS ====================
 
     @Test
-    fun `trackPotentialDropOff emits drop-off event`() = runTest {
+    fun `trackPotentialDropOff emits drop-off event`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "ask-question")
-        advanceUntilIdle()
+        runCurrent()
         clearMocks(socketClient, answers = false)
 
         // When
         ChatAnalytics.trackPotentialDropOff("app_backgrounded")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-drop-off", any()) }
     }
 
     @Test
-    fun `trackPotentialDropOff does nothing without current node`() = runTest {
+    fun `trackPotentialDropOff does nothing without current node`() {
         // Given
         initializeAnalytics()
         // No node entered
 
         // When
         ChatAnalytics.trackPotentialDropOff()
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("track-drop-off", any()) }
     }
 
     @Test
-    fun `trackPotentialDropOff includes node info and reason`() = runTest {
+    fun `trackPotentialDropOff includes node info and reason`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("track-drop-off", capture(capturedData)) } just Runs
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("form-node", "ask-question", "Contact Form")
-        advanceUntilIdle()
+        runCurrent()
 
         // When
         ChatAnalytics.trackPotentialDropOff("user_closed_app")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         assertThat(capturedData.captured["nodeId"]).isEqualTo("form-node")
@@ -502,16 +514,16 @@ class ChatAnalyticsTest {
     // ==================== FINALIZE ANALYTICS TESTS ====================
 
     @Test
-    fun `finalizeChatAnalytics emits finalize event`() = runTest {
+    fun `finalizeChatAnalytics emits finalize event`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.trackNodeEntry("node-1", "message-node")
-        advanceUntilIdle()
+        runCurrent()
         clearMocks(socketClient, answers = false)
 
         // When
         ChatAnalytics.finalizeChatAnalytics()
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify { socketClient.emitAnalyticsEvent("track-node-exit", any()) } // Exits current node
@@ -519,7 +531,7 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `finalizeChatAnalytics includes session metrics`() = runTest {
+    fun `finalizeChatAnalytics includes session metrics`() {
         // Given
         val capturedData = slot<Map<String, Any?>>()
         every { socketClient.emitAnalyticsEvent("finalize-analytics", capture(capturedData)) } just Runs
@@ -528,7 +540,7 @@ class ChatAnalyticsTest {
 
         // When
         ChatAnalytics.finalizeChatAnalytics()
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         @Suppress("UNCHECKED_CAST")
@@ -539,29 +551,29 @@ class ChatAnalyticsTest {
     }
 
     @Test
-    fun `finalizeChatAnalytics does nothing when not initialized`() = runTest {
+    fun `finalizeChatAnalytics does nothing when not initialized`() {
         // Given - Not initialized
         ChatAnalytics.setSocketClient(socketClient)
 
         // When
         ChatAnalytics.finalizeChatAnalytics()
-        advanceUntilIdle()
+        runCurrent()
 
         // Then
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("finalize-analytics", any()) }
     }
 
     @Test
-    fun `finalizeChatAnalytics resets state`() = runTest {
+    fun `finalizeChatAnalytics resets state`() {
         // Given
         initializeAnalytics()
         ChatAnalytics.finalizeChatAnalytics()
-        advanceUntilIdle()
+        runCurrent()
         clearMocks(socketClient, answers = false)
 
         // When - Try to track after finalize
         ChatAnalytics.trackNodeEntry("node-1", "message")
-        advanceUntilIdle()
+        runCurrent()
 
         // Then - Should not emit (not initialized)
         verify(exactly = 0) { socketClient.emitAnalyticsEvent("track-node-visit", any()) }
@@ -690,15 +702,15 @@ class ChatAnalyticsTest {
     // ==================== NO SOCKET CLIENT TESTS ====================
 
     @Test
-    fun `events are not emitted without socket client`() = runTest {
+    fun `events are not emitted without socket client`() {
         // Given - No socket client set
         ChatAnalytics.initializeChatAnalytics(testSessionId, testBotId, testVisitorId)
-        advanceUntilIdle()
+        runCurrent()
 
         ChatAnalytics.trackNodeEntry("node-1", "message")
         ChatAnalytics.trackUserMessage(50)
         ChatAnalytics.trackInteraction("click", emptyMap())
-        advanceUntilIdle()
+        runCurrent()
 
         // Then - No exceptions, operations are no-ops
     }
