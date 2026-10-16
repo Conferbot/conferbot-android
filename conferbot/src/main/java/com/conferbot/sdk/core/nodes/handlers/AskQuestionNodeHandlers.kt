@@ -299,12 +299,16 @@ class CalendarNodeHandler : BaseNodeHandler() {
         val today = FlowCalendar.dayKeyInZone(now, zone)
         val showTime = Js.truthy(data["showTimeSelection"])
         val slots = mutableListOf<NodeUIState.Calendar.TimeSlot>()
-        if (showTime) {
-            for (i in 0 until calendarDays) {
-                val key = FlowCalendar.dayKeyInZone(FlowCalendar.noonInZone(today, zone) + i * 86_400_000L, zone)
-                if (!dayOpen(data, key)) continue
-                slotsFor(data, key, now).forEach { slots.add(NodeUIState.Calendar.TimeSlot(date = key, time = it.start)) }
+        // The days the card offers: the next 90 open ones (with times: those with a free slot).
+        val days = mutableListOf<String>()
+        for (i in 0 until calendarDays) {
+            val key = FlowCalendar.dayKeyInZone(FlowCalendar.noonInZone(today, zone) + i * 86_400_000L, zone)
+            if (!dayOpen(data, key)) continue
+            if (!showTime) {
+                days.add(key)
+                continue
             }
+            slotsFor(data, key, now).forEach { slots.add(NodeUIState.Calendar.TimeSlot(date = key, time = it.start)) }
         }
         return NodeUIState.Calendar(
             questionText = FlowKit.shownText(data["calendarPrompt"]),
@@ -312,7 +316,8 @@ class CalendarNodeHandler : BaseNodeHandler() {
             timezone = zone,
             availableSlots = if (showTime) slots else null,
             nodeId = nodeId,
-            answerKey = Js.str(data["answerVariable"])
+            answerKey = Js.str(data["answerVariable"]),
+            step = if (showTime) null else NodeUIState.StepInfo(extra = mapOf("days" to days))
         )
     }
 
