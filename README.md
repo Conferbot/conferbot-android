@@ -71,17 +71,17 @@ dependencyResolutionManagement {
 
 ```gradle
 dependencies {
-    implementation 'com.github.Conferbot:conferbot-android:1.0.0'
+    implementation 'com.github.Conferbot:conferbot-android:2.0.0'
 }
 ```
 
 ```kotlin
 dependencies {
-    implementation("com.github.Conferbot:conferbot-android:1.0.0")
+    implementation("com.github.Conferbot:conferbot-android:2.0.0")
 }
 ```
 
-> This guide describes the code on `main` (see [CHANGELOG.md](CHANGELOG.md), "Unreleased"). Until the next version is tagged, use `main-SNAPSHOT` or a commit hash as the version to get it from JitPack. Version 1.0.0 is the last tagged release.
+> This guide describes version 2.0.0 (see [CHANGELOG.md](CHANGELOG.md)). To try unreleased changes on `main`, use `main-SNAPSHOT` or a commit hash as the version.
 
 To build against a local checkout instead, add `include(":conferbot")` with `project(":conferbot").projectDir = file("path/to/conferbot-android/conferbot")` to `settings.gradle` and depend on `project(":conferbot")`.
 
