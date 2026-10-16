@@ -30,7 +30,7 @@ The complete flow recorded live on an Android emulator against production: open 
 - **Headless SDK** - every piece of state exposed as Kotlin `StateFlow` for fully custom UIs
 - **Real-time messaging** - Socket.IO powered communication with the Conferbot flow engine
 - **Server-driven theming** - colors, avatar, bot name, backgrounds, and widget placement configured in the dashboard apply automatically
-- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", and help articles and games while the visitor waits
+- **Live agent handover** - transition to human agents with typing indicators, back-in-the-queue lines, a closed chat with "Start a new chat", "Email me this chat", help articles and games while the visitor waits, and "Your requests" to follow and answer their conversations with the team
 - **Offline support** - message queueing with automatic retry when connectivity returns
 - **Session persistence** - chat history survives app restarts via Room
 - **Message pagination** - efficient loading of large conversation histories
@@ -316,6 +316,31 @@ An article row opens the article in the chat's help centre; a page opens in the 
 ### Email me this chat
 
 The chat menu (Compose) has **Email me this chat**. It opens one card with the visitor's email filled in when known. The server sends the whole conversation to that address only (`POST /api/v1/mobile/chat/transcript-email`, at most 5 per 15 minutes). Once sent: "Sent! Check your inbox at ..."; the address is kept as the visitor's email. The XML chat shows the same card when `Conferbot.liveChat.openEmailTranscript()` is called.
+
+### Your requests (Compose)
+
+Visitors can follow their conversations with your team and answer them, as on the web widget's home screen.
+
+- **Where:** **Your requests** in the chat menu, once the visitor has one; **Your requests · New reply** when a team reply is unread. It opens over the chat; Back (and the system back) goes one step back.
+- **Whose:** only the visitor's own: a chat this device started that they wrote in (the last 30 are kept per bot), matched with their visitor id, or every verified conversation of a signed-in user whose `ConferBotUser.hash` is valid. Only conversations a person on the team handles are listed; a chat the AI answered alone is not one. A first-time visitor is asked nothing.
+- **The list:** each request's question and where it stands in plain words ("We replied", "We're on it", "Solved", "New reply from Ada · 2 hours ago"), new replies first.
+- **One request:** a banner with what happens next, the conversation (links tappable) and a reply box. A reply to a solved request opens it again. A reply that did not go says "Not sent. Try again"; a locked conversation says "This conversation is closed for replies." Team replies arrive live while it is open.
+- The screens use the bot's colours and font; with the phone's animations off, nothing slides.
+
+Your own entry and badge:
+
+```kotlin
+// Requests with a team reply not read on this device
+lifecycleScope.launch {
+    Conferbot.requestsUnread.collect { badge.text = if (it > 0) "$it" else "" }
+}
+Conferbot.requests.requests          // StateFlow<List<RequestSummary>?>, null until read
+
+Conferbot.openRequests()             // the list
+Conferbot.openRequests(requestId)    // one request
+```
+
+`openRequests()` opens the screens where `RequestsPortalView()` is placed: the Compose chat has it; put it over your own Compose screen to open them there. The XML chat has no entry or screens yet (#76).
 
 ### How bot flows run
 
