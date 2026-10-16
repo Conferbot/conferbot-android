@@ -29,7 +29,9 @@ data class ReplyTimeInfo(
     val phrase: String? = null,
     val text: String? = null,
     val backAt: String? = null,
-    val leaveMessage: Boolean? = null
+    val leaveMessage: Boolean? = null,
+    /** The usual wait in the server's words ("about 3 minutes"), when it has no bucket for it. */
+    val wait: String? = null
 )
 
 object ReplyTime {
@@ -60,7 +62,8 @@ object ReplyTime {
             phrase = s("phrase"),
             text = s("text"),
             backAt = s("backAt"),
-            leaveMessage = m["leaveMessage"] as? Boolean
+            leaveMessage = m["leaveMessage"] as? Boolean,
+            wait = s("wait")
         )
     }
 
@@ -172,6 +175,25 @@ object ReplyTime {
         fun teamBackAt(whenBack: String) = t("reply.teamBackAt", "when" to whenBack)
         val TEAM_REPLIES_BY_EMAIL: String get() = t("reply.teamRepliesByEmail")
         val TEAM_AWAY_RIGHT_NOW: String get() = t("reply.teamAwayRightNow")
+    }
+
+    /** The usual wait, per bucket, in the active language (web reply.wait.*). */
+    val WAITS: Map<String, String> get() = BUCKETS.associateWith { t("reply.wait.$it") }
+
+    private fun waitOf(bucket: String?, fallback: String?): String =
+        bucket?.let { WAITS[it] } ?: fallback?.trim()?.takeIf { it.isNotEmpty() } ?: ""
+
+    /**
+     * "Typical wait: a few minutes" for the wait card (web replyTime.ts
+     * typicalWait): the routed team's usual first reply (queue-status
+     * `typical`), else the workspace's (customizations.replyTime). null when
+     * the owner chose Fixed or Hide, or there is no data.
+     */
+    fun typicalWait(rt: ReplyTimeInfo?, queueTypical: Map<String, Any?>? = null): String? {
+        if (rt != null && (rt.mode == "hide" || fixedOf(rt).isNotEmpty())) return null
+        val w = waitOf(queueTypical?.get("bucket") as? String, queueTypical?.get("wait") as? String)
+            .ifEmpty { if (rt != null) waitOf(rt.bucket, rt.wait) else "" }
+        return if (w.isNotEmpty()) t("reply.typicalWait", "wait" to w) else null
     }
 
     /** "Online" in the separator the lines use. */
