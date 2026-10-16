@@ -1362,6 +1362,17 @@ fun RatingNode(
                     },
                     tint = primaryColor
                 )
+                // The pick named in words ("Good" when the step gives them; web ratingFx.ts caption).
+                selectedRating?.let { r ->
+                    val labels = com.conferbot.sdk.core.flow.Js.list(state.step?.node?.get("labels")).map { com.conferbot.sdk.core.flow.Js.str(it) }
+                    Text(
+                        labels.getOrNull(r - 1)?.takeIf { it.isNotBlank() } ?: t("rating.outOf", "n" to r, "max" to state.maxValue),
+                        color = primaryColor,
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                }
             }
 
             NodeUIState.Rating.RatingType.SMILEY -> {
@@ -1421,6 +1432,7 @@ private fun StarRating(
                 label = "star_color_$index"
             )
 
+            Box(contentAlignment = Alignment.Center) {
             IconButton(
                 onClick = { onRatingChange(index) },
                 enabled = currentRating == 0,
@@ -1434,6 +1446,9 @@ private fun StarRating(
                         .size(36.dp)
                         .scale(scale)
                 )
+            }
+            // The pick's sparks (web ratingFx.ts burst; none with reduced motion).
+            if (currentRating == index) com.conferbot.sdk.ui.compose.delight.RatingSparksAt(index, top = index == maxRating, color = tint)
             }
         }
     }
