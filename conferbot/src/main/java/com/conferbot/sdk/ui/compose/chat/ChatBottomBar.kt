@@ -64,7 +64,9 @@ fun ChatBottomBar(
     enabled: Boolean = true,
     placeholder: String = I18n.t("chat.composer.placeholder"),
     /** The paperclip: shown when given (a live chat that takes visitor files). */
-    onAttach: (() -> Unit)? = null
+    onAttach: (() -> Unit)? = null,
+    /** The text as it changes, and "" once sent (the agent's typing preview, the waiting nudge). */
+    onDraft: ((String) -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -157,6 +159,7 @@ fun ChatBottomBar(
                     onValueChange = { newText ->
                         text = newText
                         onTypingChanged(newText.isNotEmpty())
+                        onDraft?.invoke(newText)
                     },
                     textStyle = TextStyle(
                         fontSize = 16.sp,
@@ -184,6 +187,7 @@ fun ChatBottomBar(
                             onSendMessage(text.trim())
                             text = ""
                             onTypingChanged(false)
+                            onDraft?.invoke("")
                         }
                     },
                     enabled = canSend,
