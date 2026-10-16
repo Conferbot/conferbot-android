@@ -1064,7 +1064,7 @@ class NodeFlowEngine internal constructor(
     }
 
     /** The handover step's data while the flow is on it (its fallbackMessage...). */
-    val handoverNodeData: Map<String, Any?>?
+    override val handoverNodeData: Map<String, Any?>?
         get() = if (isAtHandover) currentNodeId?.let { nodes[it]?.data } else null
 
     /** The handover step's card goes (a person joined, or nobody could). */
