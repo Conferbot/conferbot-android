@@ -8,6 +8,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
@@ -16,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -53,41 +56,83 @@ private fun openUrl(context: android.content.Context, url: String?) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
-/** An agent message's text: the markdown subset of utils/ChatMarkdown.kt. */
+private fun annotatedOf(inlines: List<ChatMarkdown.Inline>, linkColor: Color) = buildAnnotatedString {
+    inlines.forEach { inline ->
+        when (inline) {
+            is ChatMarkdown.Inline.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(inline.text) }
+            is ChatMarkdown.Inline.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(inline.text) }
+            is ChatMarkdown.Inline.Code -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(inline.text) }
+            is ChatMarkdown.Inline.Strike -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(inline.text) }
+            is ChatMarkdown.Inline.Link -> {
+                pushStringAnnotation("url", inline.url)
+                withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) { append(inline.text) }
+                pop()
+            }
+            is ChatMarkdown.Inline.Plain -> append(inline.text)
+        }
+    }
+}
+
+/**
+ * An agent message's text: the markdown of utils/ChatMarkdown.kt, drawn as
+ * the web's agentHtml.ts: headings bold (level 3 at 1.17x, 4-6 at 1.07x),
+ * quotes with a bar on the left, preformatted text in monospace, and tables
+ * in a sideways scroll (cells 5/9 padding, the head bold over a 2px rule,
+ * rows over a hairline at 18% of the text colour).
+ */
 @Composable
 fun ChatMarkdownText(text: String, color: Color, linkColor: Color, style: TextStyle) {
     val context = LocalContext.current
     val blocks = remember(text) { ChatMarkdown.parse(text) }
+    val textStyle = style.copy(color = color)
+    @Composable
+    fun Runs(inlines: List<ChatMarkdown.Inline>, st: TextStyle = textStyle, modifier: Modifier = Modifier, softWrap: Boolean = true) {
+        val annotated = remember(inlines, linkColor) { annotatedOf(inlines, linkColor) }
+        ClickableText(annotated, style = st, modifier = modifier, softWrap = softWrap, onClick = { offset ->
+            annotated.getStringAnnotations("url", offset, offset).firstOrNull()?.let { openUrl(context, it.item) }
+        })
+    }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         blocks.forEach { block ->
-            val annotated = buildAnnotatedString {
-                block.inlines.forEach { inline ->
-                    when (inline) {
-                        is ChatMarkdown.Inline.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(inline.text) }
-                        is ChatMarkdown.Inline.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(inline.text) }
-                        is ChatMarkdown.Inline.Code -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(inline.text) }
-                        is ChatMarkdown.Inline.Link -> {
-                            pushStringAnnotation("url", inline.url)
-                            withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) { append(inline.text) }
-                            pop()
-                        }
-                        is ChatMarkdown.Inline.Plain -> append(inline.text)
-                    }
-                }
-            }
-            val textStyle = style.copy(color = color)
-            val onClick: (Int) -> Unit = { offset ->
-                annotated.getStringAnnotations("url", offset, offset).firstOrNull()?.let { openUrl(context, it.item) }
-            }
             when (block) {
-                is ChatMarkdown.Block.Paragraph -> ClickableText(annotated, style = textStyle, onClick = onClick)
-                else -> Row {
+                is ChatMarkdown.Block.Paragraph -> Runs(block.inlines)
+                is ChatMarkdown.Block.Bullet, is ChatMarkdown.Block.Numbered -> Row {
                     Text(
                         text = if (block is ChatMarkdown.Block.Numbered) "${block.n}." else "•",
                         style = textStyle,
                         modifier = Modifier.widthIn(min = 16.dp).padding(end = 4.dp)
                     )
-                    ClickableText(annotated, style = textStyle, onClick = onClick, modifier = Modifier.weight(1f))
+                    Runs(block.inlines, modifier = Modifier.weight(1f))
+                }
+                is ChatMarkdown.Block.Heading -> Runs(
+                    block.inlines,
+                    textStyle.copy(fontWeight = FontWeight.Bold, fontSize = textStyle.fontSize * (if (block.level == 3) 1.17f else 1.07f))
+                )
+                is ChatMarkdown.Block.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
+                    Box(Modifier.width(3.dp).fillMaxHeight().background(color.copy(alpha = 0.3f)))
+                    Spacer(Modifier.width(8.dp))
+                    Runs(block.inlines, textStyle.copy(color = color.copy(alpha = 0.85f)), Modifier.weight(1f))
+                }
+                is ChatMarkdown.Block.Pre -> Text(
+                    block.text,
+                    style = textStyle.copy(fontFamily = FontFamily.Monospace, fontSize = textStyle.fontSize * 0.92f),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.08f))
+                        .horizontalScroll(rememberScrollState()).padding(8.dp)
+                )
+                // Column by column, each cell on one line, so the rows line up
+                // and the rules under them join across the columns.
+                is ChatMarkdown.Block.Table -> Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    val rule = color.copy(alpha = 0.18f)
+                    block.head.forEachIndexed { k, headCell ->
+                        Column(Modifier.width(IntrinsicSize.Max)) {
+                            Runs(headCell, textStyle.copy(fontWeight = FontWeight.Bold), Modifier.padding(horizontal = 9.dp, vertical = 5.dp), softWrap = false)
+                            Box(Modifier.fillMaxWidth().height(2.dp).background(rule))
+                            block.rows.forEachIndexed { r, row ->
+                                Runs(row.getOrElse(k) { emptyList() }, textStyle, Modifier.padding(horizontal = 9.dp, vertical = 5.dp), softWrap = false)
+                                if (r < block.rows.size - 1) Box(Modifier.fillMaxWidth().height(1.dp).background(rule))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -134,6 +179,11 @@ private fun Pill(label: String, outlined: Color, textColor: Color, onClick: () -
     }
 }
 
+/** An AI answer stored under its server id, not a fallback: it can be rated. */
+private fun rateable(item: RecordItem): Boolean =
+    item is RecordItem.AgentMessage && item.agentDetails.isAIAgent && item.extras?.isFallback != true && !item.deleted &&
+        AgentBotParser.canRate(item.id)
+
 /** Under an AI reply: sources, buttons, cards, an action to confirm, "Helpful?". */
 @Composable
 fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modifier) {
@@ -142,8 +192,11 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
     val context = LocalContext.current
     val extras = message.extras
     val customizations by Conferbot.serverCustomizationMap.collectAsState()
-    val showHelpful = message.agentDetails.isAIAgent && extras?.isFallback != true && !message.deleted &&
-        AgentBotParser.canRate(message.id) && AgentBotParser.answerFeedbackOn(customizations)
+    val record by Conferbot.record.collectAsState()
+    // Rated answers keep their line; only the newest unrated one asks.
+    val newestRateable = remember(record) { record.lastOrNull { rateable(it) }?.id }
+    val showHelpful = rateable(message) && AgentBotParser.answerFeedbackOn(customizations) &&
+        com.conferbot.sdk.core.agent.Helpful.showsRow(message.id, message.feedback != null, newestRateable)
     if ((extras == null || extras.isEmpty) && !showHelpful) return
 
     Column(
@@ -198,7 +251,13 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
                 }
             }
         }
-        if (showHelpful) Helpful(message)
+        if (showHelpful) {
+            // "Talk to a person" only while nobody is coming or here (web offerHuman).
+            val canAskPerson = remember(record) {
+                com.conferbot.sdk.core.livechat.HandoverState.talkToPersonAllowed(com.conferbot.sdk.core.livechat.HandoverState.entriesOfItems(record))
+            }
+            Helpful(message, canAskPerson)
+        }
     }
 }
 
@@ -286,25 +345,102 @@ private fun ActionCard(request: ActionRequest) {
     }
 }
 
+/**
+ * "Helpful?" (core/agent/AnswerFeedback.kt, web answerFeedback.ts): a vote
+ * goes the moment it is given - a No too, before any reason - then the
+ * reasons, an optional comment, "Talk to a person" and "Ask another way".
+ * The rated line's thumbs change the vote.
+ */
 @Composable
-private fun Helpful(message: RecordItem.AgentMessage) {
+private fun Helpful(message: RecordItem.AgentMessage, canAskPerson: Boolean) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
-    var askWhy by remember(message.id) { mutableStateOf(false) }
+    val h = com.conferbot.sdk.core.agent.Helpful
+    var state by remember(message.id) { mutableStateOf(h.start(message.feedback)) }
+    var comment by remember(message.id) { mutableStateOf("") }
     val label = TextStyle(fontSize = theme.typography.timestampSize, color = colors.onSurfaceVariant)
-    val given = message.feedback
-    when {
-        given != null -> Text(if (given.helpful) "Thanks, glad it helped" else "Thanks for telling us", style = label)
-        askWhy -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("What was wrong?", style = label, modifier = Modifier.align(Alignment.CenterVertically))
-            AgentBotParser.FEEDBACK_REASONS.forEach { (key, text) ->
-                Pill(text, colors.divider, colors.onSurface, onClick = { Conferbot.sendAnswerFeedback(message.id, false, key) })
+    fun tap(t: com.conferbot.sdk.core.agent.Helpful.Tap) {
+        val r = h.step(state, t)
+        r.send?.let { Conferbot.sendAnswerFeedback(message.id, it) }
+        r.ask?.let { Conferbot.sendMessage(it) }
+        if (r.focus) Conferbot.focusComposer()
+        state = r.state
+    }
+    // "Thanks for letting us know!", then the quiet rated line.
+    LaunchedEffect(state.view) {
+        if (state.view == com.conferbot.sdk.core.agent.Helpful.View.THANKS) {
+            kotlinx.coroutines.delay(h.THANKS_MS)
+            state = h.step(state, com.conferbot.sdk.core.agent.Helpful.Tap.Settle).state
+        }
+    }
+
+    @Composable
+    fun Thumb(helpful: Boolean, pressed: Boolean, idle: Boolean) {
+        val rated = state.view == com.conferbot.sdk.core.agent.Helpful.View.RATED
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(if (pressed) colors.primary.copy(alpha = 0.12f) else Color.Transparent)
+                .border(BorderStroke(1.dp, if (pressed) colors.primary else colors.divider), RoundedCornerShape(50))
+                .clickable(onClickLabel = if (rated) (if (helpful) h.RATED_UP else h.RATED_DOWN) else if (helpful) h.YES else h.NO) {
+                    tap(com.conferbot.sdk.core.agent.Helpful.Tap.Vote(helpful))
+                }
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        ) {
+            Text(
+                if (helpful) "\uD83D\uDC4D" else "\uD83D\uDC4E",
+                style = TextStyle(fontSize = theme.typography.captionSize),
+                modifier = Modifier.then(if (idle) Modifier.alpha(0.45f) else Modifier)
+            )
+        }
+    }
+
+    when (state.view) {
+        com.conferbot.sdk.core.agent.Helpful.View.THANKS -> Text(h.THANKS, style = label)
+        com.conferbot.sdk.core.agent.Helpful.View.RATED -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Thumb(true, pressed = state.current?.helpful == true, idle = state.current?.helpful != true)
+            Thumb(false, pressed = state.current?.helpful == false, idle = state.current?.helpful != false)
+            Text(h.ratedLabel(state.current), style = label)
+        }
+        com.conferbot.sdk.core.agent.Helpful.View.DOWN -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(h.SORRY, style = label)
+            val reason = state.current?.reason
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                h.REASONS.forEach { (key, text) ->
+                    val on = reason == key
+                    Pill(text, if (on) colors.primary else colors.divider, if (on) colors.primary else colors.onSurface,
+                        onClick = { tap(com.conferbot.sdk.core.agent.Helpful.Tap.Reason(key)) })
+                }
+            }
+            if (state.commented) Text(h.THANKS_COMMENT, style = label)
+            else if (reason != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).border(BorderStroke(1.dp, colors.divider), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    if (comment.isEmpty()) Text(h.COMMENT, style = label)
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = comment,
+                        onValueChange = { comment = it.take(500) },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = theme.typography.captionSize, color = colors.onSurface),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(colors.primary),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { tap(com.conferbot.sdk.core.agent.Helpful.Tap.Comment(comment)) }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Pill("\u2192", colors.primary, colors.primary, onClick = { tap(com.conferbot.sdk.core.agent.Helpful.Tap.Comment(comment)) })
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (canAskPerson) Pill(h.TALK_TO_PERSON, colors.divider, colors.onSurface, onClick = { tap(com.conferbot.sdk.core.agent.Helpful.Tap.Human) })
+                Pill(h.RETRY, colors.divider, colors.onSurface, onClick = { tap(com.conferbot.sdk.core.agent.Helpful.Tap.Retry) })
             }
         }
-        else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Helpful?", style = label)
-            Pill("Yes", colors.divider, colors.onSurface, onClick = { Conferbot.sendAnswerFeedback(message.id, true) })
-            Pill("No", colors.divider, colors.onSurface, onClick = { askWhy = true })
+        com.conferbot.sdk.core.agent.Helpful.View.ASK -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(h.ASK, style = label)
+            Thumb(true, pressed = false, idle = false)
+            Thumb(false, pressed = false, idle = false)
         }
     }
 }
