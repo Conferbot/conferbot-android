@@ -523,7 +523,15 @@ object Conferbot {
                 }
             },
             record = { _record.value },
-            setRecord = { fn -> _record.value = fn(_record.value) },
+            setRecord = { fn ->
+                val before = _record.value
+                val after = fn(before)
+                _record.value = after
+                // The cut rows leave the stored chat too, or a restart brings them back (#88).
+                val kept = after.mapTo(HashSet()) { it.id }
+                val cut = before.map { it.id }.filterNot { it in kept }
+                if (cut.isNotEmpty()) scope.launch { messageManager?.removeMessages(cut) }
+            },
             locked = { _isLiveChatMode.value || handover.phase() != com.conferbot.sdk.core.livechat.HandoverPhase.NONE || nodeFlowEngine?.isEnded == true },
             chatVisible = { _isChatVisible.value && homeView.value == com.conferbot.sdk.core.home.HomeView.CHAT },
             reducedMotion = {
