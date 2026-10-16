@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.knowledgebase
 
+import com.conferbot.sdk.core.i18n.t
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -75,7 +76,7 @@ fun CategoryTabs(
         if (showAllTab) {
             item {
                 CategoryTab(
-                    name = "All",
+                    name = t("sdk.kb.all"),
                     icon = Icons.Outlined.GridView,
                     articleCount = totalArticleCount,
                     isSelected = selectedCategoryId == null,
@@ -277,7 +278,7 @@ fun CategoryListItem(
             // Arrow
             Icon(
                 imageVector = Icons.Default.ChevronRight,
-                contentDescription = "View category",
+                contentDescription = t("sdk.kb.viewCategory"),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
@@ -309,7 +310,7 @@ fun getCategoryIcon(categoryIcon: CategoryIcon): ImageVector {
 @Composable
 fun EmptyCategoriesState(
     modifier: Modifier = Modifier,
-    message: String = "No categories available"
+    message: String = t("sdk.kb.noCategories")
 ) {
     Box(
         modifier = modifier
