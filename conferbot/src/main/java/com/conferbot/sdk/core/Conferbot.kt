@@ -311,6 +311,8 @@ object Conferbot {
         val widgetTheme = com.conferbot.sdk.core.customization.WidgetTheme.resolve(themed, prefersDark)
         _serverCustomizationMap.value = themed
         _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(themed, theme = widgetTheme)
+        // The owner's font over the theme's, fetched at run time (core/customization/OwnerFont.kt).
+        appContext?.let { com.conferbot.sdk.ui.theme.ChatFontLoader.apply(it, themed["font"], widgetTheme?.font, widgetTheme?.fontRole) }
         val json = if (themed === rawCustomizationMap) raw else JSONObject(raw.toString()).also { j ->
             themed.forEach { (k, v) -> if (rawCustomizationMap[k] != v && (v == null || v is String)) j.put(k, v ?: JSONObject.NULL) }
         }
@@ -364,6 +366,9 @@ object Conferbot {
      * to apply server colors automatically.
      */
     val serverTheme: StateFlow<ConferbotTheme?> = _serverTheme.asStateFlow()
+
+    /** The server theme before the chat's fonts are put in (they load later). */
+    private var serverThemeBase: ConferbotTheme? = null
 
     private val _serverCustomization = MutableStateFlow<ServerChatbotCustomization?>(null)
     /**
@@ -917,6 +922,12 @@ object Conferbot {
                 connectSocket()
             }
             startRequests()
+            // The chat's fonts loaded: the theme draws with them (core/customization/OwnerFont.kt).
+            scope.launch {
+                com.conferbot.sdk.ui.theme.ChatFontLoader.fonts.collect { f ->
+                    serverThemeBase?.let { _serverTheme.value = com.conferbot.sdk.ui.theme.ChatFontLoader.withFonts(it, f) }
+                }
+            }
             // A message arriving plays the owner's message sound (core/sound).
             scope.launch { _record.collect { sounds.onRecord(it) } }
             // The bot's tapback, the burst and "Edit" (core/delight).
@@ -2068,7 +2079,8 @@ object Conferbot {
                     )
                 )
             } ?: built
-            _serverTheme.value = theme
+            serverThemeBase = theme
+            _serverTheme.value = com.conferbot.sdk.ui.theme.ChatFontLoader.withFonts(theme)
             Log.d(TAG, "Built server theme from customizations")
 
         } catch (e: Exception) {
@@ -3262,6 +3274,7 @@ object Conferbot {
         cachedChatbotEdges = null
         // Reset server theme/customization
         _serverTheme.value = null
+        serverThemeBase = null
         _serverCustomization.value = null
         // Reset widget state
         _isChatVisible.value = false
