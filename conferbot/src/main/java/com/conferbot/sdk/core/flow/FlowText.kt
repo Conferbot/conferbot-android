@@ -121,7 +121,7 @@ object FlowText {
      */
     fun nameGreetingHtml(template: Any?, name: Any?): String {
         val first = escapeHtmlText(firstNameOf(name))
-        if (template == null) return if (first.isNotEmpty()) "Nice to meet you, $first" else ""
+        if (template == null) return if (first.isNotEmpty()) com.conferbot.sdk.core.i18n.I18n.t("node.niceToMeet", "name" to first) else ""
         if (isBlankHtml(template)) return ""
         return closeGaps(Js.str(template).replace(Regex("\\$?\\{\\{?\\s*name\\s*\\}?\\}")) { first.ifEmpty { GAP } })
     }
