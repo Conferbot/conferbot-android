@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowCalendar
 import com.conferbot.sdk.core.flow.FlowContext
 import com.conferbot.sdk.core.flow.FlowRich
@@ -241,7 +242,7 @@ class ProductCardNodeHandler : RichNodeHandler() {
         }
         if (c?.buttons?.any { it.action == "path" } == true) return NodeResult.DisplayUI(ui(nodeData, nodeId))
         FlowKit.pushAnswer(mapOf("id" to nodeId, "shape" to "user-selected-product-card", "selectedChoice" to CAROUSEL_CONTINUE, "selectedButtonId" to null))
-        FlowKit.userSay(CAROUSEL_CONTINUE)
+        FlowKit.userSay(I18n.t("common.continue"))
         return NodeResult.Proceed("source")
     }
 }
@@ -369,8 +370,8 @@ class OtpNodeHandler : RichNodeHandler() {
             extra["sentTo"] = com.conferbot.sdk.core.flow.FlowStepAnswer.maskEmail(stages[nodeId]?.email)
             extra["resendIn"] = resendIn
         }
-        return if (stage == "email") textInput(nodeId, prompt(data).ifEmpty { "Email address" }, data, NodeUIState.TextInput.InputType.EMAIL, "name@example.com", extra)
-        else textInput(nodeId, "Enter the ${FlowRich.OTP_LENGTH}-digit code we sent you", data, NodeUIState.TextInput.InputType.NUMBER, "123456", extra)
+        return if (stage == "email") textInput(nodeId, prompt(data).ifEmpty { I18n.t("otp.emailLabel") }, data, NodeUIState.TextInput.InputType.EMAIL, I18n.t("otp.emailPlaceholder"), extra)
+        else textInput(nodeId, I18n.t("sdk.flow.otpEnterCode", "n" to FlowRich.OTP_LENGTH), data, NodeUIState.TextInput.InputType.NUMBER, "123456", extra)
     }
 
     private fun seconds(v: Any?): Int = Js.number(v).let { if (Js.isFinite(it) && it > 0) Math.ceil(it).toInt() else FlowRich.OTP_RESEND_SECONDS }
@@ -400,7 +401,7 @@ class OtpNodeHandler : RichNodeHandler() {
         val r = richPost(ctx, "otp/send", mapOf("nodeId" to nodeId, "sessionId" to sessionOf(), "email" to target))
         if (r.ok || r.code == "resend_wait") {
             stages[nodeId] = Stage("code", target)
-            FlowKit.botSay("We sent a ${FlowRich.OTP_LENGTH}-digit code to ${Js.str(r.data?.get("sentTo") ?: target)}", side = true)
+            FlowKit.botSay(I18n.t("otp.sentTo", "n" to FlowRich.OTP_LENGTH, "email" to Js.str(r.data?.get("sentTo") ?: target)), side = true)
             if (r.code == "resend_wait") return NodeResult.Invalid(FlowRich.otpErrorText("resend_wait", retryAfter = r.data?.get("retryAfter")), ui(data, nodeId, "code", seconds(r.data?.get("retryAfter"))), inCard = true)
             return NodeResult.DisplayUI(ui(data, nodeId, "code", seconds(r.data?.get("resendIn"))))
         }
@@ -467,7 +468,7 @@ class AddressNodeHandler : RichNodeHandler() {
             "allowManual" to (data["allowManual"] != false),
             "placeholder" to Js.str(data["placeholder"]).trim()
         )
-        return textInput(nodeId, prompt(data) + list, data, NodeUIState.TextInput.InputType.LOCATION, "Street address", extra)
+        return textInput(nodeId, prompt(data) + list, data, NodeUIState.TextInput.InputType.LOCATION, I18n.t("address.street"), extra)
     }
 
     private suspend fun finish(data: Map<String, Any?>, nodeId: String, value: FlowRich.AddressValue, source: String): NodeResult {
@@ -509,7 +510,7 @@ class AddressNodeHandler : RichNodeHandler() {
         results[nodeId]?.let { list -> typed.toIntOrNull()?.let { n -> list.getOrNull(n - 1)?.let { return finish(nodeData, nodeId, it, "search") } } }
         val fields = if (r["action"] == "manual") r else mapOf("line1" to (if (response is String) response else r["address"] ?: typed))
         val value = (if (nodeData["allowManual"] == false) null else FlowRich.manualAddress(fields))
-            ?: return NodeResult.Invalid("Enter the street address.", ui(nodeData, nodeId), inCard = true)
+            ?: return NodeResult.Invalid(I18n.t("sdk.flow.streetRequired"), ui(nodeData, nodeId), inCard = true)
         return finish(nodeData, nodeId, value, "manual")
     }
 }
@@ -594,7 +595,7 @@ private suspend fun <T> think(ctx: FlowContext, work: suspend () -> T): T {
 class AiExtractNodeHandler : RichNodeHandler() {
     override val nodeType = NodeTypes.AI_EXTRACT
 
-    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data, "<p>How can we help?</p>"), data)
+    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data, "<p>${I18n.t("sdk.flow.aiExtractPrompt")}</p>"), data)
 
     private suspend fun run(data: Map<String, Any?>, nodeId: String, text: String, asked: Boolean): NodeResult {
         val ctx = flowContext()
@@ -634,7 +635,7 @@ class AiExtractNodeHandler : RichNodeHandler() {
 class AiRouteNodeHandler : RichNodeHandler() {
     override val nodeType = NodeTypes.AI_ROUTE
 
-    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data, "<p>How can we help?</p>"), data)
+    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data, "<p>${I18n.t("sdk.flow.aiExtractPrompt")}</p>"), data)
 
     private suspend fun run(data: Map<String, Any?>, nodeId: String, text: String, asked: Boolean): NodeResult {
         val ctx = flowContext()
@@ -733,7 +734,7 @@ internal fun typedSignatureSvg(name: String): Triple<String, Int, Int> {
 class SignatureNodeHandler : RichNodeHandler() {
     override val nodeType = NodeTypes.SIGNATURE
 
-    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data).ifEmpty { t("signature.typeToSign") }, data, placeholder = "Your full name")
+    private fun ui(data: Map<String, Any?>, nodeId: String) = textInput(nodeId, prompt(data).ifEmpty { t("signature.typeToSign") }, data, placeholder = I18n.t("signature.namePlaceholder"))
 
     override suspend fun process(nodeData: Map<String, Any?>, nodeId: String): NodeResult {
         val ui = ui(nodeData, nodeId)
@@ -748,19 +749,19 @@ class SignatureNodeHandler : RichNodeHandler() {
         val method = if (typed) "typed" else "drawn"
         val name = if (typed) FlowRich.cleanSignatureName(if (response is String) response else r["name"]) else ""
         val fullName = FlowRich.cleanSignatureName(r["fullName"] ?: if (cfg.requireName) name else "")
-        if (cfg.requireName && !FlowRich.isSignatureName(fullName)) return NodeResult.Invalid("Enter your full name.", ui(nodeData, nodeId), inCard = true)
+        if (cfg.requireName && !FlowRich.isSignatureName(fullName)) return NodeResult.Invalid(I18n.t("sdk.flow.signatureName"), ui(nodeData, nodeId), inCard = true)
         if (method == "drawn" && !Js.truthy(r["dataUrl"])) {
             return NodeResult.Invalid(
-                if (cfg.allowTyped) "Draw your signature in the box - or type your name instead." else "Draw your signature in the box.",
+                if (cfg.allowTyped) I18n.t("sdk.flow.signatureDrawOrType") else I18n.t("sdk.flow.signatureDraw"),
                 ui(nodeData, nodeId), inCard = true
             )
         }
-        if (method == "typed" && (!cfg.allowTyped || !FlowRich.isSignatureName(name))) return NodeResult.Invalid("Type your full name to sign.", ui(nodeData, nodeId), inCard = true)
+        if (method == "typed" && (!cfg.allowTyped || !FlowRich.isSignatureName(name))) return NodeResult.Invalid(I18n.t("sdk.flow.signatureType"), ui(nodeData, nodeId), inCard = true)
         val (dataUrl, width, height) = if (method == "typed") typedSignatureSvg(name)
         else Triple(Js.str(r["dataUrl"]), Js.number(r["width"]).let { if (Js.isFinite(it)) it.toInt() else 0 }, Js.number(r["height"]).let { if (Js.isFinite(it)) it.toInt() else 0 })
         val ctx = flowContext()
         val up = ctx.upload(UploadFile(dataUrl = dataUrl, name = "signature-${ctx.now()}.${if (method == "typed") "svg" else "png"}", type = if (method == "typed") "image/svg+xml" else "image/png"))
-        if (!up.ok || up.url.isNullOrEmpty()) return NodeResult.Invalid("We couldn't save your signature. Please try again.", ui(nodeData, nodeId), inCard = true)
+        if (!up.ok || up.url.isNullOrEmpty()) return NodeResult.Invalid(I18n.t("sdk.flow.signatureSaveFailed"), ui(nodeData, nodeId), inCard = true)
         val at = FlowKit.nowIso()
         val shownName = fullName.ifEmpty { name }
         val entry = linkedMapOf<String, Any?>("id" to nodeId, "shape" to "user-signature", "url" to up.url, "at" to at, "method" to method)
