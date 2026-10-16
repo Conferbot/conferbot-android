@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -85,7 +86,7 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
         val typing = if (loaded) look.typingStyle else "dots"
         val reduced = com.conferbot.sdk.ui.compose.rememberReducedMotion()
         // "Pip is typing" when the owner named their mascot (chatChrome.ts typingBubbleHtml).
-        val label = if (typing == "mascot" && look.mascot.name.isNotEmpty()) MascotMoods.typingLabel("mascot", look.mascot.name) else "Agent is typing"
+        val label = if (typing == "mascot" && look.mascot.name.isNotEmpty()) MascotMoods.typingLabel("mascot", look.mascot.name) else I18n.t("typing.named", "name" to I18n.t("agent.agent"))
         Box(
             modifier = Modifier
                 .semantics { contentDescription = label }
@@ -101,7 +102,7 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
                 "mascot" -> TypingMascot(look.mascot, look.mascotAccent, ink, reduced)
                 "pencil" -> TypingPencil(look.mascotAccent, ink, reduced)
                 "shimmer" -> androidx.compose.material3.Text(
-                    text = "Typing...",
+                    text = I18n.t("typing.typing") + "...",
                     color = ink.copy(alpha = 0.55f + 0.45f * dotAlphas[0].value),
                     style = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                 )
