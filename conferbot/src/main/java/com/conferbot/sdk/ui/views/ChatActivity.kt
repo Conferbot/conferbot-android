@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.conferbot.sdk.models.RecordItem
+import com.conferbot.sdk.core.i18n.I18n
+import com.conferbot.sdk.core.i18n.t
 
 /**
  * Chat Activity for XML Views implementation
@@ -132,6 +134,8 @@ class ChatActivity : AppCompatActivity() {
             adapter = messageAdapter
         }
 
+        applyWords()
+
         // Back button
         binding.chatHeader.backButton.setOnClickListener {
             finish()
@@ -174,56 +178,63 @@ class ChatActivity : AppCompatActivity() {
         // "Powered by Conferbot", or the owner's own text, or nothing (hideBrand).
         binding.brandFooter.setContent {
             val serverCustomization by Conferbot.serverCustomization.collectAsState()
-            com.conferbot.sdk.ui.compose.chat.PoweredByFooter(serverCustomization = serverCustomization)
+            val language = I18n.languageFlow.collectAsState().value
+            androidx.compose.runtime.key(language) {
+                com.conferbot.sdk.ui.compose.chat.PoweredByFooter(serverCustomization = serverCustomization)
+            }
         }
 
         binding.agentStrip.setContent {
-            val serverTheme by Conferbot.serverTheme.collectAsState()
-            val stream by Conferbot.agentStream.collectAsState()
-            val suggestions by Conferbot.suggestions.collectAsState()
-            com.conferbot.sdk.ui.theme.ConferbotThemeProvider(theme = serverTheme ?: com.conferbot.sdk.ui.theme.LightTheme) {
-                androidx.compose.foundation.layout.Column(
-                    androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                ) {
-                    stream?.let {
-                        com.conferbot.sdk.ui.compose.messages.MessageBubble(
-                            message = RecordItem.AgentMessage(id = "stream-${it.id}", time = java.util.Date(), text = it.text, agentDetails = it.agentDetails),
-                            animate = false
-                        )
+            // Drawn again, whole, in a new language.
+            val language = I18n.languageFlow.collectAsState().value
+            androidx.compose.runtime.key(language) {
+                val serverTheme by Conferbot.serverTheme.collectAsState()
+                val stream by Conferbot.agentStream.collectAsState()
+                val suggestions by Conferbot.suggestions.collectAsState()
+                com.conferbot.sdk.ui.theme.ConferbotThemeProvider(theme = serverTheme ?: com.conferbot.sdk.ui.theme.LightTheme) {
+                    androidx.compose.foundation.layout.Column(
+                        androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        stream?.let {
+                            com.conferbot.sdk.ui.compose.messages.MessageBubble(
+                                message = RecordItem.AgentMessage(id = "stream-${it.id}", time = java.util.Date(), text = it.text, agentDetails = it.agentDetails),
+                                animate = false
+                            )
+                        }
+                        if (stream == null) {
+                            com.conferbot.sdk.ui.compose.messages.SuggestionChips(items = suggestions, onPick = { Conferbot.sendMessage(it) })
+                        }
+                        // Live chat: "Sent / Seen" for the visitor's latest message,
+                        // the cards (leave a message, file request, lead, rating),
+                        // locked / connection lines and the owner's quick actions.
+                        val record by Conferbot.record.collectAsState()
+                        val marks by Conferbot.liveChat.receiptMarks.collectAsState()
+                        val agent by Conferbot.currentAgent.collectAsState()
+                        val lockedBy by Conferbot.liveChat.lockedBy.collectAsState()
+                        val agentLost by Conferbot.liveChat.agentConnectionLost.collectAsState()
+                        val receipt = if (agent?.id?.startsWith("ai-agent-") == false)
+                            com.conferbot.sdk.core.livechat.LiveChat.visitorReceiptOf(com.conferbot.sdk.core.livechat.LiveChatExtras.entriesOf(record), marks) else null
+                        receipt?.let {
+                            androidx.compose.material3.Text(
+                                com.conferbot.sdk.core.livechat.LiveChat.receiptLabel(it.state),
+                                fontSize = 12.sp,
+                                color = androidx.compose.ui.graphics.Color.Gray,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                            )
+                        }
+                        // The handover step while it waits: the compact queue card
+                        // (its Cancel leaves the queue on the server).
+                        val ui by Conferbot.currentUIState.collectAsState()
+                        (ui as? com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover)
+                            ?.takeIf { it.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT }
+                            ?.let { com.conferbot.sdk.ui.compose.chat.HandoverWaitCard(message = it.handoverMessage) }
+                        val closed by remember { closedState() }.collectAsState(initial = null)
+                        com.conferbot.sdk.ui.compose.chat.LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }, closed = closed)
+                        lockedBy?.let { com.conferbot.sdk.ui.compose.chat.SystemLine(t("system.locked")) }
+                        agentLost?.let { com.conferbot.sdk.ui.compose.chat.SystemLine(t("agent.connectionLost", "name" to it)) }
+                        com.conferbot.sdk.ui.compose.chat.QuickActionsStrip()
                     }
-                    if (stream == null) {
-                        com.conferbot.sdk.ui.compose.messages.SuggestionChips(items = suggestions, onPick = { Conferbot.sendMessage(it) })
-                    }
-                    // Live chat: "Sent / Seen" for the visitor's latest message,
-                    // the cards (leave a message, file request, lead, rating),
-                    // locked / connection lines and the owner's quick actions.
-                    val record by Conferbot.record.collectAsState()
-                    val marks by Conferbot.liveChat.receiptMarks.collectAsState()
-                    val agent by Conferbot.currentAgent.collectAsState()
-                    val lockedBy by Conferbot.liveChat.lockedBy.collectAsState()
-                    val agentLost by Conferbot.liveChat.agentConnectionLost.collectAsState()
-                    val receipt = if (agent?.id?.startsWith("ai-agent-") == false)
-                        com.conferbot.sdk.core.livechat.LiveChat.visitorReceiptOf(com.conferbot.sdk.core.livechat.LiveChatExtras.entriesOf(record), marks) else null
-                    receipt?.let {
-                        androidx.compose.material3.Text(
-                            com.conferbot.sdk.core.livechat.LiveChat.receiptLabel(it.state),
-                            fontSize = 12.sp,
-                            color = androidx.compose.ui.graphics.Color.Gray,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
-                        )
-                    }
-                    // The handover step while it waits: the compact queue card
-                    // (its Cancel leaves the queue on the server).
-                    val ui by Conferbot.currentUIState.collectAsState()
-                    (ui as? com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover)
-                        ?.takeIf { it.state == com.conferbot.sdk.core.nodes.NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT }
-                        ?.let { com.conferbot.sdk.ui.compose.chat.HandoverWaitCard(message = it.handoverMessage) }
-                    val closed by remember { closedState() }.collectAsState(initial = null)
-                    com.conferbot.sdk.ui.compose.chat.LiveChatFooterCards(onUpload = { pickFile.launch("*/*") }, closed = closed)
-                    lockedBy?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("This conversation has been locked") }
-                    agentLost?.let { com.conferbot.sdk.ui.compose.chat.SystemLine("$it's connection dropped. Hang on, they should be right back.") }
-                    com.conferbot.sdk.ui.compose.chat.QuickActionsStrip()
                 }
             }
         }
@@ -233,6 +244,16 @@ class ChatActivity : AppCompatActivity() {
         customization?.headerTitle?.let {
             binding.chatHeader.titleText.text = it
         }
+    }
+
+    /** The words the screen draws itself, in the widget's language (core/i18n). */
+    private fun applyWords() {
+        binding.attachButton.contentDescription = t("chat.composer.attach")
+        binding.sendButton.contentDescription = t("sdk.composer.sendMessage")
+        binding.chatHeader.backButton.contentDescription = t("common.back")
+        binding.chatHeader.avatarImage.contentDescription = t("sdk.message.botAvatar")
+        if (binding.messageInput.isEnabled) binding.messageInput.hint = t("chat.composer.placeholder")
+        if (binding.chatHeader.titleText.text.isNullOrEmpty()) binding.chatHeader.titleText.text = t("sdk.header.supportChat")
     }
 
     /** The chat's closed state: blocked, or a live chat ended with nothing going on. */
@@ -251,6 +272,15 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun setupObservers() {
+        // The widget's language changed (the bot's settings arrived): the
+        // screen's own words and every row again.
+        I18n.languageFlow
+            .onEach {
+                applyWords()
+                messageAdapter.notifyDataSetChanged()
+            }
+            .launchIn(lifecycleScope)
+
         // Live chat: the paperclip, and the composer while the agent turned
         // replies off or locked the conversation.
         binding.attachButton.setOnClickListener { pickFile.launch("*/*") }
@@ -267,13 +297,15 @@ class ChatActivity : AppCompatActivity() {
             // Blocked, or ended with nothing going on: the composer is off
             // with the closed line as its hint (core/livechat/LiveEvents.kt).
             .combine(closedState()) { (attach, repliesOff), closed -> Triple(attach, repliesOff || closed?.inputOff == true, closed) }
+            // ...and again in a new language.
+            .combine(I18n.languageFlow) { v, _ -> v }
             .onEach { (attach, repliesOff, closed) ->
                 binding.attachButton.visibility = if (attach && closed == null) View.VISIBLE else View.GONE
                 binding.messageInput.isEnabled = !repliesOff
                 binding.messageInput.hint = when {
                     closed?.inputOff == true -> closed.text
-                    repliesOff -> "Replies are turned off for now"
-                    else -> "Type a message..."
+                    repliesOff -> t("sdk.chat.repliesOff")
+                    else -> t("chat.composer.placeholder")
                 }
                 binding.sendButton.isEnabled = !repliesOff && !binding.messageInput.text.isNullOrBlank()
             }
@@ -291,9 +323,10 @@ class ChatActivity : AppCompatActivity() {
 
         // Observe connection status
         Conferbot.isConnected
+            .combine(I18n.languageFlow) { connected, _ -> connected }
             .onEach { isConnected ->
                 binding.connectionStatus.root.visibility = if (isConnected) View.GONE else View.VISIBLE
-                binding.connectionStatus.statusText.text = if (isConnected) "Connected" else "Reconnecting..."
+                binding.connectionStatus.statusText.text = if (isConnected) t("sdk.status.connected") else t("sdk.status.reconnecting")
             }
             .launchIn(lifecycleScope)
 
@@ -329,6 +362,7 @@ class ChatActivity : AppCompatActivity() {
             ) ?: com.conferbot.sdk.core.livechat.ReplyTime.ONLINE
             Triple(look, map, status)
         }
+            .combine(I18n.languageFlow) { v, _ -> v }
             .onEach { (look, map, status) -> applyLook(look, map, status) }
             .launchIn(lifecycleScope)
     }
@@ -358,7 +392,7 @@ class ChatActivity : AppCompatActivity() {
         // The header keeps the bot (never the agent), as the web widget does.
         header.titleText.text = look.title.takeIf { loaded }
             ?: Conferbot.getCustomization()?.headerTitle
-            ?: "Support Chat"
+            ?: t("sdk.header.supportChat")
         // Under the title: the tagline, else "Online" (or the reply time) with the green dot.
         val subtitle: CharSequence? = when {
             !loaded -> null
