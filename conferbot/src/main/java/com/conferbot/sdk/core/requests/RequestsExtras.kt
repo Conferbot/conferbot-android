@@ -61,6 +61,10 @@ class RequestsExtras(
     /** Requests with a team reply not read on this device: the app's badge. */
     val unread: StateFlow<Int> = _unread.asStateFlow()
 
+    private val _seen = MutableStateFlow<Map<String, Long>>(emptyMap())
+    /** When each request was last read on this device, for the home card ("New reply"). */
+    val seen: StateFlow<Map<String, Long>> = _seen.asStateFlow()
+
     private val client = Requests.api(socket, { Requests.who(visitorId(), memory, user()) }, post)
 
     // The portal and the list both hear the server's updates; the socket
@@ -104,6 +108,7 @@ class RequestsExtras(
     private fun save(next: RequestMemory?) {
         next ?: return
         memory = next
+        _seen.value = next.seen
         _unread.value = Requests.unreadCount(_requests.value, memory.seen)
         try {
             store()?.write(Requests.storageKey(botId()), Requests.serializeMemory(next))
@@ -119,6 +124,7 @@ class RequestsExtras(
         loadedFor = bot
         val raw = try { store()?.read(Requests.storageKey(bot)) } catch (e: Exception) { null }
         memory = Requests.parseMemory(raw)
+        _seen.value = memory.seen
         _requests.value = null
         _unread.value = 0
     }
@@ -155,6 +161,9 @@ class RequestsExtras(
 
     /** The chat opening or closing is the app's "home comes back into view" (web card.ts): read again, at most every 15s. */
     fun onChatShown() = refresh()
+
+    /** The home screen came into view (web card.ts): read again, at most every 15s. */
+    fun onHomeShown() = refresh()
 
     /** Open the list, or one request by its id. */
     fun open(requestId: String? = null) {
