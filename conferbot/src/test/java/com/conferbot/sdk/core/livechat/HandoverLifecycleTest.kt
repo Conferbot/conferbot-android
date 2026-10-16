@@ -46,6 +46,8 @@ class HandoverLifecycleTest {
         override fun submitResponse(response: Any) { calls += "submit:$response" }
         override fun handleAgentAccepted(agentName: String) { calls += "accepted:$agentName" }
         override val handoverNodeId: String? get() = if (isAtHandover) "ho" else null
+        var stepData: Map<String, Any?>? = null
+        override val handoverNodeData: Map<String, Any?>? get() = if (isAtHandover) stepData else null
         override fun stop() { calls += "stop" }
     }
 
@@ -77,6 +79,8 @@ class HandoverLifecycleTest {
     private lateinit var clock: HandoverWaitingTest.FakeClock
     private lateinit var life: HandoverLifecycle
     private val signals = mutableListOf<WidgetSignal>()
+    private var agentBot = false
+    private val restoredWaits = mutableListOf<Long?>()
 
     @Before
     fun setUp() {
@@ -84,7 +88,10 @@ class HandoverLifecycleTest {
         flow = FakeFlow()
         host = FakeHost()
         clock = HandoverWaitingTest.FakeClock()
-        life = HandoverLifecycle({ socket }, { flow }, host, clock) { Date(1_000) }
+        life = HandoverLifecycle(
+            { socket }, { flow }, host, clock,
+            isAgentBot = { agentBot }, workspaceId = { "w1" }, onRestoredWait = { restoredWaits += it }
+        ) { Date(1_000) }
         life.setupListeners()
         listOf(HandoverSignals.WAITING_FOR_HUMAN_EVENT, HandoverSignals.HUMAN_JOINED_EVENT, HandoverSignals.WAIT_OVER_EVENT)
             .forEach { name -> life.onWidgetSignal(name) { signals += it } }
@@ -302,5 +309,148 @@ class HandoverLifecycleTest {
         assertThat(leftLines.single().settled).isEqualTo("ended")
         assertThat(flow.calls).containsExactly("stop")
         assertThat(host.live).isFalse()
+    }
+
+    // ---- The AI's inactivity close (#35) ----
+
+    private val inactiveLines get() = host.screen.filterIsInstance<RecordItem.SystemMessage>().filter { it.kind == LiveEvents.INACTIVE_CLOSE }
+
+    @Test
+    fun `an inactivity close pauses - the line and its note, recorded once, the chat stays live`() {
+        host.live = true
+        host.current = Agent(id = "ai-agent-1", name = "Ava")
+        socket.fire("ai-agent-inactive-close", mapOf("chatSessionId" to "s1", "action" to "close"))
+        val line = inactiveLines.single()
+        assertThat(line.paused).isTrue()
+        assertThat(LiveEvents.inactiveCloseLine(line.paused).note).isEqualTo("Send a message to pick up where you left off")
+        val entry = host.saved.values.single()
+        assertThat(entry.id).isEqualTo(line.id)
+        assertThat(entry.type).isEqualTo("ai-agent-inactive-close")
+        assertThat(entry.text).isEqualTo("Chat paused")
+        assertThat(entry.data).containsExactly("action", "close", "paused", true)
+        // The composer goes the live way: the next message brings the AI back.
+        assertThat(host.live).isTrue()
+        assertThat(host.current).isNotNull()
+        assertThat(flow.calls).isEmpty()
+        // Another session's close is not ours.
+        socket.fire("ai-agent-inactive-close", mapOf("chatSessionId" to "other"))
+        assertThat(inactiveLines).hasSize(1)
+    }
+
+    @Test
+    fun `continue_flow on a flow bot - Chat ended, nobody in the chat, the flow goes on from its step, no survey`() {
+        host.live = true
+        host.current = Agent(id = "ai-agent-1", name = "Ava")
+        flow.isAtHandover = true
+        socket.fire("ai-agent-inactive-close", mapOf("chatSessionId" to "s1", "action" to "continue_flow"))
+        assertThat(inactiveLines.single().paused).isFalse()
+        assertThat(LiveEvents.inactiveCloseLine(inactiveLines.single().paused).text).isEqualTo("Chat ended")
+        assertThat(host.saved.values.single().data["paused"]).isEqualTo(false)
+        assertThat(host.live).isFalse()
+        assertThat(host.current).isNull()
+        assertThat(flow.calls).containsExactly("submit:{action=continue}")
+    }
+
+    @Test
+    fun `continue_flow on an agent bot only pauses it`() {
+        agentBot = true
+        host.live = true
+        socket.fire("ai-agent-inactive-close", mapOf("chatSessionId" to "s1", "action" to "continue_flow"))
+        assertThat(inactiveLines.single().paused).isTrue()
+        assertThat(host.live).isTrue()
+        assertThat(flow.calls).isEmpty()
+    }
+
+    @Test
+    fun `an inactivity close ends a wait - the Connecting line settles ended and the nudge is off`() {
+        life.onAgentLeft(escalation)
+        assertThat(life.nudge.pending).isTrue()
+        socket.fire("ai-agent-inactive-close", mapOf("chatSessionId" to "s1"))
+        assertThat(leftLines.single().settled).isEqualTo("ended")
+        assertThat(life.nudge.pending).isFalse()
+        assertThat(signals).contains(WidgetSignal.WaitOver("ended"))
+    }
+
+    // ---- The AI escalation's max wait (#39) ----
+
+    private val timeouts get() = socket.emitted.filter { it.first == "handover-timeout" }
+
+    @Test
+    fun `an AI escalation - handover-timeout at the step's max wait plus 30s, nothing drawn`() {
+        flow.isAtHandover = true
+        flow.stepData = mapOf("maxWaitTime" to 1, "assignmentType" to "auto", "agentAssignmentStrategy" to "round_robin", "assignedAgents" to listOf("u1"))
+        life.onAgentLeft(escalation)
+        val drawn = host.screen.size
+        clock.tick(89_999)
+        assertThat(timeouts).isEmpty()
+        clock.tick(1)
+        assertThat(timeouts.single().second).isEqualTo(
+            mapOf(
+                "chatSessionId" to "s1",
+                "assignmentData" to mapOf("assignmentType" to "auto", "assignmentStrategy" to "round_robin", "assignedAgents" to listOf("u1")),
+                "workspaceId" to "w1"
+            )
+        )
+        assertThat(host.screen).hasSize(drawn)
+    }
+
+    @Test
+    fun `an agent bot's escalation waits on its silent handover step, a max wait of 0 is 2 minutes`() {
+        agentBot = true
+        host.saveEntry(RecordEntry(id = "agent-handover", shape = "human-handover-node", type = "human-handover-node", data = mutableMapOf("maxWaitTime" to 0, "assignmentType" to "auto")))
+        life.onAgentLeft(escalation)
+        clock.tick(149_999)
+        assertThat(timeouts).isEmpty()
+        clock.tick(1)
+        @Suppress("UNCHECKED_CAST")
+        assertThat((timeouts.single().second["assignmentData"] as Map<String, Any?>)["assignmentType"]).isEqualTo("auto")
+    }
+
+    @Test
+    fun `a person's escalation or a person leaving arms nothing`() {
+        life.onAgentLeft(mapOf("reason" to "escalated", "agentDetails" to mapOf("_id" to "u1", "name" to "Sam")))
+        life.onAgentLeft(mapOf("agentDetails" to mapOf("name" to "Sam")))
+        assertThat(life.nudge.pending).isFalse()
+        clock.tick(600_000)
+        assertThat(timeouts).isEmpty()
+    }
+
+    @Test
+    fun `any end of the wait clears it`() {
+        fun armed(end: () -> Unit) {
+            life.onAgentLeft(escalation)
+            assertThat(life.nudge.pending).isTrue()
+            end()
+            assertThat(life.nudge.pending).isFalse()
+        }
+        armed { life.onAccepted(person) }
+        armed { socket.fire("handover-waiting", mapOf("chatSessionId" to "s1")) }
+        armed { socket.fire("no-agents-available") }
+        armed { socket.fire("chat-ended", mapOf("chatSessionId" to "s1")) }
+        armed { life.blocked() }
+        armed { life.leftQueue() }
+        armed { life.reset() }
+        clock.tick(600_000)
+        assertThat(timeouts).isEmpty()
+    }
+
+    // ---- The countdown after a restart (#38) ----
+
+    @Test
+    fun `a restored wait passes on the server's seconds left before it waits again, and arms no nudge`() {
+        socket.answers["live-chat-state"] = mapOf("status" to "waiting", "waitEndsAt" to 66_000L)
+        life.resumeRestored("handover-1")
+        // now() is 1s: 65s left.
+        assertThat(restoredWaits).containsExactly(65L)
+        assertThat(life.nudge.pending).isFalse()
+        clock.tick(600_000)
+        assertThat(timeouts).isEmpty()
+    }
+
+    @Test
+    fun `a restored wait the server keeps no deadline for passes none`() {
+        socket.answers["live-chat-state"] = mapOf("status" to "waiting")
+        life.resumeRestored("handover-1")
+        assertThat(restoredWaits).containsExactly(null)
     }
 }
