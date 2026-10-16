@@ -1,5 +1,6 @@
 package com.conferbot.sdk.core.nodes.handlers
 
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.flow.FlowInputs
 import com.conferbot.sdk.core.flow.FlowInputs.EN
 import com.conferbot.sdk.core.flow.FlowText
@@ -261,7 +262,7 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
     /** Called when no agents are available (a caller outside the step's own listener). */
     fun onNoAgentsAvailable(nodeId: String, nodeData: Map<String, Any?>): NodeResult {
         handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE
-        val fallbackMessage = FlowText.bubbleText(ChatState.resolveVariables(Js.str(nodeData["fallbackMessage"] ?: "No agents available at the moment."), html = true))
+        val fallbackMessage = FlowText.bubbleText(ChatState.resolveVariables(Js.str(nodeData["fallbackMessage"] ?: I18n.t("sdk.flow.noAgentsNow")), html = true))
         ChatState.addToTranscript("bot", fallbackMessage)
         return NodeResult.DisplayUI(
             NodeUIState.HumanHandover(state = NodeUIState.HumanHandover.HandoverState.NO_AGENTS_AVAILABLE, handoverMessage = fallbackMessage, nodeId = nodeId)
@@ -279,7 +280,7 @@ class HumanHandoverNodeHandler : BaseNodeHandler() {
         if (enablePostChatSurvey && postChatQuestions.isNotEmpty()) {
             handoverState[nodeId] = NodeUIState.HumanHandover.HandoverState.POST_CHAT_SURVEY
             nodeDataCache[nodeId] = nodeData
-            val surveyTitle = getString(nodeData, "postChatSurveyTitle", "How was your experience?")
+            val surveyTitle = getString(nodeData, "postChatSurveyTitle", I18n.t("csat.title"))
             val surveyDescription = getString(nodeData, "postChatSurveyDescription", "")
             ChatState.addToTranscript("bot", surveyTitle)
             return NodeResult.DisplayUI(
