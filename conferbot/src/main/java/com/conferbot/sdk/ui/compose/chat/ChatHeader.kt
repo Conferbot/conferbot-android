@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,7 +70,9 @@ fun ChatHeader(
      * reply is unread): shown when given, once the visitor has a request.
      */
     requestsLabel: String? = null,
-    onRequests: (() -> Unit)? = null
+    onRequests: (() -> Unit)? = null,
+    /** Back to the home screen, when the bot has one (web templates/shared.ts #chat_head_back-btn): a ‹ first. */
+    onHome: (() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -91,6 +95,25 @@ fun ChatHeader(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (onHome != null) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(width = 24.dp, height = 40.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Back", onClick = onHome)
+                        .semantics { contentDescription = "Back" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "‹",
+                        style = TextStyle(fontFamily = typography.fontFamily, fontSize = 30.sp, lineHeight = 32.sp),
+                        color = colors.headerText,
+                        modifier = Modifier.offset(y = (-3).dp)
+                    )
+                }
+            }
+
             // The bot's logo (the web shows the logo here, not the avatar),
             // none when the owner hid it. A person joining does not change it.
             val avatarUrl = when {
