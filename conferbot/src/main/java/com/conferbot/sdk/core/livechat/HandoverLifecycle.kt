@@ -31,6 +31,8 @@ interface HandoverFlow {
     fun handleAgentAccepted(agentName: String)
     /** The handover step the flow is on, or null. */
     val handoverNodeId: String? get() = null
+    /** That handover step's data (its maxWaitTime, assignment), or null. */
+    val handoverNodeData: Map<String, Any?>? get() = null
     /** Stop the flow where it is (a blocked visitor). */
     fun stop() {}
 }
@@ -81,12 +83,32 @@ class HandoverLifecycle(
     timer: SignalTimer,
     /** Where a wait for a person begins and ends (the while-you-wait help card). */
     private val waitHooks: WaitHooks? = null,
+    /** The chat is an AI agent bot's (no flow): an inactivity close only pauses it. */
+    private val isAgentBot: () -> Boolean = { false },
+    /** The bot's workspace, for the escalation's handover-timeout. */
+    private val workspaceId: () -> String? = { null },
+    /** A restored wait for a person: the server's seconds left of its max wait (the countdown and the max-wait timer). */
+    private val onRestoredWait: (Long?) -> Unit = {},
     private val now: () -> Date = { Date() }
 ) {
     val bus = SignalBus()
 
     private val connecting = ConnectingSignal(timer, canFire = { host.chatOpen() }) {
         bus.emit(WidgetSignal.WaitingForHuman(offline = false, reason = "busy", backAt = null, emailCaptured = false))
+    }
+
+    // The handover step an AI escalation waits on: the flow's, else the agent
+    // bot's silent one in the record.
+    private fun escalationStep(): Map<String, Any?>? = EscalationWait.handoverData(flow()?.handoverNodeData, host.record())
+
+    /**
+     * After an AI escalates: its step's max wait plus 30s, then the server is
+     * nudged to decide (handover-timeout). Nothing is drawn (web special.ts
+     * _handleAIEscalationWait, handoverWaiting.ts armAIEscalationNudge).
+     */
+    val nudge = EscalationNudge(timer) {
+        val sid = host.sessionId()
+        if (!sid.isNullOrEmpty()) socket()?.emit("handover-timeout", LiveChat.handoverTimeoutPayload(sid, escalationStep(), workspaceId().orEmpty()))
     }
 
     // The queue was left for this wait (our own answer and the room's
@@ -124,6 +146,7 @@ class HandoverLifecycle(
     /** The wait ended without a person: no waiting signal, and cb:wait-over. */
     private fun waitOver(reason: String) {
         connecting.end()
+        nudge.clear()
         waitEnd()
         bus.emit(WidgetSignal.WaitOver(reason))
     }
@@ -154,6 +177,8 @@ class HandoverLifecycle(
         val handover = kind == AgentLeftKind.HANDOVER
         if (handover) {
             queueLeft = false
+            // The AI passed the visitor on: the wait for a person starts again.
+            if (EscalationWait.starts(data)) nudge.arm(escalationStep()?.get("maxWaitTime"))
             connecting.start()
             // Passed on to a person: what may help while they wait (web special.ts agent-left).
             waitStart()
@@ -190,6 +215,7 @@ class HandoverLifecycle(
     fun onAccepted(data: Map<String, Any?>?): AcceptedPlan {
         val plan = HandoverState.acceptedPlan(entries(), data)
         connecting.end()
+        nudge.clear()
         waitEnd()
         settle(plan.outcome)
         if (plan.humanJoined) {
@@ -272,6 +298,7 @@ class HandoverLifecycle(
         s.on("handover-waiting") {
             if (!own(it)) return@on
             connecting.end()
+            nudge.clear()
             waitEnd()
             settle(HandoverOutcome.UNAVAILABLE)
             bus.emit(HandoverSignals.waitingDetail(it))
@@ -296,7 +323,15 @@ class HandoverLifecycle(
                 )
             }
         }
-        s.on("ai-agent-inactive-close") { ended(it) }
+        // The AI let an idle visitor go (web agentListeners.ts, server
+        // aiInactivityHandler.js): "Chat paused" (a message picks it back up)
+        // or, for continue_flow on a flow bot, "Chat ended" and the flow
+        // carries on from its handover step (LiveEvents.inactiveClosePlan).
+        s.on(LiveEvents.INACTIVE_CLOSE) {
+            if (!own(it)) return@on
+            ended(it)
+            inactiveClosed(it)
+        }
         // Left the queue (this device's own leave, or another device of this chat).
         s.on("queue-left") {
             if (!own(it) || it?.get("reason") != "self_service") return@on
@@ -333,14 +368,35 @@ class HandoverLifecycle(
      */
     fun blocked() {
         connecting.end()
+        nudge.clear()
         waitEnd()
         settle(HandoverOutcome.ENDED)
         flow()?.stop()
         host.setLiveMode(false)
     }
 
+    /**
+     * ai-agent-inactive-close: the paused or ended line, on screen and in the
+     * record (once: the chat's own handler records nothing), and for
+     * continue_flow nobody in the chat any more, live mode off and the flow on
+     * from its handover step (the step's next edge, no post-chat survey). A
+     * pause leaves live mode on: the visitor's next message goes the live way
+     * and the server answers ai-agent-resumed.
+     */
+    fun inactiveClosed(data: Map<String, Any?>?) {
+        val agentBot = isAgentBot()
+        val entry = LiveEvents.inactiveCloseEntry(data, agentBot, now().time)
+        host.addItem(RecordItem.SystemMessage(id = entry.id, time = now(), text = entry.text, kind = LiveEvents.INACTIVE_CLOSE, paused = entry.paused))
+        host.saveEntry(RecordEntry(id = entry.id, shape = LiveEvents.INACTIVE_CLOSE, type = LiveEvents.INACTIVE_CLOSE, text = entry.text, data = entry.data.toMutableMap()))
+        if (!LiveEvents.inactiveClosePlan(data, agentBot).continueFlow) return
+        host.setAgent(null)
+        host.setLiveMode(false)
+        flow()?.takeIf { it.isAtHandover }?.submitResponse(mapOf("action" to "continue"))
+    }
+
     private fun ended(data: Map<String, Any?>?) {
         if (!own(data)) return
+        nudge.clear()
         waitEnd()
         val waiting = inWait()
         settle(HandoverOutcome.ENDED)
@@ -385,6 +441,9 @@ class HandoverLifecycle(
                     if (r.status == "waiting") connecting.start()
                 }
                 RestoreStep.WAIT -> {
+                    // The countdown and the max wait go on from where the server is
+                    // (before the step waits again, which starts them).
+                    onRestoredWait(r.remainingSeconds)
                     if (engine != null && handoverNodeId != null) {
                         engine.waitAt(handoverNodeId, NodeUIState.HumanHandover(NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT, nodeId = handoverNodeId))
                     }
@@ -413,6 +472,7 @@ class HandoverLifecycle(
 
     fun reset() {
         connecting.end()
+        nudge.clear()
         queueLeft = false
     }
 
