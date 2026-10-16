@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -294,7 +295,7 @@ internal fun GreetingCard(
                 .size(size.dp)
                 .clip(if (circle != null) CircleShape else RoundedCornerShape(8.dp))
                 .then(if (circle != null) Modifier.background(circle) else Modifier)
-                .semantics { contentDescription = "Dismiss" }
+                .semantics { contentDescription = I18n.t("common.dismiss") }
                 .clickable(role = Role.Button, onClick = onClose),
             contentAlignment = Alignment.Center,
         ) {
@@ -377,7 +378,7 @@ internal fun GreetingCard(
                     Text(shownName, style = baseName, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (showStatus) {
                         Box(Modifier.weight(1f))
-                        Text(statusText ?: "Online", style = baseStatus, modifier = Modifier.padding(end = 18.dp))
+                        Text(statusText ?: I18n.t("status.online"), style = baseStatus, modifier = Modifier.padding(end = 18.dp))
                     }
                 }
             } else {
@@ -392,7 +393,7 @@ internal fun GreetingCard(
                                     Box(Modifier.size(7.dp).pingMotion(gm, ring = false).background(Color(0xFF22C55E), CircleShape))
                                 }
                             }
-                            Text(statusText ?: "Online", style = baseStatus)
+                            Text(statusText ?: I18n.t("status.online"), style = baseStatus)
                         }
                     }
                 }
@@ -553,7 +554,7 @@ internal fun GreetingCard(
                             }
                         }
                         Text(
-                            "Delivered",
+                            I18n.t("receipt.delivered"),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF8E8E93),
@@ -658,7 +659,7 @@ internal fun GreetingCard(
                                 upper = true,
                                 name = TextStyle(fontFamily = GreetFonts.serif, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.44.sp, color = Color(0xFF8A6D4B)),
                                 status = TextStyle(fontFamily = GreetFonts.serif, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic, color = Color(0xFF2B2118), lineHeight = 21.sp),
-                                statusText = "Greetings from ${data.head.name}",
+                                statusText = I18n.t("greeting.from", "name" to data.head.name),
                                 dot = false,
                             )
                             Message(
@@ -792,7 +793,7 @@ internal fun GreetingCard(
                             upper = true,
                             name = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.24.sp, color = Color(0xFF555555)),
                             status = TextStyle(color = Color(0xFF8E8E93)),
-                            statusText = "now",
+                            statusText = I18n.t("sdk.greeting.now"),
                             dot = false,
                         )
                         Message(TextStyle(fontSize = 14.5.sp, lineHeight = 19.6.sp, color = Color(0xFF111111)))
