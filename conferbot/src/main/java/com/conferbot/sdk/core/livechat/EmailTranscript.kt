@@ -1,5 +1,8 @@
 package com.conferbot.sdk.core.livechat
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
+
 /**
  * "Email me this chat" (web ts/chat/emailTranscript.ts, ported from the
  * React Native SDK's src/core/emailTranscript.ts): the visitor gets the
@@ -26,18 +29,18 @@ object EmailTranscript {
 
     fun body(chatSessionId: String, email: String): Map<String, String> = mapOf("chatSessionId" to chatSessionId, "email" to email.trim())
 
-    // The web's English strings (i18n en: chat.menu.emailChat, mailchat.*, form.*).
-    const val MENU = "Email me this chat"
-    const val TITLE = "Email me this chat"
-    const val SUB = "We'll send the whole conversation to your inbox."
-    const val PLACEHOLDER = "you@company.com"
-    const val LABEL = "Your email"
-    const val SEND = "Send"
-    const val SENDING = "Sending…"
-    const val CANCEL = "Cancel"
-    const val CHECK_EMAIL = "Please check the email address."
-    const val SEND_FAILED = "We couldn't send it just now. Please try again."
-    fun sentText(email: String) = "Sent! Check your inbox at $email"
+    // The web's strings (ts/chat/emailTranscript.ts: chat.menu.emailChat, mailchat.*, form.*, common.*), read in the active language.
+    val MENU: String get() = t("chat.menu.emailChat")
+    val TITLE: String get() = t("chat.menu.emailChat")
+    val SUB: String get() = t("mailchat.sub")
+    val PLACEHOLDER: String get() = t("form.emailPlaceholder")
+    val LABEL: String get() = t("form.yourEmail")
+    val SEND: String get() = t("common.send")
+    val SENDING: String get() = t("common.sendingEllipsis")
+    val CANCEL: String get() = t("common.cancel")
+    val CHECK_EMAIL: String get() = t("form.checkEmail")
+    val SEND_FAILED: String get() = t("form.sendFailed")
+    fun sentText(email: String) = t("mailchat.sent", "email" to email)
 
     data class Result(val ok: Boolean, val message: String? = null)
 
@@ -53,6 +56,6 @@ object EmailTranscript {
         return if (ok) Result(true) else Result(false, message)
     }
 
-    /** What the card says when it did not go: the server's words (it words them in English, as the SDK is), else ours. */
-    fun errorText(r: Result?): String = r?.takeIf { !it.ok }?.message ?: SEND_FAILED
+    /** What the card says when it did not go: the server's words (it words them in English, so only in English), else ours. */
+    fun errorText(r: Result?): String = r?.takeIf { !it.ok && I18n.language == I18n.EN }?.message ?: SEND_FAILED
 }
