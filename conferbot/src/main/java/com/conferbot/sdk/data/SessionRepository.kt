@@ -586,6 +586,53 @@ class SessionRepository(context: Context) {
         }
     }
 
+    // ==================== Rewind ====================
+
+    /**
+     * "Edit" on an answer went back to a question: the stored conversation
+     * cut to match (#88), so a restart restores what the server has. The
+     * transcript loses its newest [transcriptDropped] entries (all of them
+     * when negative); the record and the answers become exactly [records] and
+     * [answerVariables], what came after the question gone.
+     */
+    suspend fun rewind(
+        sessionId: String,
+        transcriptDropped: Int,
+        records: List<RecordEntry>,
+        answerVariables: List<AnswerVariable>
+    ) = withContext(Dispatchers.IO) {
+        try {
+            when {
+                transcriptDropped < 0 -> transcriptDao.deleteAllForSession(sessionId)
+                transcriptDropped > 0 -> transcriptDao.deleteNewest(sessionId, transcriptDropped)
+            }
+            recordDao.deleteAllForSession(sessionId)
+            recordDao.insertAll(records.map { entry ->
+                RecordEntity(
+                    sessionId = sessionId,
+                    recordId = entry.id,
+                    shape = entry.shape,
+                    type = entry.type,
+                    text = entry.text,
+                    time = entry.time,
+                    data = if (entry.data.isNotEmpty()) gson.toJson(entry.data) else null
+                )
+            })
+            answerVariableDao.deleteAllForSession(sessionId)
+            answerVariableDao.insertAll(answerVariables.map { variable ->
+                AnswerVariableEntity(
+                    sessionId = sessionId,
+                    nodeId = variable.nodeId,
+                    key = variable.key,
+                    value = variable.value?.let { gson.toJson(it) }
+                )
+            })
+            chatSessionDao.touch(sessionId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save the rewind for session: $sessionId", e)
+        }
+    }
+
     // ==================== Full Session Restore ====================
 
     /**
