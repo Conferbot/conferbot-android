@@ -976,6 +976,10 @@ class NodeFlowEngine internal constructor(
         if (_currentUIState.value is NodeUIState.HumanHandover) _currentUIState.value = null
     }
 
+    /** The handover step the flow is on, or null. */
+    override val handoverNodeId: String?
+        get() = if (isAtHandover) currentNodeId else null
+
     /** Waiting on its handover step (for a person, or after nobody came). */
     override val isAtHandover: Boolean
         get() = currentNodeId?.let { nodes[it]?.type } == NodeTypes.HUMAN_HANDOVER
@@ -1023,7 +1027,7 @@ class NodeFlowEngine internal constructor(
     }
 
     /** Stops the flow where it is: its timers and pending replies do nothing. */
-    fun stop() {
+    override fun stop() {
         moveToken++
         waiting = false
         scope.coroutineContext[Job]?.cancelChildren()
