@@ -125,6 +125,12 @@ class NodeFlowEngine internal constructor(
     val isFlowComplete: StateFlow<Boolean> = _isFlowComplete.asStateFlow()
 
     /**
+     * The chat's flow reached its end (not a sub-flow's return): the
+     * conversation is over (the post-chat rating, then the redirect).
+     */
+    var onFlowEnd: ((reason: String) -> Unit)? = null
+
+    /**
      * Bot lines besides a step's own card (a greeting, an answer, a refused
      * answer's reason, the team's fallback): the chat draws each as a bubble.
      */
@@ -874,6 +880,11 @@ class NodeFlowEngine internal constructor(
         ChatState.chatSessionId?.let { socket?.emit("chat-flow-completed", mapOf("chatSessionId" to it)) }
         trace(FlowTrace.End)
         _isFlowComplete.value = true
+        try {
+            onFlowEnd?.invoke(reason)
+        } catch (e: Exception) {
+            // a listener's error never stops the flow
+        }
     }
 
     private fun trace(event: FlowTrace) {
