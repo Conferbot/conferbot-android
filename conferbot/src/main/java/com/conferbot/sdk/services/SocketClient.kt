@@ -39,7 +39,9 @@ class SocketClient(
     private val botId: String,
     socketUrl: String = Constants.DEFAULT_SOCKET_URL,
     /** The visitor, so the server can refuse one the workspace blocked (web core/socket.ts). */
-    private val visitorId: String? = null
+    private val visitorId: String? = null,
+    /** Makes the socket; a test passes a fake one. */
+    socketFactory: (String, IO.Options) -> Socket = { url, options -> IO.socket(url, options) }
 ) {
     /**
      * The handshake refused this visitor (connect_error "visitor_blocked"):
@@ -63,6 +65,10 @@ class SocketClient(
     // Reconnection listener
     private var reconnectionListener: (() -> Unit)? = null
 
+    /** The room last joined, joined again on every connect (the server forgets it on a disconnect). */
+    private var joinedRoom: Pair<String, Map<String, String>?>? = null
+    private var hasConnected = false
+
     init {
         try {
             val options = IO.Options().apply {
@@ -83,7 +89,7 @@ class SocketClient(
                 )
             }
 
-            socket = IO.socket(socketUrl, options)
+            socket = socketFactory(socketUrl, options)
         } catch (e: URISyntaxException) {
             Log.e(TAG, "Failed to create socket", e)
         }
@@ -140,6 +146,19 @@ class SocketClient(
             _connectionState.value = ConnectionState.CONNECTED
             Log.d(TAG, "Connected")
 
+            // Every connect, the first and each reconnect: back in the chat's
+            // room. A reconnect is a new socket on the server, so the room it
+            // was in is gone and the agent's messages to it would be missed.
+            rejoinRoom()
+
+            // A reconnect: socket.io-client 2.x tells 'reconnect' on the
+            // Manager, not the Socket, so it is told from here (#94).
+            if (hasConnected) {
+                Log.d(TAG, "Reconnected")
+                reconnectionListener?.invoke()
+            }
+            hasConnected = true
+
             // Trigger queue processing on connection
             offlineManager?.processQueue()
         }
@@ -158,23 +177,30 @@ class SocketClient(
             if (com.conferbot.sdk.core.livechat.LiveEvents.isBlockedError(connectErrorMessage(args.firstOrNull()))) onVisitorBlocked?.invoke()
         }
 
-        socket?.on(SocketEvents.RECONNECT) {
-            _isConnected = true
-            _connectionState.value = ConnectionState.CONNECTED
-            Log.d(TAG, "Reconnected")
-
-            // Notify reconnection listener
-            reconnectionListener?.invoke()
-
-            // Process queued messages
-            offlineManager?.processQueue()
-        }
-
-        socket?.on(SocketEvents.RECONNECT_ATTEMPT) {
+        // Reconnecting: on the Manager in socket.io-client 2.x (#94).
+        socket?.io()?.on(io.socket.client.Manager.EVENT_RECONNECT_ATTEMPT) {
             _connectionState.value = ConnectionState.RECONNECTING
             Log.d(TAG, "Reconnecting...")
         }
     }
+
+    /** Join the last joined room again (each connect). */
+    private fun rejoinRoom() {
+        val (chatSessionId, deviceInfo) = joinedRoom ?: return
+        socket?.emit(SocketEvents.JOIN_CHAT_ROOM, joinPayload(chatSessionId, deviceInfo))
+        Log.d(TAG, "Re-joined chat room: $chatSessionId")
+    }
+
+    /** The room join as the web widget sends it, with the visitor (the server records the reconnect). */
+    private fun joinPayload(chatSessionId: String, deviceInfo: Map<String, String>?): JSONObject =
+        JSONObject().apply {
+            put("chatSessionId", chatSessionId)
+            visitorId?.takeIf { it.isNotBlank() }?.let { put("visitorId", it) }
+            put("platform", Constants.PLATFORM_IDENTIFIER)
+            deviceInfo?.let {
+                put("deviceInfo", JSONObject(it))
+            }
+        }
 
     /**
      * Join chat room as visitor with offline queue support
@@ -184,24 +210,14 @@ class SocketClient(
         chatSessionId: String,
         deviceInfo: Map<String, String>? = null
     ) {
-        val data = JSONObject().apply {
-            put("chatSessionId", chatSessionId)
-            put("platform", Constants.PLATFORM_IDENTIFIER)
-            deviceInfo?.let {
-                put("deviceInfo", JSONObject(it))
-            }
-        }
+        // Remembered either way: the next connect joins it (#94).
+        joinedRoom = chatSessionId to deviceInfo
+        val data = joinPayload(chatSessionId, deviceInfo)
 
+        // Offline: the next connect joins it (rejoinRoom), so no queued copy
+        // is sent as well.
         if (socket?.connected() == true) {
             emit(SocketEvents.JOIN_CHAT_ROOM, data)
-        } else if (offlineManager?.isEnabled() == true) {
-            // Queue join request for when we reconnect
-            val payload = mapOf(
-                "chatSessionId" to chatSessionId,
-                "platform" to Constants.PLATFORM_IDENTIFIER,
-                "deviceInfo" to (deviceInfo ?: emptyMap<String, String>())
-            )
-            queueMessage(MessageType.JOIN_CHAT_ROOM, payload, chatSessionId)
         }
     }
 
@@ -237,6 +253,8 @@ class SocketClient(
      * Leave chat room
      */
     fun leaveChatRoom(chatSessionId: String) {
+        // Left: not joined again on the next reconnect.
+        if (joinedRoom?.first == chatSessionId) joinedRoom = null
         val data = JSONObject().apply {
             put("chatSessionId", chatSessionId)
         }
