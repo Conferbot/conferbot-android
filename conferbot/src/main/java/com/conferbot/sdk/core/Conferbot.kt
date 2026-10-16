@@ -456,6 +456,7 @@ object Conferbot {
             },
             // The XML chat draws no cards: there "play" is sent as words.
             canDraw = { waitingCardsShown > 0 },
+            botId = { botId },
             timer = mainTimer,
             post = { fn -> scope.launch { fn() } }
         ).also { w ->
@@ -469,13 +470,18 @@ object Conferbot {
 
     /**
      * A row of the while-you-wait card: an article opens in the chat's help
-     * centre (a page opens in the browser, from the card).
+     * centre while it is on, else it is fetched by id and shown on its own
+     * (`waiting.article`, #75); a page opens in the browser, from the card.
      */
     fun openWaitHelpItem(item: com.conferbot.sdk.core.waiting.WaitArticles.HelpItem) {
         waiting.opened(item)
-        if (item.kind == "article") {
-            val known = waiting.findArticle(item.id)?.get("title") as? String
-            openHelpArticle(item.id, known ?: item.title, fromChat = true)
+        if (item.kind != "article") return
+        val known = waiting.findArticle(item.id)?.get("title") as? String
+        val title = known ?: item.title
+        when (com.conferbot.sdk.core.helpcentre.HelpCentre.waitArticleRoute(_serverCustomizationMap.value, _knowledgeBase.value, item.id)) {
+            com.conferbot.sdk.core.helpcentre.HelpCentre.WaitArticleRoute.HELP_CENTRE -> openHelpArticle(item.id, title, fromChat = true)
+            com.conferbot.sdk.core.helpcentre.HelpCentre.WaitArticleRoute.BY_ID -> waiting.openArticleById(item.id, title)
+            com.conferbot.sdk.core.helpcentre.HelpCentre.WaitArticleRoute.NOWHERE -> {}
         }
     }
 
