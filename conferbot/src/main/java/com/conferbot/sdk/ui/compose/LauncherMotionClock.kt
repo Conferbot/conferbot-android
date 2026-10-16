@@ -22,6 +22,17 @@ internal object LauncherOpened {
 internal class LauncherMotionState {
     var frame by mutableStateOf<List<LauncherMotion.OpFrame?>?>(null)
     var rings by mutableStateOf<List<LauncherMotion.Ring?>>(listOf(null, null))
+    /** An idle or message moment is playing (the attention loop pauses for it). */
+    var inMoment by mutableStateOf(false)
+}
+
+/** The phone's "remove animations" (animator duration scale 0, also the accessibility switch) is the reduced-motion setting. */
+@Composable
+internal fun rememberReducedMotion(): Boolean {
+    val context = LocalContext.current
+    return remember {
+        runCatching { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
+    }
 }
 
 /**
@@ -31,17 +42,25 @@ internal class LauncherMotionState {
  * it is open, after it was opened, for "off", or with animations turned off
  * on the phone. Also the ripple rings: three times after the launcher
  * settles, and once more for a new message.
+ *
+ * While a launcher attention loop moves the button ([holdForAttention]),
+ * the idle moments hold off (they still count) and the three load ripples
+ * give way; a new message's moment and ripple still play.
  */
 @Composable
-internal fun rememberLauncherMotion(iconId: String?, mode: String, chatOpen: Boolean, unreadCount: Int, enabled: Boolean): LauncherMotionState {
+internal fun rememberLauncherMotion(
+    iconId: String?,
+    mode: String,
+    chatOpen: Boolean,
+    unreadCount: Int,
+    enabled: Boolean,
+    holdForAttention: () -> Boolean = { false },
+): LauncherMotionState {
     val state = remember { LauncherMotionState() }
-    val context = LocalContext.current
-    // The phone's "remove animations" (animator scale 0) is the reduced-motion setting.
-    val reduced = remember {
-        runCatching { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
-    }
+    val reduced = rememberReducedMotion()
     val still = !enabled || reduced
     val open by rememberUpdatedState(chatOpen)
+    val hold by rememberUpdatedState(holdForAttention)
     var moment by remember { mutableStateOf<Pair<String, Long>?>(null) }
     var ripple by remember { mutableStateOf<Triple<Long, Double, Int>?>(null) }
     var played by remember { mutableStateOf(0) }
@@ -59,7 +78,8 @@ internal fun rememberLauncherMotion(iconId: String?, mode: String, chatOpen: Boo
             delay(wait)
             if (LauncherOpened.at != 0L && System.currentTimeMillis() - LauncherOpened.at < LauncherMotion.OPENED_REST_MS) break
             played += 1
-            moment = "idle" to System.currentTimeMillis()
+            // A launcher attention is moving the button: this moment holds off (it still counts).
+            if (!hold()) moment = "idle" to System.currentTimeMillis()
         }
     }
 
@@ -81,18 +101,21 @@ internal fun rememberLauncherMotion(iconId: String?, mode: String, chatOpen: Boo
             withFrameMillis { }
             val now = System.currentTimeMillis()
             val m = moment
+            state.inMoment = m != null
             if (m != null) {
                 if (now - m.second < LauncherMotion.MOMENT_MS && !open) {
                     state.frame = LauncherMotion.iconFrame(icon, m.first, (now - m.second) / 1000.0)
                 } else {
                     moment = null
                     state.frame = null
+                    state.inMoment = false
                 }
             }
             val r = ripple
             if (r != null) {
                 val t = (now - r.first) / 1000.0
-                if (open || t > r.second + LauncherMotion.RIPPLE_GAP + LauncherMotion.RIPPLE_DUR * r.third) {
+                // A launcher attention loop takes the place of the three ripples after load.
+                if ((r.third > 1 && hold()) || open || t > r.second + LauncherMotion.RIPPLE_GAP + LauncherMotion.RIPPLE_DUR * r.third) {
                     ripple = null
                     state.rings = listOf(null, null)
                 } else {
