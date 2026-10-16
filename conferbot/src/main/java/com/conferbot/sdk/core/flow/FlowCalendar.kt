@@ -156,6 +156,34 @@ object FlowCalendar {
         return c.timeInMillis
     }
 
+    /**
+     * The slots already taken on a day, as "HH:MM - HH:MM" on the bot's clock
+     * (RN flow/calendar.ts bookedLabels; web displayStep.ts daySlotsFor
+     * `booked`): the bot's bookings (the bot data's calendarBookings) plus any
+     * the node carries itself (data.bookings), for this node only (a booking
+     * with no nodeId counts for every calendar), on this day in the bot's zone.
+     */
+    fun bookedLabels(calendarBookings: List<*>?, nodeId: String?, nodeData: Map<String, Any?>?, dayKey: String, timeZone: String): List<String> {
+        val own = Js.list(nodeData?.get("bookings")).mapNotNull { Js.map(it) }.filter { it["date"] != null && Js.truthy(it["date"]) }
+        return ((calendarBookings ?: emptyList<Any?>()).mapNotNull { Js.map(it) } + own)
+            .filter { b -> b["nodeId"].let { it == null || !Js.truthy(it) || Js.str(it) == nodeId } }
+            .filter { b ->
+                val at = when (val d = b["date"]) {
+                    is Number -> d.toLong()
+                    else -> parseIso(d)
+                }
+                at != null && dayKeyInZone(at, timeZone) == dayKey
+            }
+            .map { Js.str(it["timeSlotSelected"]).trim() }
+    }
+
+    /** Every slot of the day taken (web nodeLogic.ts isDayFullyBooked): the day is not offered. */
+    fun isDayFullyBooked(slots: List<Slot>, booked: List<String>): Boolean {
+        if (slots.isEmpty()) return false
+        val taken = booked.map { it.trim() }.toSet()
+        return slots.all { slotLabel(it) in taken }
+    }
+
     /** The device's own time zone. */
     fun visitorTimeZone(): String = try {
         TimeZone.getDefault().id ?: "UTC"
