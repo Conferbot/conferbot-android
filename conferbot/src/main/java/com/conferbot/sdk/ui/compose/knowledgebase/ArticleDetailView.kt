@@ -1,5 +1,7 @@
 package com.conferbot.sdk.ui.compose.knowledgebase
 
+import com.conferbot.sdk.core.i18n.I18n
+import com.conferbot.sdk.core.i18n.t
 import android.text.Html
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -174,7 +176,7 @@ fun ArticleDetailView(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 bodyFailed -> Text(
-                    text = "This article could not be loaded. Please try again later.",
+                    text = t("kb.loadFailed"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -238,7 +240,7 @@ private fun ArticleDetailTopBar(
             IconButton(onClick = onBackClick) {
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Back"
+                    contentDescription = t("common.back")
                 )
             }
         },
@@ -277,13 +279,13 @@ fun BreadcrumbNavigation(
         ) {
             Icon(
                 imageVector = Icons.Outlined.Home,
-                contentDescription = "Home",
+                contentDescription = t("kb.homeScreen"),
                 tint = primaryColor,
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = "Help",
+                text = t("kb.help"),
                 style = MaterialTheme.typography.labelMedium,
                 color = primaryColor
             )
@@ -374,7 +376,7 @@ private fun ArticleDetailMeta(
             Spacer(modifier = Modifier.width(8.dp))
 
             Text(
-                text = "Updated ${formatDate(date)}",
+                text = t("sdk.kb.updated", "date" to formatDate(date)),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -434,7 +436,7 @@ private fun AuthorSection(
 
             publishedDate?.let { date ->
                 Text(
-                    text = "Published on ${formatDate(date)}",
+                    text = t("sdk.kb.publishedOn", "date" to formatDate(date)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -468,7 +470,7 @@ private fun TableOfContents(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "In this article",
+                    text = t("kb.inArticle"),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -477,7 +479,7 @@ private fun TableOfContents(
 
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    contentDescription = if (isExpanded) t("sdk.kb.collapse") else t("kb.expand"),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
@@ -574,13 +576,13 @@ private fun RatingSection(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Thank you for your feedback!",
+                    text = t("csat.thanks"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text(
-                    text = "Was this article helpful?",
+                    text = t("sdk.kb.wasArticleHelpful"),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
@@ -607,7 +609,7 @@ private fun RatingSection(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Yes")
+                        Text(t("sdk.common.yes"))
                     }
 
                     // No button
@@ -623,7 +625,7 @@ private fun RatingSection(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("No")
+                        Text(t("sdk.common.no"))
                     }
                 }
             }
@@ -643,7 +645,7 @@ private fun RelatedArticlesSection(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Related Articles",
+            text = t("kb.related"),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
@@ -783,6 +785,8 @@ private fun extractHeadings(html: String): List<Heading> {
  * Format date for display
  */
 private fun formatDate(date: Date): String {
-    val format = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    // English as before ("Jan 5, 2026"); other languages in their own way (I18n.locale, nl-BE kept).
+    val format = if (I18n.language == I18n.EN) SimpleDateFormat("MMM d, yyyy", Locale.US)
+    else java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, I18n.locale)
     return format.format(date)
 }
