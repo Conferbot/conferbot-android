@@ -20,8 +20,9 @@ interface RequestsStore {
  *     ([Requests.storageKey]; in memory without a store);
  *   - the list as the home card has it, for the chat menu's item and the
  *     app's badge ([unread]): read when the socket connects, when the chat
- *     opens or closes (at most every 15s), when the portal closes, and when
- *     a request changes while the portal is closed;
+ *     opens or closes (at most every 15s), when the portal closes, when a
+ *     user signs in or out (the last user's list dropped, [onUserChanged]),
+ *     and when a request changes while the portal is closed;
  *   - the portal's screens ([portal], [RequestsPortal]).
  *
  * Nothing is asked for a visitor with no chat on this device and no
@@ -52,6 +53,8 @@ class RequestsExtras(
     private var loadedFor: String? = null
     private var lastLoad = 0L
     private var loading = false
+    // Bumped on each sign-in or sign-out, so a list read for the last user is dropped (#79).
+    private var who = 0
 
     private val _requests = MutableStateFlow<List<RequestSummary>?>(null)
     /** The visitor's requests (newest replies first), null until read. */
@@ -137,13 +140,34 @@ class RequestsExtras(
         if (!connected()) return
         loading = true
         lastLoad = now()
+        val asked = who
         client.list { list ->
             loading = false
-            if (list != null) {
+            // A list asked for the user before a sign-in or sign-out is not shown.
+            if (list != null && asked == who) {
                 _requests.value = Requests.ordered(list, memory.seen)
                 _unread.value = Requests.unreadCount(list, memory.seen)
             }
+            // Someone else now: ask again for them.
+            if (asked != who) refresh(force = true)
         }
+    }
+
+    /**
+     * Someone signed in or out (`Conferbot.identify`): the list read for the
+     * last user is dropped at once (with the portal's screens and drafts),
+     * and read again for this one; an answer still on its way for the last
+     * user is ignored.
+     */
+    fun onUserChanged() {
+        load()
+        who++
+        _requests.value = null
+        _unread.value = 0
+        lastLoad = 0L
+        portal.close()
+        portal.reset()
+        refresh(force = true)
     }
 
     /**
