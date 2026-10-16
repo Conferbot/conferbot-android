@@ -142,4 +142,106 @@ object ReplyTime {
         if (personInChat) return ONLINE
         return headerLine(rt, agentBot, now, locale, tz) ?: ONLINE
     }
+
+    // ------------------------------------------------------------ the home card (web homeLine, homePeople)
+
+    /** The home card's words (web ts/i18n/en.ts reply.*). */
+    object Home {
+        fun typically(phrase: String) = "The team typically replies $phrase"
+        fun teamReplies(phrase: String) = "team replies $phrase"
+        const val ANSWERS_INSTANTLY = "Answers instantly"
+        const val ANSWERS_ALWAYS = "Answers instantly, day or night"
+        const val AWAY = "We're away right now"
+        fun back(whenBack: String) = "back $whenBack"
+        const val OFFLINE = "The team is offline"
+        const val BY_EMAIL = "we'll reply by email"
+        const val OFFLINE_NOW = "The team is offline right now"
+        fun usually(phrase: String) = "Usually replies $phrase"
+        const val USUALLY_INSTANTLY = "Usually replies instantly"
+        fun teamBackAt(whenBack: String) = "Team back $whenBack"
+        const val TEAM_REPLIES_BY_EMAIL = "Team replies by email"
+        const val TEAM_AWAY_RIGHT_NOW = "Team away right now"
+    }
+
+    /** "Online" in the separator the lines use. */
+    const val SEPARATOR = SEP
+
+    private fun live(rt: ReplyTimeInfo?): Boolean = rt != null && rt.mode != "hide"
+    private fun fixedOf(rt: ReplyTimeInfo): String = if (rt.mode == "fixed") rt.text?.trim().orEmpty() else ""
+    private fun phraseOf(rt: ReplyTimeInfo): String = rt.bucket?.let { PHRASES[it] } ?: rt.phrase.orEmpty()
+
+    /**
+     * The "Talk to us" card's line (web replyTime.ts homeLine). A result with
+     * [HomeLine.hide] means take the line away (the owner chose Hide); null
+     * keeps the old line.
+     */
+    fun homeLine(
+        rt: ReplyTimeInfo?,
+        agent: Boolean = false,
+        now: Date = Date(),
+        locale: Locale = Locale.US,
+        tz: TimeZone = TimeZone.getDefault()
+    ): HomeLine? {
+        if (rt != null && rt.mode == "hide") return if (agent) null else HomeLine(hide = true)
+        if (!live(rt) || !rt!!.handover) return null
+        val whenBack = backWhen(rt.backAt, now, locale, tz)
+        val words = fixedOf(rt).ifEmpty { phraseOf(rt) }
+        if (agent) {
+            // The AI answers whatever the hour; say when people are around.
+            if (rt.state == "away") return HomeLine(Home.ANSWERS_INSTANTLY + (if (whenBack.isNotEmpty()) SEP + "team back $whenBack" else ""), ReplyTone.AWAY)
+            if (rt.state == "offline" || words.isEmpty()) return null
+            return HomeLine(Home.ANSWERS_INSTANTLY + SEP + fixedOf(rt).ifEmpty { Home.teamReplies(words) }, ReplyTone.ONLINE)
+        }
+        if (rt.state == "away") return HomeLine(Home.AWAY + (if (whenBack.isNotEmpty()) SEP + Home.back(whenBack) else ""), ReplyTone.AWAY)
+        if (rt.state == "offline") return HomeLine(if (rt.leaveMessage != false) Home.OFFLINE + SEP + Home.BY_EMAIL else Home.OFFLINE_NOW, ReplyTone.AWAY)
+        if (fixedOf(rt).isNotEmpty()) return HomeLine(fixedOf(rt), ReplyTone.ONLINE)
+        return if (words.isNotEmpty()) HomeLine(Home.typically(words), ReplyTone.ONLINE) else null
+    }
+
+    /**
+     * The home card's promise (web replyTime.ts homePeople), read after
+     * "Online" under the bot's name:
+     *
+     * - an AI agent answers whatever the hour: "Answers instantly, day or
+     *   night" (or with when the team replies / is back, from [homeLine]);
+     * - a bot that never hands over (or no data, an older server): "Answers
+     *   instantly, day or night";
+     * - a team that is online: "Usually replies in a few minutes" (or the
+     *   owner's Fixed words);
+     * - a team that is away or offline: "Team back tomorrow 9 AM", else "Team
+     *   replies by email" (or "Team away right now" with leave-a-message off);
+     * - Hide: no words ("").
+     */
+    fun homePeople(
+        rt: ReplyTimeInfo?,
+        agent: Boolean = false,
+        now: Date = Date(),
+        locale: Locale = Locale.US,
+        tz: TimeZone = TimeZone.getDefault()
+    ): ReplyLine {
+        val line = homeLine(rt, agent, now, locale, tz)
+        if (agent) return if (line != null && !line.hide) ReplyLine(line.text, line.tone) else ReplyLine(Home.ANSWERS_ALWAYS, ReplyTone.ONLINE)
+        if (line?.hide == true) return ReplyLine("", ReplyTone.ONLINE)
+        if (!live(rt) || !rt!!.handover) return ReplyLine(Home.ANSWERS_ALWAYS, ReplyTone.ONLINE)
+        if (rt.state == "away" || rt.state == "offline") {
+            val whenBack = backWhen(rt.backAt, now, locale, tz)
+            val text = when {
+                whenBack.isNotEmpty() -> Home.teamBackAt(whenBack)
+                rt.leaveMessage == false -> Home.TEAM_AWAY_RIGHT_NOW
+                else -> Home.TEAM_REPLIES_BY_EMAIL
+            }
+            return ReplyLine(text, ReplyTone.AWAY)
+        }
+        val words = phraseOf(rt)
+        return ReplyLine(fixedOf(rt).ifEmpty { if (words.isNotEmpty()) Home.usually(words) else Home.USUALLY_INSTANTLY }, ReplyTone.ONLINE)
+    }
 }
+
+/** Whether the team is there now (online) or not (away, offline). */
+enum class ReplyTone { ONLINE, AWAY }
+
+/** Who answers and how fast; "" for none (the owner chose Hide). */
+data class ReplyLine(val text: String, val tone: ReplyTone)
+
+/** The home card's line; [hide] takes the line away (the owner chose Hide). */
+data class HomeLine(val text: String = "", val tone: ReplyTone = ReplyTone.ONLINE, val hide: Boolean = false)
