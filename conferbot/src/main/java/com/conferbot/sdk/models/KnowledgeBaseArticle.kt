@@ -1,5 +1,6 @@
 package com.conferbot.sdk.models
 
+import com.conferbot.sdk.core.i18n.t
 import com.google.gson.annotations.SerializedName
 import java.util.Date
 
@@ -79,11 +80,11 @@ data class KnowledgeBaseArticle(
      * Average reading speed: 200 words per minute
      */
     fun calculateReadingTime(): String {
-        readingTime?.let { return if (it == 1) "1 min read" else "$it min read" }
+        readingTime?.let { return t("kb.minRead", "n" to it.coerceAtLeast(1)) }
         val text = (content ?: description ?: "").replace(Regex("<[^>]*>"), "") // Strip HTML tags
         val wordCount = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
         val minutes = (wordCount / 200).coerceAtLeast(1)
-        return if (minutes == 1) "1 min read" else "$minutes min read"
+        return t("kb.minRead", "n" to minutes)
     }
 
     /**
