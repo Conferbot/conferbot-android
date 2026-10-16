@@ -1,5 +1,8 @@
 package com.conferbot.sdk.ui.compose
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -243,7 +246,9 @@ fun ConferBotWidget(
     // The launcher as the web draws it on a phone (core/customization/Launcher).
     val customizationMap by Conferbot.serverCustomizationMap.collectAsState()
     val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
-    val look = remember(customizationMap, screenWidthDp) {
+    // The SDK's own words (the default label, "Open chat") follow the language (core/i18n).
+    val language by I18n.languageFlow.collectAsState()
+    val look = remember(customizationMap, screenWidthDp, language) {
         com.conferbot.sdk.core.customization.Launcher.resolve(customizationMap, screenWidthDp)
     }
     val hasLook = customizationMap.isNotEmpty()
@@ -705,7 +710,12 @@ fun ConferBotWidget(
                             clip = true
                             ambientShadowColor = glowColor
                             spotShadowColor = glowColor
-                        },
+                        }
+                        // "Open chat" / "Close chat" for a button with no words of its own.
+                        .then(
+                            if (showLabel) Modifier
+                            else Modifier.semantics { contentDescription = I18n.t(if (isChatOpen) "launcher.close" else "launcher.open") },
+                        ),
                     shape = fabShape,
                     color = fabColor,
                     contentColor = inkColor,
@@ -742,7 +752,7 @@ fun ConferBotWidget(
                             mascotStyle && !isChatOpen -> Box(Modifier.fillMaxSize())
                             imageUrl != null -> coil.compose.AsyncImage(
                                 model = imageUrl,
-                                contentDescription = "Open chat",
+                                contentDescription = I18n.t(if (isChatOpen) "launcher.close" else "launcher.open"),
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                 modifier = Modifier.size(size * 0.6f).clip(androidx.compose.foundation.shape.CircleShape),
                             )
@@ -750,7 +760,7 @@ fun ConferBotWidget(
                                 // The photo fills the button inside a thin ring of its colour, with an online dot.
                                 coil.compose.AsyncImage(
                                     model = avatarUrl,
-                                    contentDescription = "Open chat",
+                                    contentDescription = I18n.t(if (isChatOpen) "launcher.close" else "launcher.open"),
                                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize().clip(fabShape).background(Color.White),
                                 )
