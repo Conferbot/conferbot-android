@@ -37,8 +37,16 @@ data class IntegrationResult(
 class SocketClient(
     private val apiKey: String,
     private val botId: String,
-    socketUrl: String = Constants.DEFAULT_SOCKET_URL
+    socketUrl: String = Constants.DEFAULT_SOCKET_URL,
+    /** The visitor, so the server can refuse one the workspace blocked (web core/socket.ts). */
+    private val visitorId: String? = null
 ) {
+    /**
+     * The handshake refused this visitor (connect_error "visitor_blocked"):
+     * the workspace blocked them. The chat shows its closed state.
+     */
+    var onVisitorBlocked: (() -> Unit)? = null
+
     private var socket: Socket? = null
     private var _isConnected = false
 
@@ -66,8 +74,8 @@ class SocketClient(
                 timeout = ConferBotNetworkConfig.socketTimeout
                 // The embed-server handshake requires botId in query or auth,
                 // matching the web widget (headers are not read there).
-                query = "botId=$botId"
-                auth = mapOf("botId" to botId)
+                query = handshakeQuery(botId, visitorId)
+                auth = handshakeAuth(botId, visitorId)
                 extraHeaders = mapOf(
                     Constants.HEADER_API_KEY to listOf(apiKey),
                     Constants.HEADER_BOT_ID to listOf(botId),
@@ -146,6 +154,8 @@ class SocketClient(
             _isConnected = false
             _connectionState.value = ConnectionState.DISCONNECTED
             Log.e(TAG, "Connection error: ${args.firstOrNull()}")
+            // Refused at the handshake: the workspace blocked this visitor.
+            if (com.conferbot.sdk.core.livechat.LiveEvents.isBlockedError(connectErrorMessage(args.firstOrNull()))) onVisitorBlocked?.invoke()
         }
 
         socket?.on(SocketEvents.RECONNECT) {
@@ -738,6 +748,25 @@ class SocketClient(
     fun getPendingMessageCount(): Int = offlineManager?.getPendingCount() ?: 0
 
     companion object {
+        /** The handshake's query: the bot, and the visitor when known (the server refuses a blocked one). */
+        fun handshakeQuery(botId: String, visitorId: String?): String =
+            "botId=" + java.net.URLEncoder.encode(botId, "UTF-8") +
+                (visitorId?.takeIf { it.isNotBlank() }?.let { "&visitorId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+
+        fun handshakeAuth(botId: String, visitorId: String?): Map<String, String> =
+            buildMap {
+                put("botId", botId)
+                visitorId?.takeIf { it.isNotBlank() }?.let { put("visitorId", it) }
+            }
+
+        /** A connect_error's message: the server's {message} or the client's exception. */
+        fun connectErrorMessage(arg: Any?): String? = when (arg) {
+            is JSONObject -> arg.optString("message", "").takeIf { it.isNotEmpty() }
+            is Throwable -> arg.message
+            is String -> arg
+            else -> null
+        }
+
         private const val TAG = "ConferBot-Socket"
     }
 }
