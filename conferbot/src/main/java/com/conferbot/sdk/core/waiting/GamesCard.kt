@@ -1,21 +1,23 @@
 package com.conferbot.sdk.core.waiting
 
+import com.conferbot.sdk.core.i18n.t
+import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.livechat.SignalTimer
 import com.conferbot.sdk.core.waiting.GamesLogic.Hand
 import com.conferbot.sdk.core.waiting.WaitingGames.GameMeta
 
-/** The card's words (web i18n/en.ts "games.*"). */
+/** The card's words (web ui.ts, "games.*"), read in the active language. */
 object GamesText {
-    const val CARD = "Games while you wait"
-    const val CLOSE = "Close games"
-    const val PICK = "Pick a game"
-    const val AGAIN = "Play again"
-    const val ANOTHER = "Another game"
-    const val NOT_NOW = "Not now"
-    fun pausedNamed(name: String) = "$name's here!"
-    const val PAUSED_SOMEONE = "Someone's here!"
-    const val PAUSED_SAVED = "Your game is saved - finish it later?"
-    const val RESUME = "Finish my game"
+    val CARD: String get() = t("games.card")
+    val CLOSE: String get() = t("games.close")
+    val PICK: String get() = t("games.pick")
+    val AGAIN: String get() = t("games.again")
+    val ANOTHER: String get() = t("games.another")
+    val NOT_NOW: String get() = t("common.notNow")
+    fun pausedNamed(name: String) = t("games.paused.named", "name" to name)
+    val PAUSED_SOMEONE: String get() = t("games.paused.someone")
+    val PAUSED_SAVED: String get() = t("games.paused.saved")
+    val RESUME: String get() = t("games.paused.resume")
 }
 
 /** A footer button: [key] is notNow, again, another, action or resume. */
@@ -112,7 +114,9 @@ class GamesCard private constructor(
     private val timer: SignalTimer,
     private val now: () -> Long,
     private val settings: WaitingGames.Settings,
-    available: List<GameMeta>
+    available: List<GameMeta>,
+    /** The language the quiz and the scramble are in. */
+    private val lang: String
 ) : OfferCard {
 
     companion object {
@@ -132,17 +136,20 @@ class GamesCard private constructor(
             mode: String = "offer",
             rng: Rng = GamesLogic.random,
             reducedMotion: Boolean = false,
-            lang: String = "en",
+            lang: String = I18n.language,
             onDismiss: () -> Unit = {},
             now: () -> Long = { System.nanoTime() / 1_000_000 }
         ): GamesCard? {
             val settings = WaitingGames.settingsOf(customizations)
             val available = WaitingGames.gamesForLanguage(WaitingGames.GAMES.filter { it.id in settings.games }, lang)
             if (available.isEmpty()) return null
-            return GamesCard(customizations, categories, recentArticles, mode, rng, reducedMotion, onDismiss, timer, now, settings, available)
+            return GamesCard(customizations, categories, recentArticles, mode, rng, reducedMotion, onDismiss, timer, now, settings, available, lang)
         }
 
-        private val RIGHT = listOf("Correct! 🎯", "Spot on! ✨", "Nailed it! 🙌", "Yes! 🎉")
+        private val RIGHT = listOf("games.right.1", "games.right.2", "games.right.3", "games.right.4")
+
+        // German nouns keep their capital (web ui.ts handLower).
+        private fun handLower(h: Hand) = if (I18n.language == "de") h.label else h.label.lowercase(I18n.locale)
     }
 
     private interface Game {
@@ -238,11 +245,11 @@ class GamesCard private constructor(
         var outcome: String? = null
         var shaking = false
         var busy = false
-        fun show() = ctx.meta("You $youScore · $botScore Bot")
+        fun show() = ctx.meta(t("games.rps.score", "you" to youScore, "bot" to botScore))
 
         init {
             show()
-            ctx.status("First to two wins. Pick your hand!")
+            ctx.status(t("games.rps.intro"))
         }
 
         override fun board() = Board.Rps(you, bot, outcome, shaking, busy, GamesLogic.HANDS.map { Board.HandPick(it, it.emoji, it.label) })
@@ -265,14 +272,14 @@ class GamesCard private constructor(
                 if (r == "lose") botScore += 1
                 show()
                 val line = when (r) {
-                    "draw" -> "${mine.label} and ${theirs.label.lowercase()} - a draw!"
-                    "win" -> "${mine.label} beats ${theirs.label.lowercase()} - point to you!"
-                    else -> "${theirs.label} beats ${mine.label.lowercase()} - point to the bot."
+                    "draw" -> t("games.rps.draw", "a" to mine.label, "b" to handLower(theirs))
+                    "win" -> t("games.rps.youPoint", "a" to mine.label, "b" to handLower(theirs))
+                    else -> t("games.rps.botPoint", "a" to theirs.label, "b" to handLower(mine))
                 }
                 val w = GamesLogic.rpsWinner(youScore, botScore)
                 if (w != null) {
                     ctx.finish(
-                        if (w == "you") "$line You win $youScore-$botScore! 🎉" else "$line The bot takes it $botScore-$youScore. Rematch? 🤖",
+                        if (w == "you") "$line ${t("games.rps.youWin", "you" to youScore, "bot" to botScore)}" else "$line ${t("games.rps.botWins", "you" to youScore, "bot" to botScore)}",
                         w == "you"
                     )
                 } else {
@@ -283,7 +290,7 @@ class GamesCard private constructor(
             if (ctx.reduced) reveal()
             else {
                 shaking = true
-                ctx.status("Rock... paper... scissors...")
+                ctx.status(t("games.rps.shake"))
                 ctx.later(900, reveal)
             }
         }
@@ -300,28 +307,28 @@ class GamesCard private constructor(
             over = true
             line = w.line
             when (w.winner) {
-                "X" -> ctx.finish("Three in a row - you beat the bot! 🎉", true)
-                "O" -> ctx.finish("The bot got this one. Rematch? 🤖", false)
-                else -> ctx.finish("A draw - great minds think alike 🤝", false)
+                "X" -> ctx.finish(t("games.ttt.win"), true)
+                "O" -> ctx.finish(t("games.ttt.lose"), false)
+                else -> ctx.finish(t("games.ttt.draw"), false)
             }
             return true
         }
 
         fun botTurn() {
             busy = true
-            ctx.status("The bot is thinking...")
+            ctx.status(t("games.ttt.thinking"))
             ctx.later(if (ctx.reduced) 250 else 550) {
                 val m = GamesLogic.tttBotMove(board, ctx.rng)
                 if (m >= 0) board[m] = "O"
                 busy = false
-                if (!check()) ctx.status("Your move")
+                if (!check()) ctx.status(t("games.ttt.yourMove"))
             }
         }
 
         init {
-            ctx.meta("You ✕ · Bot ◯")
+            ctx.meta(t("games.ttt.meta"))
             // Turns alternate between games: the bot opens every second one.
-            if (ctx.plays % 2 == 1) botTurn() else ctx.status("You go first - tap a square")
+            if (ctx.plays % 2 == 1) botTurn() else ctx.status(t("games.ttt.youFirst"))
         }
 
         override fun board() = Board.Ttt(board.toList(), line.toList(), over, busy)
@@ -341,12 +348,12 @@ class GamesCard private constructor(
 
         fun paint() {
             val pairs = s.cards.count { it.matched } / 2
-            ctx.meta("Moves ${s.moves} · Pairs $pairs/6")
+            ctx.meta(t("games.memory.meta", "moves" to s.moves, "pairs" to pairs))
         }
 
         init {
             paint()
-            ctx.status("Find all six pairs")
+            ctx.status(t("games.memory.intro"))
         }
 
         override fun board() = Board.Memory(
@@ -363,13 +370,13 @@ class GamesCard private constructor(
             paint()
             when (r.result) {
                 "match" -> {
-                    ctx.status("A pair! ✨")
+                    ctx.status(t("games.memory.pair"))
                     // The pair just made (the card tapped and its twin).
                     val face = s.cards.getOrNull(a.i)?.face
                     pop = s.cards.indices.filter { s.cards[it].face == face }
                 }
                 "miss" -> {
-                    ctx.status("Not a pair")
+                    ctx.status(t("games.memory.noPair"))
                     waiting = true
                     ctx.later(850) {
                         s = GamesLogic.memoryHide(s)
@@ -377,7 +384,7 @@ class GamesCard private constructor(
                         paint()
                     }
                 }
-                "done" -> ctx.finish("All pairs in ${s.moves} moves! ${"⭐".repeat(GamesLogic.memoryStars(s.moves))}", true)
+                "done" -> ctx.finish("${t("games.memory.done", "moves" to s.moves)} ${"⭐".repeat(GamesLogic.memoryStars(s.moves))}", true)
             }
         }
     }
@@ -390,7 +397,7 @@ class GamesCard private constructor(
         var score = 0
         var picked: Int? = null
         var shown = 0
-        fun meta() = ctx.meta("${shown + 1} of ${rounds.size} · $score right")
+        fun meta() = ctx.meta(t("games.choice.meta", "n" to shown + 1, "total" to rounds.size, "score" to score))
         fun showRound() {
             shown = at
             picked = null
@@ -415,7 +422,7 @@ class GamesCard private constructor(
             if (right) score += 1
             meta()
             if (right) ctx.cheer()
-            val fb = if (right) RIGHT[Math.floor(ctx.rng() * RIGHT.size).toInt() % RIGHT.size] else "Not quite - it's ${r.options[r.answer]}"
+            val fb = if (right) t(RIGHT[Math.floor(ctx.rng() * RIGHT.size).toInt() % RIGHT.size]) else t("games.choice.wrong", "answer" to r.options[r.answer])
             at += 1
             if (at >= rounds.size) {
                 val (text, win) = summary(score, rounds.size)
@@ -423,34 +430,34 @@ class GamesCard private constructor(
                 return
             }
             ctx.status(fb)
-            ctx.action(if (at == rounds.size - 1) "Last one →" else "Next →") { showRound() }
+            ctx.action(if (at == rounds.size - 1) t("games.choice.last") else t("games.choice.next")) { showRound() }
         }
     }
 
     private fun quiz(ctx: Ctx): Game {
         val kb = if (ctx.c?.get("enableKnowledgeBase") == true) GamesLogic.quizFromArticles(ctx.categories, ctx.recent, ctx.rng) else emptyList()
-        val qs = GamesLogic.buildQuiz(GamesLogic.TRIVIA, kb, ctx.rng)
-        ctx.status(if (kb.isNotEmpty()) "Three questions - some about our help centre" else "Three quick questions")
+        val qs = GamesLogic.buildQuiz(GamesLogic.triviaFor(lang), kb, ctx.rng)
+        ctx.status(if (kb.isNotEmpty()) t("games.quiz.introKb") else t("games.quiz.intro"))
         return choiceRounds(
             ctx, "quiz",
-            qs.map { Round(it.q, null, if (it.source == "kb") "From our help centre" else null, it.options, it.answer) }
-        ) { score, total -> "$score out of $total. ${GamesLogic.quizVerdict(score, total)}" to (score == total) }
+            qs.map { Round(it.q, null, if (it.source == "kb") t("games.quiz.fromKb") else null, it.options, it.answer) }
+        ) { score, total -> "${t("games.quiz.score", "score" to score, "total" to total)} ${GamesLogic.quizVerdict(score, total)}" to (score == total) }
     }
 
     private fun emoji(ctx: Ctx): Game {
         val picked = GamesLogic.shuffle(GamesLogic.RIDDLES, ctx.rng).take(3)
-        ctx.status("What phrase do the emoji spell?")
+        ctx.status(t("games.emoji.intro"))
         return choiceRounds(
             ctx, "emoji",
-            picked.map { r -> GamesLogic.riddleOptions(r, ctx.rng).let { (options, answer) -> Round("What's the phrase?", r.e, null, options, answer) } }
-        ) { score, total -> "$score of $total riddles solved. ${GamesLogic.quizVerdict(score, total)}" to (score == total) }
+            picked.map { r -> GamesLogic.riddleOptions(r, ctx.rng).let { (options, answer) -> Round(t("games.emoji.q"), r.e, null, options, answer) } }
+        ) { score, total -> "${t("games.emoji.score", "score" to score, "total" to total)} ${GamesLogic.quizVerdict(score, total)}" to (score == total) }
     }
 
     private fun reaction(ctx: Ctx): Game = object : Game {
         val times = mutableListOf<Long>()
         var state = "idle"
         var big = "⚡"
-        var line = "Tap to start"
+        var line = t("games.reaction.start")
         var goAt = 0L
         var handle: Any? = null
         fun set(s: String, e: String, text: String) {
@@ -460,17 +467,17 @@ class GamesCard private constructor(
         }
 
         init {
-            ctx.meta("Round 1 of $REACTION_ROUNDS")
-            ctx.status("When the pad turns green, tap as fast as you can")
+            ctx.meta(t("games.reaction.round", "n" to 1, "total" to REACTION_ROUNDS))
+            ctx.status(t("games.reaction.intro"))
         }
 
         fun start() {
-            set("wait", "👀", "Wait for green...")
-            ctx.meta("Round ${times.size + 1} of $REACTION_ROUNDS")
+            set("wait", "👀", t("games.reaction.wait"))
+            ctx.meta(t("games.reaction.round", "n" to times.size + 1, "total" to REACTION_ROUNDS))
             handle = ctx.timer(GamesLogic.reactionDelay(ctx.rng)) {
                 handle = null
                 goAt = ctx.now()
-                set("go", "🟢", "Tap now!")
+                set("go", "🟢", t("games.reaction.go"))
             }
         }
 
@@ -484,26 +491,26 @@ class GamesCard private constructor(
                 "wait" -> {
                     handle?.let(ctx::clear)
                     handle = null
-                    set("between", "🙈", "Too soon! Tap to try again")
-                    ctx.status("Too soon - wait for green")
+                    set("between", "🙈", t("games.reaction.tooSoon"))
+                    ctx.status(t("games.reaction.tooSoonHint"))
                 }
                 "go" -> {
                     val ms = ctx.now() - goAt
                     if (!GamesLogic.reactionCounts(ms)) {
-                        set("between", "🙈", "A lucky guess! Tap to try again")
-                        ctx.status("Too quick to be real - wait until you see green")
+                        set("between", "🙈", t("games.reaction.lucky"))
+                        ctx.status(t("games.reaction.luckyHint"))
                         return
                     }
                     times.add(ms)
                     if (times.size >= REACTION_ROUNDS) {
                         val avg = GamesLogic.average(times)
-                        set("done", "🏁", "$avg ms average")
+                        set("done", "🏁", t("sdk.games.reactionAvg", "ms" to avg))
                         ctx.meta(times.joinToString(" · ") + " ms")
-                        ctx.finish("${GamesLogic.reactionVerdict(avg)} - $avg ms on average.", avg < 350)
+                        ctx.finish("${GamesLogic.reactionVerdict(avg)} - ${t("games.reaction.avg", "ms" to avg)}", avg < 350)
                         return
                     }
-                    set("between", "⏱️", "$ms ms - tap for the next round")
-                    ctx.status("$ms milliseconds")
+                    set("between", "⏱️", t("games.reaction.next", "ms" to ms))
+                    ctx.status(t("games.reaction.ms", "ms" to ms))
                 }
             }
         }
@@ -511,12 +518,12 @@ class GamesCard private constructor(
         override fun pause() {
             handle?.let(ctx::clear)
             handle = null
-            if (state == "wait" || state == "go") set("between", "⏸️", "Tap to carry on")
+            if (state == "wait" || state == "go") set("between", "⏸️", t("games.reaction.resume"))
         }
     }
 
     private fun scramble(ctx: Ctx): Game = object : Game {
-        val words = GamesLogic.shuffle(GamesLogic.WORDS, ctx.rng).take(SCRAMBLE_ROUNDS)
+        val words = GamesLogic.shuffle(GamesLogic.wordsFor(lang), ctx.rng).take(SCRAMBLE_ROUNDS)
         var at = 0
         var solved = 0
         var letters: List<String> = emptyList()
@@ -534,16 +541,16 @@ class GamesCard private constructor(
             placed = mutableListOf()
             isSolved = false
             revealed = false
-            ctx.meta("Word ${at + 1} of $SCRAMBLE_ROUNDS · $solved solved")
+            ctx.meta(t("games.scramble.meta", "n" to at + 1, "total" to SCRAMBLE_ROUNDS, "solved" to solved))
         }
 
         fun next(msg: String, win: Boolean) {
             at += 1
             if (win) solved += 1
-            ctx.meta("Word ${minOf(at + 1, SCRAMBLE_ROUNDS)} of $SCRAMBLE_ROUNDS · $solved solved")
+            ctx.meta(t("games.scramble.meta", "n" to minOf(at + 1, SCRAMBLE_ROUNDS), "total" to SCRAMBLE_ROUNDS, "solved" to solved))
             if (at >= SCRAMBLE_ROUNDS) {
-                val verdict = if (solved == SCRAMBLE_ROUNDS) "Word wizard! 🧙" else if (solved > 0) GamesLogic.Verdict.NICE else "Tricky ones! 🙈"
-                ctx.finish("$msg You solved $solved of $SCRAMBLE_ROUNDS. $verdict", solved == SCRAMBLE_ROUNDS)
+                val verdict = if (solved == SCRAMBLE_ROUNDS) t("games.scramble.verdict.all") else if (solved > 0) GamesLogic.Verdict.NICE else t("games.scramble.verdict.none")
+                ctx.finish("$msg ${t("games.scramble.score", "solved" to solved, "total" to SCRAMBLE_ROUNDS)} $verdict", solved == SCRAMBLE_ROUNDS)
                 return
             }
             ctx.status(msg)
@@ -556,10 +563,10 @@ class GamesCard private constructor(
             if (GamesLogic.scrambleSolved(guess, word)) {
                 isSolved = true
                 ctx.cheer()
-                next("$word - got it! 🎉", true)
+                next(t("games.scramble.gotIt", "word" to word), true)
             } else {
                 nope += 1
-                ctx.status("Not quite - tap letters to take them back")
+                ctx.status(t("games.scramble.wrong"))
             }
         }
 
@@ -571,11 +578,11 @@ class GamesCard private constructor(
 
         init {
             // The web's intro says "or just type": a phone has no keys to type on.
-            ctx.status("Tap the letters in order")
+            ctx.status(t("sdk.games.scrambleIntro"))
             round()
         }
 
-        override fun board() = Board.Scramble(hint, letters.toList(), placed.toList(), isSolved, revealed, nope, if (at == SCRAMBLE_ROUNDS - 1) "Reveal" else "Skip")
+        override fun board() = Board.Scramble(hint, letters.toList(), placed.toList(), isSolved, revealed, nope, if (at == SCRAMBLE_ROUNDS - 1) t("games.scramble.reveal") else t("common.skip"))
 
         override fun input(a: GameInput) {
             when (a) {
@@ -600,7 +607,7 @@ class GamesCard private constructor(
                     revealed = true
                     placed = mutableListOf()
                     word.forEach { ch -> placed.add(letters.indices.firstOrNull { j -> letters[j] == ch.toString() && j !in placed } ?: -1) }
-                    next("It was $word.", false)
+                    next(t("games.scramble.itWas", "word" to word), false)
                 }
                 else -> {}
             }
@@ -654,7 +661,7 @@ class GamesCard private constructor(
         patch {
             copy(
                 view = "menu", settled = false, closable = true, game = null, board = null, titleEmoji = "",
-                title = if (first && mode != "menu") settings.offerText else GamesText.PICK,
+                title = if (first && mode != "menu") WaitingGames.offerLine(settings.offerText) else GamesText.PICK,
                 meta = "", status = "", result = null,
                 foot = listOf(FootButton("notNow", GamesText.NOT_NOW, false))
             )
