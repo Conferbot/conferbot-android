@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.agent
 
+import com.conferbot.sdk.core.i18n.t
+
 /** A visitor's vote on one AI answer: a No may carry a reason and a comment. */
 data class AnswerFeedback(val helpful: Boolean, val reason: String? = null, val comment: String? = null)
 
@@ -27,23 +29,26 @@ object Helpful {
 
     enum class View { ASK, THANKS, DOWN, RATED }
 
-    /** The reasons and their words (web FEEDBACK_REASONS, i18n en). */
-    val REASONS = listOf("wrong" to "Wrong", "outdated" to "Outdated", "unanswered" to "Didn't answer", "other" to "Other")
+    /** The reasons and their words, read in the active language (web FEEDBACK_REASONS, i18n helpful.reason.*). */
+    val REASONS: List<Pair<String, String>>
+        get() = listOf("wrong", "outdated", "unanswered", "other").map { it to t("helpful.reason.$it") }
 
-    // The web's English strings (ts/i18n/en.ts helpful.*).
-    const val ASK = "Helpful?"
-    const val YES = "Yes, helpful"
-    const val NO = "No, not helpful"
-    const val RATED_UP = "Helpful"
-    const val RATED_DOWN = "Not helpful"
-    const val THANKS = "Thanks for letting us know!"
-    const val SORRY = "Sorry about that. What went wrong?"
-    const val COMMENT = "Add a comment (optional)"
-    const val SEND_FEEDBACK = "Send feedback"
-    const val RETRY = "Ask another way"
-    const val THANKS_COMMENT = "Thanks, that helps us improve."
-    const val TALK_TO_PERSON = "Talk to a person"
-    const val TALK_TO_PERSON_ASK = "I'd like to talk to a person, please."
+    // The web's strings (ts/i18n helpful.*, chat.talkToPerson*), read in the active language.
+    val ASK: String get() = t("helpful.ask")
+    val GROUP_LABEL: String get() = t("helpful.groupLabel")
+    val YES: String get() = t("helpful.yes")
+    val NO: String get() = t("helpful.no")
+    val RATED_UP: String get() = t("helpful.rated.up")
+    val RATED_DOWN: String get() = t("helpful.rated.down")
+    val THANKS: String get() = t("helpful.thanks")
+    val SORRY: String get() = t("helpful.sorry")
+    val WHAT_WENT_WRONG: String get() = t("helpful.whatWentWrong")
+    val COMMENT: String get() = t("helpful.comment")
+    val SEND_FEEDBACK: String get() = t("helpful.sendFeedback")
+    val RETRY: String get() = t("helpful.retry")
+    val THANKS_COMMENT: String get() = t("helpful.thanksComment")
+    val TALK_TO_PERSON: String get() = t("chat.talkToPerson")
+    val TALK_TO_PERSON_ASK: String get() = t("chat.talkToPersonAsk")
 
     /** How long "Thanks for letting us know!" shows before the rated line (web: 1800 + 350 ms fade). */
     const val THANKS_MS = 1800L
