@@ -2,7 +2,6 @@ package com.conferbot.sdk.ui.compose.knowledgebase
 
 import com.conferbot.sdk.core.i18n.I18n
 import com.conferbot.sdk.core.i18n.t
-import android.text.Html
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -171,8 +170,9 @@ fun ArticleDetailView(
             // Article content: the body is fetched on open (get-kb-article)
             val body = article.content
             when {
-                body != null -> HtmlContent(
+                body != null -> ArticleBody(
                     html = body,
+                    linkColor = primaryColor,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 bodyFailed -> Text(
@@ -520,27 +520,6 @@ private fun TableOfContents(
             }
         }
     }
-}
-
-/**
- * HTML content renderer
- */
-@Composable
-private fun HtmlContent(
-    html: String,
-    modifier: Modifier = Modifier
-) {
-    // Convert HTML to styled text
-    val spannedText = remember(html) {
-        Html.fromHtml(html, Html.FROM_HTML_MODE_COMPACT)
-    }
-
-    Text(
-        text = spannedText.toString(),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier
-    )
 }
 
 /**
