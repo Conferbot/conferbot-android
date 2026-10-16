@@ -41,7 +41,9 @@ import java.util.*
 fun MessageBubble(
     message: RecordItem,
     modifier: Modifier = Modifier,
-    animate: Boolean = true
+    animate: Boolean = true,
+    /** Drawn over the visitor's bubble (the bot's tapback, a burst; core/delight). */
+    overlay: (@Composable BoxScope.() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val animationDuration = if (animate && theme.animations.enabled) {
@@ -49,10 +51,10 @@ fun MessageBubble(
     } else 0
 
     when (message) {
-        is RecordItem.UserMessage -> UserMessageBubble(message, modifier, animationDuration)
+        is RecordItem.UserMessage -> UserMessageBubble(message, modifier, animationDuration, overlay)
         is RecordItem.UserInputResponse -> UserMessageBubble(
             RecordItem.UserMessage(id = message.id, time = message.time, text = message.text),
-            modifier, animationDuration
+            modifier, animationDuration, overlay
         )
         is RecordItem.UserLiveMessage -> UserMessageBubble(
             RecordItem.UserMessage(id = message.id, time = message.time, text = message.text),
@@ -103,7 +105,8 @@ fun MessageBubble(
 fun UserMessageBubble(
     message: RecordItem.UserMessage,
     modifier: Modifier = Modifier,
-    animationDuration: Int = 0
+    animationDuration: Int = 0,
+    overlay: (@Composable BoxScope.() -> Unit)? = null
 ) {
     val theme = ConferbotThemeAmbient.current
     val colors = theme.colors
@@ -126,6 +129,7 @@ fun UserMessageBubble(
             modifier = modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
         ) {
+            Box {
             Column(
                 modifier = Modifier
                     .widthIn(max = spacing.maxBubbleWidth)
@@ -150,6 +154,8 @@ fun UserMessageBubble(
                     color = colors.userBubbleText.copy(alpha = 0.6f),
                     style = TextStyle(fontFamily = typography.fontFamily, fontSize = typography.timestampSize)
                 )
+            }
+            overlay?.invoke(this)
             }
         }
     }
