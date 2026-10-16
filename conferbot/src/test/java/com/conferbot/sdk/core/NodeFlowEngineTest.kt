@@ -156,4 +156,43 @@ class NodeFlowEngineTest {
         job.cancel()
         assertThat(lines.map { (it as NodeUIState.Message).text }).containsExactly("Nice to meet you, Ana")
     }
+
+    @Test
+    fun `the flow's end tells the chat once, a sub-flow's path end does not`() {
+        val ends = mutableListOf<String>()
+        engine.onFlowEnd = { ends.add(it) }
+        // A sub-flow whose path just ends returns to Run sub-flow: not the end.
+        run(
+            listOf(
+                node("w", "welcome-node", mapOf("text" to "Hi")),
+                node("run", "run-subflow-node", mapOf("subflowId" to "sf", "inputs" to emptyList<Any>(), "outputs" to emptyList<Any>())),
+                node("back", "message-node", mapOf("text" to "back")),
+                node("sf", "subflow-node", mapOf("name" to "Inner")),
+                node("in", "message-node", mapOf("text" to "inside"))
+            ),
+            listOf(edge("w", "source", "run"), edge("run", "source", "back"), edge("sf", "source", "in"))
+        )
+        assertThat(entered()).containsExactly("w", "run", "sf", "in", "back").inOrder()
+        assertThat(ends).hasSize(1)
+        assertThat(engine.isEnded).isTrue()
+    }
+
+    @Test
+    fun `a step waiting for the visitor is not the end`() {
+        val ends = mutableListOf<String>()
+        engine.onFlowEnd = { ends.add(it) }
+        run(listOf(node("w", "welcome-node", mapOf("text" to "Hi")), node("n", "ask-name-node", mapOf("questionText" to "Name?", "answerVariable" to "name"))), listOf(edge("w", "source", "n")))
+        assertThat(ends).isEmpty()
+        engine.submitResponse("ana")
+        clock.settle()
+        assertThat(ends).hasSize(1)
+    }
+
+    @Test
+    fun `a listener's error never stops the flow`() {
+        engine.onFlowEnd = { throw IllegalStateException("x") }
+        run(listOf(node("w", "welcome-node", mapOf("text" to "Hi"))), emptyList())
+        assertThat(engine.isEnded).isTrue()
+        assertThat(engine.isFlowComplete.value).isTrue()
+    }
 }
