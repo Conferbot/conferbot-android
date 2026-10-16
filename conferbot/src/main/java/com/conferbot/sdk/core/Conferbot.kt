@@ -2506,15 +2506,18 @@ object Conferbot {
     }
 
     /**
-     * Identify current user
+     * Sign the app's user in, or out with `null` (a shared device: the next
+     * person must not see the last one's requests or name). Call it on the
+     * main thread.
      */
-    fun identify(user: ConferBotUser) {
+    fun identify(user: ConferBotUser?) {
         this.user = user
-        ChatState.visitorContext = user.toVisitorContext()
-        // Their name in the owner's texts ("Hi {{first_name|there}}").
+        ChatState.visitorContext = user?.toVisitorContext()
+        // Their name in the owner's texts ("Hi {{first_name|there}}"), or the fallback once signed out.
         if (rawCustomizationJson != null) applyLook()
-        // Signed in: their verified requests from any device.
-        if (_isInitialized.value) requests.onConnected()
+        // The last user's requests go at once; a list still on its way for
+        // them is ignored, and the new one's is read (a hash: from any device, #79).
+        if (_isInitialized.value) requests.onUserChanged()
     }
 
     /**
