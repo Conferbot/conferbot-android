@@ -135,7 +135,17 @@ data class ConferBotConfig(
      * `widgetLanguage` setting; a value here wins over it, as the web's
      * host-page customizations do.
      */
-    val widgetLanguage: String? = null
+    val widgetLanguage: String? = null,
+    /**
+     * The owner's post-chat redirect (Customize > Conversations > Post-chat
+     * redirect), asked first once a conversation ended and its rating is
+     * done: return true when the app handled the URL (or wants none), and
+     * the SDK shows no countdown. Anything else: "Taking you to example.com
+     * in 10s" with Cancel, then the system browser.
+     */
+    val onPostChatRedirect: ((url: String) -> Boolean)? = null,
+    /** Never follow the owner's post-chat redirect. */
+    val disablePostChatRedirect: Boolean = false
 )
 
 /**
