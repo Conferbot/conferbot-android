@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.chat
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -53,7 +54,7 @@ fun ErrorBanner(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss",
+                    contentDescription = I18n.t("common.dismiss"),
                     tint = colors.error
                 )
             }
@@ -79,7 +80,7 @@ fun ConnectionStatusBanner(modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "Reconnecting...",
+            text = I18n.t("sdk.chat.reconnecting"),
             color = colors.onPrimary,
             style = TextStyle(
                 fontFamily = typography.fontFamily,
@@ -122,9 +123,9 @@ fun OfflineStatusBanner(
             Spacer(modifier = Modifier.width(spacing.sm))
             Text(
                 text = if (pendingMessageCount > 0)
-                    "You're offline. $pendingMessageCount message${if (pendingMessageCount > 1) "s" else ""} will be sent when you reconnect."
+                    I18n.tPlural("sdk.offline.willSend", pendingMessageCount)
                 else
-                    "You're offline. Messages will be sent when you reconnect.",
+                    I18n.t("sdk.offline.messagesWillSend"),
                 color = colors.onPrimary,
                 style = TextStyle(
                     fontFamily = typography.fontFamily,
@@ -166,7 +167,7 @@ fun SyncingQueueBanner(
             )
             Spacer(modifier = Modifier.width(spacing.sm))
             Text(
-                text = "Sending $pendingCount queued message${if (pendingCount > 1) "s" else ""}...",
+                text = I18n.tPlural("sdk.offline.sendingQueued", pendingCount),
                 color = colors.onPrimary,
                 style = TextStyle(
                     fontFamily = typography.fontFamily,
