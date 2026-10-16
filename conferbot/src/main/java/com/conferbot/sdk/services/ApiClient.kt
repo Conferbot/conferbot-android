@@ -9,6 +9,10 @@ import com.conferbot.sdk.utils.Constants
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import com.conferbot.sdk.notifications.PushContract
+import com.conferbot.sdk.notifications.PushRegisterError
+import com.conferbot.sdk.notifications.PushRegisterResult
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -53,10 +57,16 @@ interface ConferBotApiService {
         @Body body: Map<String, String>
     ): Response<Map<String, @JvmSuppressWildcards Any?>>
 
-    @POST("push/register")
-    suspend fun registerPushToken(
+    /** embed-server #189 (docs/mobile-push.md); the bot is the X-Bot-ID header's. */
+    @POST(PushContract.REGISTER_PATH)
+    suspend fun pushRegister(
+        @Body body: Map<String, @JvmSuppressWildcards Any>
+    ): Response<Map<String, @JvmSuppressWildcards Any?>>
+
+    @POST(PushContract.UNREGISTER_PATH)
+    suspend fun pushUnregister(
         @Body body: Map<String, String>
-    ): Response<ApiResponse<Unit>>
+    ): Response<Map<String, @JvmSuppressWildcards Any?>>
 }
 
 /**
@@ -66,7 +76,9 @@ class ApiClient(
     private val apiKey: String,
     private val botId: String,
     baseUrl: String = Constants.DEFAULT_API_BASE_URL,
-    enableLogging: Boolean = false
+    enableLogging: Boolean = false,
+    /** Tests only: answers in place of the network (the headers are already set). */
+    testInterceptor: Interceptor? = null
 ) {
     private val gson: Gson = GsonBuilder()
         .registerTypeAdapter(RecordItem::class.java, RecordItemDeserializer())
@@ -89,6 +101,7 @@ class ApiClient(
             chain.proceed(request)
         }
         .apply {
+            testInterceptor?.let { addInterceptor(it) }
             if (enableLogging) {
                 addInterceptor(
                     HttpLoggingInterceptor().apply {
@@ -218,35 +231,34 @@ class ApiClient(
     }
 
     /**
-     * Register push notification token
+     * Register a push token with a conversation (POST {mobile base}/push/register
+     * `{ token, chatSessionId, tokenType, deviceInfo? }`, no visitorId: the
+     * server takes the conversation's). Never throws: a failure is the
+     * server's error code, NETWORK when it could not be reached.
      */
-    suspend fun registerPushToken(
-        token: String,
-        chatSessionId: String
-    ): ApiResponse<Unit> {
+    suspend fun registerPush(body: Map<String, Any>): PushRegisterResult {
         return try {
-            val body = mapOf(
-                "token" to token,
-                "chatSessionId" to chatSessionId,
-                "platform" to Constants.PLATFORM_IDENTIFIER
-            )
-
-            val response = api.registerPushToken(body)
-            if (response.isSuccessful) {
-                ApiResponse(success = true)
-            } else {
-                ApiResponse(
-                    success = false,
-                    error = "Failed to register push token: ${response.code()}"
-                )
-            }
+            val response = api.pushRegister(body)
+            PushContract.registerResult(response.code(), bodyOf(response))
         } catch (e: Exception) {
-            ApiResponse(
-                success = false,
-                error = e.message ?: "Unknown error"
-            )
+            PushRegisterResult(false, PushRegisterError.NETWORK)
         }
     }
+
+    /** Stop pushes to this token (POST {mobile base}/push/unregister `{ token }`). Never throws. */
+    suspend fun unregisterPush(token: String): Boolean {
+        return try {
+            val response = api.pushUnregister(PushContract.unregisterBody(token))
+            response.isSuccessful && bodyOf(response)?.get("success") != false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun bodyOf(response: Response<Map<String, Any?>>): Map<String, Any?>? =
+        if (response.isSuccessful) response.body() else response.errorBody()?.string()?.let { raw ->
+            runCatching { gson.fromJson<Map<String, Any?>>(raw, object : TypeToken<Map<String, Any?>>() {}.type) }.getOrNull()
+        }
 
     /**
      * "Email me this chat": the server sends the conversation to this address
