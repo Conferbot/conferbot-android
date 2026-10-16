@@ -462,6 +462,93 @@ object Conferbot {
         override fun clear(handle: Any) { (handle as? Job)?.cancel() }
     }
 
+    // ========== Post-chat redirect ==========
+    // The conversation ended (the flow's end, or an agent ending a chat with
+    // no flow going on from it) and the post-chat rating is sent or put away
+    // (or there is none): the app's onPostChatRedirect, else "Taking you to
+    // example.com in 10s" with Cancel, then the system browser
+    // (core/livechat/PostChatRedirect.kt; web ts/chat/postChatRedirect.ts).
+    /** The bot's redirectUrl (fetched-chatbot-data). */
+    @Volatile private var redirectUrl: Any? = null
+
+    private val redirectStore = object : com.conferbot.sdk.core.livechat.RedirectStore {
+        private fun prefs() = appContext?.getSharedPreferences("conferbot_redirect", Context.MODE_PRIVATE)
+        override fun read(key: String): String? = prefs()?.getString(key, null)
+        override fun write(key: String, value: String) { prefs()?.edit()?.putString(key, value)?.apply() }
+    }
+
+    /** The redirect's line under the conversation (null: none), its Cancel and Continue. */
+    val postChatRedirect: com.conferbot.sdk.core.livechat.PostChatRedirectController by lazy {
+        com.conferbot.sdk.core.livechat.PostChatRedirectController(
+            hooks = com.conferbot.sdk.core.livechat.PostChatRedirectController.Hooks(
+                redirectUrl = { redirectUrl },
+                sessionId = { _chatSessionId.value },
+                // On screen, on the conversation (not the home screen or the help centre).
+                chatVisible = { _isChatVisible.value && homeView.value == com.conferbot.sdk.core.home.HomeView.CHAT },
+                blocked = { liveChat.blocked.value != null },
+                // A person in the chat, or one on their way.
+                live = {
+                    _isLiveChatMode.value || !com.conferbot.sdk.core.livechat.HandoverState.talkToPersonAllowed(
+                        com.conferbot.sdk.core.livechat.HandoverState.entriesOfItems(_record.value)
+                    )
+                },
+                ratingPending = { liveChat.ratingPending },
+                open = { href -> openOutsideChat(href) },
+                disabled = { config.disablePostChatRedirect },
+                onPostChatRedirect = { config.onPostChatRedirect },
+                store = { if (appContext != null) redirectStore else null },
+                appInForeground = {
+                    try {
+                        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                            .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                    } catch (e: Exception) {
+                        true
+                    }
+                }
+            ),
+            timer = mainTimer
+        )
+    }
+
+    /** The system browser (never the chat's own WebView); false when nothing can open it. */
+    private fun openOutsideChat(href: String): Boolean {
+        val context = appContext ?: return false
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(href)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** The conversation on screen ended: the redirect, once the rating is done. */
+    private fun conversationEnded() {
+        postChatRedirect.conversationEnded()
+    }
+
+    /** What the redirect reads changed, and the app going to the background stops it. */
+    private fun startPostChatRedirect() {
+        scope.launch {
+            kotlinx.coroutines.flow.merge(
+                liveChat.csatOpen, liveChat.csatSent, liveChat.csatDue, liveChat.blocked,
+                _isChatVisible, _isLiveChatMode, _chatSessionId, _record, homeView
+            ).collect { postChatRedirect.update() }
+        }
+        scope.launch {
+            try {
+                androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                    androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) postChatRedirect.cancel()
+                    }
+                )
+            } catch (e: Exception) {
+                // no process lifecycle (tests): the chat's own close stops it
+            }
+        }
+    }
+
     // ========== While you wait ==========
     // The help card 6s into a wait for a person (or the server's queue-help
     // pick with "That solved it") and the waiting games 2.5s after the
@@ -896,6 +983,12 @@ object Conferbot {
                         }
                     }
                 )
+                // The flow's end is the conversation's end: the post-chat
+                // rating 1.5 s later (web index.ts), then the redirect.
+                _flowEngine?.onFlowEnd = {
+                    liveChat.flowEnded()
+                    conversationEnded()
+                }
                 // Initialize ChatAnalytics with socket client
                 ChatAnalytics.setSocketClient(client)
             }
@@ -936,6 +1029,7 @@ object Conferbot {
                 connectSocket()
             }
             startRequests()
+            startPostChatRedirect()
             // The chat's fonts loaded: the theme draws with them (core/customization/OwnerFont.kt).
             scope.launch {
                 com.conferbot.sdk.ui.theme.ChatFontLoader.fonts.collect { f ->
@@ -1154,7 +1248,12 @@ object Conferbot {
                 )
             )
 
+            // As on the web: a flow at its handover step goes on from it (its
+            // post-chat survey questions, else its next step). With no flow
+            // going on from it, the conversation is over (the redirect).
+            val flowGoesOn = nodeFlowEngine?.isAtHandover == true
             nodeFlowEngine?.handleChatEnded()
+            if (!flowGoesOn) scope.launch { conversationEnded() }
             eventListener?.onSessionEnded(_chatSessionId.value ?: "")
         })
 
@@ -1836,6 +1935,8 @@ object Conferbot {
                 _customizations.value = com.conferbot.sdk.core.customization.Customizations.resolve(filled)
             }
             liveChat.setChatbotData(chatbotMap)
+            // The owner's post-chat redirect (checked again when it is used).
+            redirectUrl = chatbotMap["redirectUrl"]
 
             // Extract nodes array
             val nodesArray = firstElement.optJSONArray("nodes")
@@ -2986,6 +3087,8 @@ object Conferbot {
      * Clear chat history
      */
     fun clearHistory() {
+        // A countdown from the conversation being left behind stops here.
+        postChatRedirect.reset()
         liveChat.reset()
         handover.reset()
         waiting.reset()
