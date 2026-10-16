@@ -23,6 +23,13 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
 | #24-#28, #37, #59-#62 | Handover lifecycle: Connecting line and 4 outcomes, 20s waiting signal, leave the queue, live chat back after a restart, header keeps the bot with Online and the reply time, "Talk to a person" only when allowed (Compose + XML) | `core/livechat/HandoverState.kt`, `HandoverWaiting.kt`, `ReplyTime.kt`, `HandoverLifecycle.kt`, `core/agent/HandoverPayload.kt`, `core/NodeFlowEngine.kt` (`waitAt`, `resumeFrom`), `core/Conferbot.kt`, `ui/compose/chat/LiveChatCards.kt`, `ChatHeader.kt`, `messages/MessageBubble.kt`, `ui/views/ChatActivity.kt`, `MessageAdapter.kt` |
 | #29-#34, #48, #54, #64-#67 | Flow nodes: the engine and every node handler run the shared flow-node spec. **156 of 156 fixtures pass** (`FlowFixturesTest`); none pending. See "Flow nodes" below. | `core/NodeFlowEngine.kt`, `core/flow/*` (FlowText, FlowLogic, FlowControl, FlowRich, FlowInputs, FlowCalendar, FlowRuntime), `core/privacy/Redact.kt`, `core/nodes/handlers/*` |
+| #47 | Device language: every response record carries `visitorInsights: {v: 1, language: {browser}}` (the phone's language, BCP 47, "de-DE"), so the AI answers short messages in it | `core/state/DeviceLanguage.kt`, `core/state/ChatState.kt` `buildResponseData` |
+| #46 | "Helpful?": a No is sent at once; reasons, an optional comment, "Talk to a person" (only while nobody is coming or here), "Ask another way" (focuses the composer); the rated line's thumbs change the vote; the vote is kept on the answer's record entry (`feedback`); only the newest unrated answer asks (Compose) | `core/agent/AnswerFeedback.kt` (`Helpful`), `ui/compose/messages/AgentReply.kt`, `core/Conferbot.kt` `sendAnswerFeedback`, `ChatState.setEntryField` |
+| #44 | Back in the queue (`live-chat-requeued`): "Connecting you to another agent..." / "Connecting you to <team>...", the agent cleared, a flow on its handover step waits again. `live-chat-transferred` is kept in the record, not drawn (as the web). `isRepeatJoin` / `afterAI` were already in the handover port | `core/livechat/LiveEvents.kt`, `HandoverLifecycle.kt` `requeued` |
+| #43 | Blocked visitor (`visitor-blocked`, or `connect_error` `visitor_blocked` at the handshake, which now carries `visitorId` in query and auth): "This conversation has been closed.", no input, no new chat, the flow stopped. The same `chat-ended` again draws nothing and opens no second rating; each end has its own record id. A chat ended with nothing going on: composer off and "Start a new chat" (Compose + XML) | `core/livechat/LiveEvents.kt`, `services/SocketClient.kt`, `LiveChatExtras.kt` `block`, `HandoverLifecycle.kt` `blocked`, `core/Conferbot.kt`, `ui/compose/chat/LiveChatCards.kt` `ClosedChatCard`, `ChatScreen.kt`, `ui/views/ChatActivity.kt` |
+| #52 | Markdown as the web's `utils/agentHtml.ts`: tables (sideways scroll), h3-h6 (# and ## drawn as 4), quotes, pre, `~~strike~~` (from a person's `<blockquote>`, `<pre>`, `<s>`/`<del>` too); the "That took too long..." notice when the 45s AI wait runs out (not after the AI leaves or the chat ends); `isFallback` replies italic at 85% (Compose + XML) | `utils/ChatMarkdown.kt`, `ui/compose/messages/AgentReply.kt` `ChatMarkdownText`, `ui/views/ChatMarkdownSpans.kt`, `core/agent/AgentBot.kt` (`AWAIT_REPLY_MS`, `REPLY_TIMEOUT_TEXT`), `MessageBubble.kt`, `MessageAdapter.kt` |
+| #42 | "Email me this chat" in the chat menu: one card (email filled in when known), the server's reason when it does not go, "Sent! Check your inbox at ...", the address kept as the visitor's. `POST {mobile base}/chat/transcript-email` (embed-server #193) | `core/livechat/EmailTranscript.kt`, `services/ApiClient.kt` `sendTranscriptEmail`, `LiveChatExtras.kt`, `LiveChatCards.kt` `EmailTranscriptCard`, `ChatHeader.kt` |
+| #72 | A live chat's end asks the handover step's post-chat survey questions (`enablePostChatSurveyQuestions`, the builder's key) before the flow carries on from the step. RN's #66 (the end resetting the flow) never applied here: `NodeFlowEngine.handleChatEnded` already carried on | `core/nodes/handlers/SpecialNodeHandlers.kt` `onChatEnded` |
 | #53, #36, #45 | Help centre: loads from `fetched-chatbot-data`, bodies on open, follows `enableKnowledgeBase` / `hideRecentArticles`, Chat / Articles tabs, AI sources and article cards open by id (Compose) | `core/helpcentre/HelpCentre.kt`, `services/KnowledgeBaseService.kt`, `ui/compose/ChatScreen.kt`, `ui/compose/knowledgebase/KnowledgeBaseScreen.kt`, `ui/compose/messages/AgentReply.kt` |
 
 ## Left in this SDK
@@ -48,14 +55,18 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - `initiate-handover` carries the step's `enableHandoverEmail`, sound settings, `assignmentMethod` / `requiredSkills` (#59).
    - Tests: `HandoverStateTest` 16, `HandoverWaitingTest` 5, `HandoverLifecycleTest` 12, `ReplyTimeTest` 7, `HandoverPayloadTest` 3, `LiveChatTest` +1.
    - Checked on the emulator against the local embed-server with a node script playing the agent (temp bot, handover email off, deleted after): wait card and Cancel (the ticket closed `self_service`, `handoverData.enableHandoverEmail: false`), header reply time, agent joined with the header still the bot, the Connecting line, its settled outcome with the note, and a restart while live (live again, one ticket, agent messages arrive).
-   - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. No requeued / transferred lines (#44). #63: Clear History draws flow messages twice (found during the check).
+   - **Gaps left:** the XML chat's Connecting line has no dots (the words only). `queue-help` (wait articles) is #40. #63: Clear History draws flow messages twice (found during the check), and "Start a new chat" goes the same way.
 4. **Flow nodes (#29-#34, #48, #54, #64-#67): done, ported from RN, with a Compose card for every step.** See "Flow nodes" below.
-5. The rest of the list below.
-6. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
-7. **Test debt:**
+5. **Live chat extras (#42-#44, #46, #47, #52, #72): done, ported from RN.** See the table above and "Porting the live chat extras" in RN's `docs/PARITY.md`.
+   - Tests: `DeviceLanguageTest` 5, `AnswerFeedbackTest` 9, `LiveEventsTest` 7, `EmailTranscriptTest` 4, `SocketHandshakeTest` 2, `ChatMarkdownTest` 8, `HandoverLifecycleTest` +4, `NodeFlowEngineTest` +2, `AgentBotParserTest` +1.
+   - Checked against the local embed-server: a socket handshake with `visitorId` in query and auth connects. The transcript route was not called (the running server predates it, and no real email is sent); its answers are covered by `EmailTranscriptTest` on the server's own shapes.
+   - **Gaps left:** the XML chat has no "Helpful?" row and no chat menu (its footer shows the email card when `Conferbot.liveChat.openEmailTranscript()` is called), and draws a table as rows of text. A vote's comment is not kept in the local message store (it is on the record entry and the server). Nothing checked on a device yet (no emulator run in this batch).
+6. The rest of the list below.
+7. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
+8. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
    - `SessionPersistenceManagerTest` (27) and 2 of `MemoryManagerTest` already failed before the flow work: their setup touches `ChatState` without `Dispatchers.setMain`.
-8. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+9. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## Flow nodes
 
@@ -93,6 +104,8 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
   - Run one class at a time: `sh ./gradlew :conferbot:testDebugUnitTest --tests 'com.conferbot.sdk.core.customization.*' --no-daemon -q`.
   - Results are in `conferbot/build/test-results/testDebugUnitTest/`.
   - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes"); the step cards' answers: `--tests '*FlowStepViewAnswerTest'`.
+  - The live chat extras: `DeviceLanguageTest`, `AnswerFeedbackTest`, `LiveEventsTest`, `EmailTranscriptTest`, `SocketHandshakeTest`, `ChatMarkdownTest`, `HandoverLifecycleTest`, `NodeFlowEngineTest`.
+  - "Email me this chat" on a device: the route sends a real email, so stub `Conferbot.liveChat`'s poster (or point the app at a server whose mailer is off), or check its validation answers only (a bad address is a 400).
 - **Example app:**
   - To point it at a local server, add `baseUrl = "http://10.0.2.2:8001/api/v1/mobile/", socketUrl = "http://10.0.2.2:8001"` to `ExampleApplication.kt`.
   - Build with `sh ./gradlew :example:assembleDebug`. Package `com.conferbot.example`.
@@ -120,6 +133,11 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | Launcher motion (idle moments, message reaction, ripple) | done | done | done | done |
 | Signed-in user as `visitorContext` + identity hash | done | done | done | done |
 | Greeting card (rules, frequency, 11 styles) | done | done (#23) | todo | todo |
+| Device language on every response record | done | done (#47) | todo | todo |
+| "Helpful?": a No sent at once, reasons, comment, Talk to a person, Ask another way, vote changes | done | done in Compose (#46) | todo | todo |
+| Requeued / transfer lines, the same end once, blocked visitor, closed chat with a new chat | done | done (#43, #44) | todo | todo |
+| Markdown tables, h3-h6, quote, pre, strikethrough; reply timeout notice; muted fallback | done | done (#52) | todo | todo |
+| Email me this chat | done | done (#42) | todo | todo |
 | Launcher entrance / attention / idle call | todo | todo | todo | todo |
 | Home screen | todo | todo | todo | todo |
 | Mascots (incl. `mascotInGreeting`) | todo | todo | todo | todo |
