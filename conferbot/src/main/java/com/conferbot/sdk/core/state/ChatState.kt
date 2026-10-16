@@ -947,6 +947,21 @@ object ChatState {
         persistRecordEntry(entry)
     }
 
+    /**
+     * One top-level field on a record entry (an AI answer's `feedback`, as
+     * the web keeps it). False when no entry has that id.
+     */
+    fun setEntryField(id: String, key: String, value: Any?): Boolean {
+        val list = _record.value.toMutableList()
+        val i = list.indexOfFirst { it.id == id }
+        if (i < 0) return false
+        val updated = list[i].copy(fields = list[i].fields + (key to value))
+        list[i] = updated
+        _record.value = list
+        persistRecordEntry(updated)
+        return true
+    }
+
     private fun isVisitorEntry(e: RecordEntry) = e.shape.startsWith("user-") || (e.shape.isEmpty() && (e.type ?: "").startsWith("user-"))
 
     /** The visitor's own entry with card numbers, ids and passwords masked (web privacy maskRecordEntry). */
@@ -1036,6 +1051,9 @@ object ChatState {
         // visitorContext; the server checks its hash and drops it.
         val ctx = visitorContext
         val visitor = buildMap<String, Any?> {
+            // The device's language, as the web's visitorInsights.language.browser:
+            // the AI answers a short message in it (DeviceLanguage.kt).
+            DeviceLanguage.visitorInsightsOf(DeviceLanguage.deviceLocale())?.let { put("visitorInsights", it) }
             if (ctx != null) {
                 put("visitorContext", ctx)
                 (ctx["name"] as? String)?.let { put("visitorName", it) }
