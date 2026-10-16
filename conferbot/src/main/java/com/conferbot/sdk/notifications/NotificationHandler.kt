@@ -396,7 +396,7 @@ class NotificationHandler(
     /**
      * Notify all listeners about the received notification
      */
-    private fun notifyListeners(notification: ConferbotNotification) {
+    internal fun notifyListeners(notification: ConferbotNotification) {
         notificationListeners.forEach { listener ->
             try {
                 listener.onNotificationReceived(notification)
