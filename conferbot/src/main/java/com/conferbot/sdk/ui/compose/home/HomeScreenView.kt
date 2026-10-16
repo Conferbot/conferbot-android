@@ -146,15 +146,17 @@ private fun color(hex: String?, fallback: Color): Color = lookColor(hex) ?: fall
  * Calm, as the web: the brand band, the theme's cards, one accent; each part
  * rises 8dp into place once (the web's cb-rise), none when the phone asks for
  * less motion (animator duration scale 0), and it stays still after. Nothing
- * is drawn while the owner has no home screen. [mascot] is where the home's
- * mascot will go (a later item), above the greeting.
+ * is drawn while the owner has no home screen. [mascot] is the app's own
+ * mascot spot, above the greeting, given the owner's mascot (look and
+ * colour), e.g. `mascot = { m -> Mascot(m.look, m.accent, mood = "wave") }`;
+ * the web's home draws none, so nothing is drawn without it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreenView(
     onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    mascot: (@Composable () -> Unit)? = null
+    mascot: (@Composable (com.conferbot.sdk.core.home.HomeMascot) -> Unit)? = null
 ) {
     val c by Conferbot.serverCustomizationMap.collectAsState()
     val look by Conferbot.customizations.collectAsState()
@@ -273,7 +275,7 @@ fun HomeScreenView(
                                 if (b.name.isNotEmpty()) Text(b.name, style = hl.text(15.sp, FontWeight.SemiBold, bandInk), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        mascot?.invoke()
+                        mascot?.invoke(m.mascot)
                         Text(m.hello, style = hl.text(13.5.sp, FontWeight.SemiBold, bandInk.copy(alpha = 0.82f)))
                         if (m.title.isNotEmpty()) Text(
                             m.title,
