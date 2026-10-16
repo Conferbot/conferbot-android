@@ -25,7 +25,17 @@ import kotlin.math.min
  *   - delay, iterations (infinity loops) and fill (forwards / backwards /
  *     both; none: the element's own value outside the animation);
  *   - several animations on one element: the later one wins for the
- *     properties it sets.
+ *     properties it sets;
+ *   - the `transform` property: "scaleY(n)" (the eyelids) is the scale's y;
+ *     a list ("translateY(-3px) scale(0.92, 1.14)", "rotate(-7deg)
+ *     translateX(-1px)", "none") is interpolated function by function, as
+ *     Chrome does for lists of the same functions (none is their identity),
+ *     into tx / ty / sx / sy / r; [Keyframes.transformOrder] says in which
+ *     order to draw them. Its values share the channels of the individual
+ *     translate / scale / rotate, so an element animated both ways is drawn
+ *     as two nested boxes (the individual properties outside);
+ *   - CSS @keyframes ([Keyframes.cssKeyframes]): each selector's offsets,
+ *     the animation's timing function on every keyframe, as CSS plays it.
  *
  * The same algorithm as the React Native SDK's core/keyframes.ts, which is
  * checked against Chrome's own animations frame by frame
@@ -195,9 +205,128 @@ object Keyframes {
         "strokeDashoffset" to listOf("dash"),
         "clipPath" to listOf("clip"),
         "left" to listOf("left"),
-        // Only "scaleY(n)" is used (the eyelids): it is the scale's y.
+        // "scaleY(n)" (the eyelids) is the scale's y; a function list sets them all (TRANSFORM_LIST).
         "transform" to listOf("sy"),
     )
+    private val TRANSFORM_LIST = listOf("tx", "ty", "sx", "sy", "r")
+    private val SCALE_Y_ONLY = Regex("^scaleY\\([^)]*\\)$")
+    private val TRANSFORM_FN = Regex("([a-zA-Z]+)\\(([^)]*)\\)")
+    private val FN_NAME = Regex("([a-zA-Z]+)\\(")
+    private val ARGS = Regex("[\\s,]+")
+    private val CSS_RULE = Regex("([^\\{\\}]+)\\{([^\\}]*)\\}")
+    private val DASHED = Regex("-([a-z])")
+
+    private fun transformText(k: Keyframe): String? = k["transform"]?.let { str(it).trim() }
+
+    /** A track whose `transform` is a function list (not the eyelids' plain scaleY). */
+    private fun listTransform(kfs: List<Keyframe>): Boolean = kfs.any { k -> transformText(k)?.let { !SCALE_Y_ONLY.matches(it) } ?: false }
+
+    /** A CSS transform list as tx / ty (px), sx / sy, r (deg); "none" is the identity. */
+    private fun transformList(s: String): Map<String, Double> {
+        val out = linkedMapOf("tx" to 0.0, "ty" to 0.0, "sx" to 1.0, "sy" to 1.0, "r" to 0.0)
+        if (s == "none") return out
+        for (m in TRANSFORM_FN.findAll(s)) {
+            val args = m.groupValues[2].split(ARGS).filter { it.isNotEmpty() }.map { jsParseFloat(it) }
+            val a = args.firstOrNull()?.takeIf { it.isFinite() } ?: 0.0
+            val b = if (args.size > 1 && args[1].isFinite()) args[1] else null
+            when (m.groupValues[1]) {
+                "translate" -> { out["tx"] = a; out["ty"] = b ?: 0.0 }
+                "translateX" -> out["tx"] = a
+                "translateY" -> out["ty"] = a
+                "scale" -> { out["sx"] = a; out["sy"] = b ?: a }
+                "scaleX" -> out["sx"] = a
+                "scaleY" -> out["sy"] = a
+                "rotate" -> out["r"] = a
+            }
+        }
+        return out
+    }
+
+    /**
+     * The order a track's transform list draws its functions in ("t" translate,
+     * "r" rotate, "s" scale), from its fullest list: "ts" for
+     * "translateY(..) scale(..)", "rts" for "rotate(..) translateX(..)". The
+     * individual properties (and a plain scaleY) draw translate, rotate, scale.
+     */
+    fun transformOrder(track: Track): String {
+        var order = ""
+        for (k in track.keyframes) {
+            val s = transformText(k) ?: ""
+            if (s.isEmpty() || s == "none" || SCALE_Y_ONLY.matches(s)) continue
+            var o = ""
+            for (m in FN_NAME.findAll(s)) {
+                val fn = m.groupValues[1]
+                val c = when {
+                    fn.startsWith("translate") -> "t"
+                    fn.startsWith("scale") -> "s"
+                    fn.startsWith("rotate") -> "r"
+                    else -> ""
+                }
+                if (c.isNotEmpty() && !o.contains(c)) o += c
+            }
+            if (o.length > order.length) order = o
+        }
+        for (c in "trs") if (!order.contains(c)) order += c
+        return order
+    }
+
+    /**
+     * A transform's values as the CSS matrix [a, b, c, d, e, f] (x' = a x + c y
+     * + e, y' = b x + d y + f), its functions in [order] (transformOrder).
+     */
+    fun transformMatrix(v: FxValues, order: String = "trs"): DoubleArray {
+        var m = doubleArrayOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        fun mul(n: DoubleArray) {
+            val (a1, b1, c1, d1) = m
+            val e1 = m[4]
+            val f1 = m[5]
+            val (a2, b2, c2, d2) = n
+            val e2 = n[4]
+            val f2 = n[5]
+            m = doubleArrayOf(a1 * a2 + c1 * b2, b1 * a2 + d1 * b2, a1 * c2 + c1 * d2, b1 * c2 + d1 * d2, a1 * e2 + c1 * f2 + e1, b1 * e2 + d1 * f2 + f1)
+        }
+        for (op in order) {
+            when (op) {
+                't' -> mul(doubleArrayOf(1.0, 0.0, 0.0, 1.0, v.tx, v.ty))
+                's' -> mul(doubleArrayOf(v.sx, 0.0, 0.0, v.sy, 0.0, 0.0))
+                'r' -> {
+                    val a = v.r * Math.PI / 180
+                    mul(doubleArrayOf(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0.0, 0.0))
+                }
+            }
+        }
+        return m
+    }
+
+    /**
+     * A CSS @keyframes body ("0%,100%{transform:scaleY(0)}42.6%{transform:scaleY(1)}")
+     * as keyframes, in offset order, each eased by the animation's timing
+     * function (CSS eases every keyframe interval with it).
+     */
+    fun cssKeyframes(body: String, timing: String = "ease"): List<Keyframe> {
+        val out = mutableListOf<Keyframe>()
+        for (m in CSS_RULE.findAll(body)) {
+            val props = LinkedHashMap<String, Any?>()
+            for (decl in m.groupValues[2].split(";")) {
+                val i = decl.indexOf(':')
+                if (i < 0) continue
+                val name = decl.substring(0, i).trim().replace(DASHED) { it.groupValues[1].uppercase() }
+                val value = decl.substring(i + 1).trim()
+                if (name.isNotEmpty() && value.isNotEmpty()) props[name] = value
+            }
+            for (sel in m.groupValues[1].split(",")) {
+                val t = sel.trim()
+                val offset = when (t) {
+                    "from" -> 0.0
+                    "to" -> 1.0
+                    else -> jsParseFloat(t) / 100
+                }
+                if (offset.isFinite()) out.add(LinkedHashMap<String, Any?>().apply { put("offset", offset); put("easing", timing); putAll(props) })
+            }
+        }
+        // A stable sort, as Array.prototype.sort.
+        return out.sortedBy { (it["offset"] as Double) }
+    }
 
     private val CALC_TERM = Regex("([+-]?)\\s*([\\d.]+)(px|%)")
     private val SPACE_OUTSIDE_CALC = Regex("\\s+(?![^(]*\\))")
@@ -226,9 +355,10 @@ object Keyframes {
     private fun str(v: Any): String = if (v is Number) jsNum(v) else v.toString()
 
     /** One keyframe's value for a group, or null when it does not set it. */
-    private fun parse(k: Keyframe, g: String): Map<String, Double>? {
+    private fun parse(k: Keyframe, g: String, list: Boolean = false): Map<String, Double>? {
         val v = k[g] ?: return null
         val s = str(v).trim()
+        if (g == "transform" && list) return transformList(s)
         return when (g) {
             "translate" -> {
                 // Split on spaces outside calc().
@@ -309,7 +439,7 @@ object Keyframes {
     }
 
     internal class Pt(val at: Double, val v: Map<String, Double>?, val e: List<Double>)
-    internal class Group(val name: String, val pts: List<Pt>, val firstEase: List<Double>)
+    internal class Group(val name: String, val pts: List<Pt>, val firstEase: List<Double>, val channels: List<String>)
     internal class Compiled(val groups: List<Group>)
 
     internal fun compile(track: Track): Compiled {
@@ -318,13 +448,14 @@ object Keyframes {
         val first = offs.indexOfFirst { it == 0.0 }
         val firstEase = if (first >= 0) easingOf(kfs[first]["easing"] as String?) else LINEAR
         val groups = mutableListOf<Group>()
+        val list = listTransform(kfs)
         for (g in GROUPS) {
             val pts = mutableListOf<Pt>()
             for (i in kfs.indices) {
-                val v = parse(kfs[i], g)
+                val v = parse(kfs[i], g, list)
                 if (v != null) pts.add(Pt(offs[i], v, easingOf(kfs[i]["easing"] as String?)))
             }
-            if (pts.isNotEmpty()) groups.add(Group(g, pts, firstEase))
+            if (pts.isNotEmpty()) groups.add(Group(g, pts, firstEase, if (g == "transform" && list) TRANSFORM_LIST else CHANNELS_OF.getValue(g)))
         }
         return Compiled(groups)
     }
@@ -337,7 +468,7 @@ object Keyframes {
         if (c.groups.isEmpty()) return null
         val out = HashMap<String, Double>()
         for (grp in c.groups) {
-            val chs = CHANNELS_OF.getValue(grp.name)
+            val chs = grp.channels
             val parsed = grp.pts
             // A missing 0% or 100% keyframe is the element's own value (null here); a missing 0% eases with the 0% keyframe's easing.
             val pts = ArrayList<Pt>(parsed.size + 2)
