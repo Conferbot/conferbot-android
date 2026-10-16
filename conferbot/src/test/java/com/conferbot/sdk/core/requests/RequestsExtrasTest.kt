@@ -195,4 +195,102 @@ class RequestsExtrasTest {
         extras.onConnected()
         assertThat(socket.asked.single().second["sessions"]).isEqualTo(listOf("mobile_9_abcdef"))
     }
+
+    /** Answers my-requests per signed-in user; with [hold] on, answers wait until [release]. */
+    private class UserSocket(val user: () -> RequestsUser?) : RequestsSocket {
+        val asked = mutableListOf<Map<String, Any?>>()
+        var hold = false
+        private val held = mutableListOf<() -> Unit>()
+        override fun ask(event: String, data: Map<String, Any?>, timeoutMs: Long, onAnswer: (Map<String, Any?>?) -> Unit) {
+            if (event == "my-requests") asked += data
+            val u = (data["user"] as? Map<*, *>)?.get("id") as? String
+            val answer = mapOf<String, Any?>("ok" to true, "requests" to listOfNotNull(u?.let { mapOf<String, Any?>(
+                "id" to "mobile_1_$it", "title" to "Hi", "status" to "open",
+                "lastAt" to FlowCalendar.iso(System.currentTimeMillis() - 60_000L), "lastFrom" to "team", "lastText" to "Done"
+            ) }))
+            if (hold) held += { onAnswer(answer) } else onAnswer(answer)
+        }
+        fun release() { val h = held.toList(); held.clear(); h.forEach { it() } }
+        override fun emit(event: String, data: Map<String, Any?>) {}
+        override fun on(event: String, fn: (Map<String, Any?>?) -> Unit): () -> Unit = {}
+    }
+
+    private val ada = RequestsUser("u1", "ada@example.com", "h1")
+    private val bob = RequestsUser("u2", "bob@example.com", "h2")
+
+    private fun signedIn(socket: () -> UserSocket, user: () -> RequestsUser?) = RequestsExtras(
+        botId = { "bot1" }, socket = socket, connected = { true }, visitorId = { "v_1" }, user = user,
+        store = { FakeStore() }, chatSessionId = { null }, chatEnded = { false }, now = { 1_000_000L }
+    ).also { it.attach() }
+
+    @Test
+    fun `a sign-in reads the list for them straight away - a sign-out drops it (#79)`() {
+        var user: RequestsUser? = null
+        lateinit var socket: UserSocket
+        socket = UserSocket { user }
+        val r = signedIn({ socket }, { user })
+        r.onConnected()
+        // A first-time visitor with nobody signed in is asked nothing.
+        assertThat(socket.asked).isEmpty()
+
+        user = ada
+        r.onUserChanged()
+        assertThat(socket.asked.single()["user"]).isEqualTo(mapOf("id" to "u1", "email" to "ada@example.com", "hash" to "h1"))
+        assertThat(r.requests.value!!.single().id).isEqualTo("mobile_1_u1")
+        assertThat(r.unread.value).isEqualTo(1)
+
+        // Within 15s of the last read, still read again for the next user.
+        user = bob
+        r.onUserChanged()
+        assertThat(socket.asked).hasSize(2)
+        assertThat(r.requests.value!!.single().id).isEqualTo("mobile_1_u2")
+
+        // Signed out with nothing on this device: their list goes, nothing asked.
+        user = null
+        r.onUserChanged()
+        assertThat(socket.asked).hasSize(2)
+        assertThat(r.requests.value).isNull()
+        assertThat(r.unread.value).isEqualTo(0)
+    }
+
+    @Test
+    fun `a list still on its way for the last user is not shown - the new one is read (#79)`() {
+        var user: RequestsUser? = ada
+        lateinit var socket: UserSocket
+        socket = UserSocket { user }
+        val r = signedIn({ socket }, { user })
+        socket.hold = true
+        r.onConnected()
+        assertThat(socket.asked).hasSize(1)
+
+        user = bob
+        r.onUserChanged()
+        // Dropped at once, before any answer.
+        assertThat(r.requests.value).isNull()
+        socket.hold = false
+        socket.release()
+
+        assertThat(socket.asked).hasSize(2)
+        assertThat(socket.asked.last()["user"]).isEqualTo(mapOf("id" to "u2", "email" to "bob@example.com", "hash" to "h2"))
+        assertThat(r.requests.value!!.single().id).isEqualTo("mobile_1_u2")
+    }
+
+    @Test
+    fun `a sign-out with an answer on its way and the portal open - closed, nothing of theirs shown (#79)`() {
+        var user: RequestsUser? = ada
+        lateinit var socket: UserSocket
+        socket = UserSocket { user }
+        val r = signedIn({ socket }, { user })
+        r.onConnected()
+        r.open()
+        assertThat(r.portal.isOpen).isTrue()
+        socket.hold = true
+        r.refresh(force = true)
+        user = null
+        r.onUserChanged()
+        assertThat(r.portal.isOpen).isFalse()
+        socket.release()
+        assertThat(r.requests.value).isNull()
+        assertThat(r.unread.value).isEqualTo(0)
+    }
 }
