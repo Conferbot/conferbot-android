@@ -19,6 +19,7 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
 | #18 | Launcher resolver | `Launcher.kt`, `ui/compose/ConferBotWidget.kt` |
 | #19 | 56 icons | `LauncherIcons.kt`, `LauncherIconsData.kt`, `ui/compose/LauncherIconDraw.kt` |
 | #20 | Launcher motion, passes the golden test | `LauncherMotion.kt`, `ui/compose/LauncherMotionClock.kt`, `src/test/resources/launcher-motion-golden.json` |
+| #73 | Launcher entrance (12 effects), attention (8 modes) and idle call (5), ported from RN #57 (and as Flutter #73). `Keyframes.kt` evaluates the web's Web Animations tracks and passes RN's Chrome golden (447 cases, 19,275 samples; largest error 0.0007px, 0.005deg, 0.00005 scale and opacity, 0.03px `left`, 0.42px on the plane's path). The tracks are rebuilt from the same code and match the golden's. The rules are in the three controllers (Compose only) | `core/customization/Keyframes.kt`, `LauncherEntrance.kt`, `LauncherAttention.kt`, `LauncherIdleCall.kt`, `MascotArt.kt`, `FxPaint.kt`; `ui/compose/LauncherFxControllers.kt`, `LauncherFxViews.kt`, `FxSvg.kt`, `ConferBotWidget.kt`; `src/test/resources/launcherfx-golden.json` |
 | #21 | User as `visitorContext` + identity hash | `models/Configuration.kt` (`toVisitorContext`), `core/state/ChatState.kt`, `core/Conferbot.kt` |
 | #23 | Greeting card: rules, smart greetings, frequency, 11 styles (Compose) | `core/customization/Greeting.kt`, `ui/compose/GreetingState.kt`, `ui/compose/GreetingCard.kt`, `ui/compose/ConferBotWidget.kt` |
 | #24-#28, #37, #59-#62 | Handover lifecycle: Connecting line and 4 outcomes, 20s waiting signal, leave the queue, live chat back after a restart, header keeps the bot with Online and the reply time, "Talk to a person" only when allowed (Compose + XML) | `core/livechat/HandoverState.kt`, `HandoverWaiting.kt`, `ReplyTime.kt`, `HandoverLifecycle.kt`, `core/agent/HandoverPayload.kt`, `core/NodeFlowEngine.kt` (`waitAt`, `resumeFrom`), `core/Conferbot.kt`, `ui/compose/chat/LiveChatCards.kt`, `ChatHeader.kt`, `messages/MessageBubble.kt`, `ui/views/ChatActivity.kt`, `MessageAdapter.kt` |
@@ -61,12 +62,18 @@ Package root: `conferbot/src/main/java/com/conferbot/sdk/`.
    - Tests: `DeviceLanguageTest` 5, `AnswerFeedbackTest` 9, `LiveEventsTest` 7, `EmailTranscriptTest` 4, `SocketHandshakeTest` 2, `ChatMarkdownTest` 8, `HandoverLifecycleTest` +4, `NodeFlowEngineTest` +2, `AgentBotParserTest` +1.
    - Checked against the local embed-server: a socket handshake with `visitorId` in query and auth connects. The transcript route was not called (the running server predates it, and no real email is sent); its answers are covered by `EmailTranscriptTest` on the server's own shapes.
    - **Gaps left:** the XML chat has no "Helpful?" row and no chat menu (its footer shows the email card when `Conferbot.liveChat.openEmailTranscript()` is called), and draws a table as rows of text. A vote's comment is not kept in the local message store (it is on the record entry and the server). Nothing checked on a device yet (no emulator run in this batch).
-6. The rest of the list below.
-7. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
-8. **Test debt:**
+6. **Launcher entrance / attention / idle call (#73): done, ported from RN #57.**
+   - `Keyframes.kt` is RN's `keyframes.ts`: offsets spread evenly, per-property keyframes, each keyframe's easing on its step, the options' easing on the iteration, delay / iterations / fill, the later animation winning; a property missing at 0% starts from the element's own value but eases with the 0% keyframe's easing; `rotate: "y 180deg"` is drawn as `scaleX(cos a)`.
+   - The golden is RN's `scripts/parity/launcherfx/golden.json` at RN 60209c8, copied to `src/test/resources/launcherfx-golden.json`. `LauncherFxGoldenTest` checks the evaluator on every sample (within 0.01px / 0.01deg, 0.001 scale and opacity, 0.05px `left` on Chrome's 1/64 px grid, 0.6px on the flattened plane path) and rebuilds every case's tracks from `LauncherAttention`, `LauncherIdleCall` and `LauncherEntrance` (seed 4242), numbers compared within 1e-9 (inside strings too: the JVM's sin / cos can differ from V8's in the last digit).
+   - The rules (`LauncherFxControllers.kt`, plain Kotlin on an `FxScheduler`; `LauncherFxControllersTest` 13 on a fake clock): entrance decided when the settings arrive, once per app session per bot and entrance, held invisible (still tappable) until `revealAt`, the greeting hidden until `settleAt` then faded up; attention 1.5s after the launcher (or card) shows, paused during an idle / message moment, over once the chat opens, not within 30 minutes of an opening, holding the idle moments and the three load ripples; idle call after the delay, every 4s while blocked (chat open, app paused, keyboard up, entrance busy, greeting up under 15s), twice per session 3 minutes apart, then 3 days of rest in SharedPreferences (`conferbot_idlecall_rest_<bot>`), also after an opening; closing the greeting stops calls. Reduced motion is the animator duration scale at 0.
+   - Drawing: one frame clock while an effect plays, read only in `graphicsLayer` / draw lambdas (redraws, no recomposition). Sprites and the mascot are SVG markup drawn by `FxSvg` on the platform canvas; full-screen canvases behind and in front of the launcher hold the stage.
+   - **Gaps left:** web filters (brightness, glows, blur, the mascot's bevel) are not drawn, as in RN and Flutter; the waving hand is the system emoji; the keyboard is seen only when the app lets Compose see the IME insets. Not checked on a device yet (no emulator run in this batch).
+7. The rest of the list below.
+8. **XML gaps:** initials avatar, the wave typing style, and the step cards (XML draws the rich steps with its generic cards).
+9. **Test debt:**
    - #17: three test classes run the 2g test heap out of memory.
    - `SessionPersistenceManagerTest` (27) and 2 of `MemoryManagerTest` already failed before the flow work: their setup touches `ChatState` without `Dispatchers.setMain`.
-9. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
+10. **#21 not yet checked on a device:** pass a user, send a message, then look for `visitorContext` on the response record.
 
 ## Flow nodes
 
@@ -104,6 +111,7 @@ The engine (`core/NodeFlowEngine.kt`) and the handlers (`core/nodes/handlers/*`)
   - Run one class at a time: `sh ./gradlew :conferbot:testDebugUnitTest --tests 'com.conferbot.sdk.core.customization.*' --no-daemon -q`.
   - Results are in `conferbot/build/test-results/testDebugUnitTest/`.
   - The flow-node fixtures: `--tests '*FlowFixturesTest'` (see "Flow nodes"); the step cards' answers: `--tests '*FlowStepViewAnswerTest'`.
+  - The launcher entrance, attention and idle call: `LauncherFxGoldenTest` (RN's Chrome golden) and `LauncherFxControllersTest` (the rules on a fake clock).
   - The live chat extras: `DeviceLanguageTest`, `AnswerFeedbackTest`, `LiveEventsTest`, `EmailTranscriptTest`, `SocketHandshakeTest`, `ChatMarkdownTest`, `HandoverLifecycleTest`, `NodeFlowEngineTest`.
   - "Email me this chat" on a device: the route sends a real email, so stub `Conferbot.liveChat`'s poster (or point the app at a server whose mailer is off), or check its validation answers only (a bad address is a 400).
 - **Example app:**
@@ -138,7 +146,7 @@ Every web widget feature works the same in the 4 mobile SDKs: customization, lau
 | Requeued / transfer lines, the same end once, blocked visitor, closed chat with a new chat | done | done (#43, #44) | todo | todo |
 | Markdown tables, h3-h6, quote, pre, strikethrough; reply timeout notice; muted fallback | done | done (#52) | todo | todo |
 | Email me this chat | done | done (#42) | todo | todo |
-| Launcher entrance / attention / idle call | todo | todo | todo | todo |
+| Launcher entrance / attention / idle call | done | done (#73) | todo | done |
 | Home screen | todo | todo | todo | todo |
 | Mascots (incl. `mascotInGreeting`) | todo | todo | todo | todo |
 | `widgetLanguage` (i18n) | todo | todo | todo | todo |
