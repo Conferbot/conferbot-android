@@ -1,131 +1,22 @@
 package com.conferbot.sdk.core.flow
 
+import com.conferbot.sdk.core.i18n.I18n
+import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Currency
 import java.util.Locale
 
 /**
  * The rich steps' rules, the pure half - ported from the web widget
- * (conferbot-widget/src/ts/chat/richNodes.ts) with its English texts
- * (ts/i18n/en.ts), by way of RN src/core/flow/rich.ts and i18nEn.ts.
+ * (conferbot-widget/src/ts/chat/richNodes.ts), by way of RN
+ * src/core/flow/rich.ts, its words from the widget languages (core/i18n).
  */
 object FlowRich {
-    // ----- English texts (web i18n en.ts) -----
-    private val EN_TEXT = mapOf(
-        "address.busy" to "Address search is busy right now. Try again in a moment, or enter it manually.",
-        "address.denied" to "We couldn't get your location - location access is turned off. Type your address instead.",
-        "address.failed" to "Address search isn't working right now. You can enter it manually.",
-        "address.noResults" to "No matches. Try adding the city, or enter it manually.",
-        "address.unavailable" to "We couldn't find your location. Type your address instead.",
-        "common.and" to "and",
-        "common.cancel" to "Cancel",
-        "common.continue" to "Continue",
-        "common.send" to "Send",
-        "common.skip" to "Skip",
-        "common.somethingWrong" to "Something went wrong. Please try again.",
-        "common.submit" to "Submit",
-        "consent.agreed" to "Agreed",
-        "consent.agreedTo" to "Agreed to {docs}",
-        "consent.declined" to "Didn't agree",
-        "consent.tickBox" to "Please tick the box to continue.",
-        "dates.closedOn" to "Closed on {days}",
-        "dates.dayUnavailable" to "{day} aren't available. Please pick another day.",
-        "dates.onOrAfter" to "Please pick a date on or after {date}.",
-        "dates.onOrBefore" to "Please pick a date on or before {date}.",
-        "dates.pickDate" to "Please pick a date.",
-        "dates.pickTime" to "Please pick a time.",
-        "dates.timeFrom" to "Please pick a time from {time}.",
-        "dates.timeUntil" to "Please pick a time until {time}.",
-        "kb.askPrompt" to "What would you like to know?",
-        "kb.helpArticle" to "Help article",
-        "kb.notFound" to "I couldn't find that in our help articles.",
-        "matrix.everyRow" to "Answer every row - {n} left",
-        "matrix.oneRow" to "Answer at least one row",
-        "matrix.progress" to "{n} of {total} answered",
-        "otp.allDigits" to "Enter all {n} digits.",
-        "otp.expired" to "That code has expired. Send a new one.",
-        "otp.invalidEmail" to "Please enter a valid email address.",
-        "otp.locked" to "Too many wrong codes.",
-        "otp.noCode" to "Send a code first.",
-        "otp.notVerified" to "Not verified",
-        "otp.resend" to "Resend code",
-        "otp.resendIn" to "Resend in {time}",
-        "otp.resendWait" to "Please wait {n} seconds before asking for a new code.",
-        "otp.smsUnavailable" to "Codes by text message aren't available yet.",
-        "otp.tooMany" to "Too many codes were asked for. Please try again later.",
-        "otp.verifiedAs" to "Verified: {email}",
-        "otp.wrong" to "That code isn't right.",
-        "otp.wrongLeft.one" to "That code isn't right. {n} try left.",
-        "otp.wrongLeft.other" to "That code isn't right. {n} tries left.",
-        "pay.cancelled" to "Payment cancelled",
-        "pay.failed" to "Payment couldn't be started. Please try again.",
-        "pay.invalidAmount" to "The amount to pay isn't valid.",
-        "pay.ivePaid" to "I've paid",
-        "pay.network" to "We couldn't reach the payment service. Check your connection and try again.",
-        "pay.notConfigured" to "Payments aren't set up for this chat yet.",
-        "pay.notYet" to "We haven't received the payment yet. Finish it in the Stripe tab, then check again.",
-        "pay.paid" to "Paid",
-        "pay.paidAmount" to "Paid {amount}",
-        "pay.payNow" to "Pay now",
-        "pay.rateLimited" to "Too many tries. Please wait a moment.",
-        "pay.timedOut" to "Payment timed out",
-        "rich.nothingToChoose" to "There's nothing to choose from right now.",
-        "signature.sign" to "Sign",
-        "signature.typeToSign" to "Type your full name to sign",
-        // The step cards' words (web i18n en.ts, by way of Flutter i18n_en.dart)
-        "action.confirm" to "Confirm",
-        "address.city" to "City",
-        "address.country" to "Country",
-        "address.label" to "Address",
-        "address.manual" to "Enter it manually",
-        "address.placeholder" to "Start typing your address",
-        "address.postal" to "Postal code",
-        "address.region" to "State / region",
-        "address.searching" to "Searching…",
-        "address.street" to "Street address",
-        "calendar.chooseSlot" to "Please choose a time slot:",
-        "calendar.nextMonth" to "Next month",
-        "calendar.prevMonth" to "Previous month",
-        "common.back" to "Back",
-        "common.change" to "Change",
-        "common.optional" to "(optional)",
-        "dates.date" to "Date",
-        "dates.dateTime" to "Date and time",
-        "dates.time" to "Time",
-        "matrix.pickAny" to "(pick any that apply in each row)",
-        "matrix.rateEach" to "Rate each row",
-        "otp.changeEmail" to "Change email",
-        "otp.checkInbox" to "Check your inbox (and spam). The code expires in {min} minutes.",
-        "otp.digit" to "Digit {n} of {total}",
-        "otp.emailLabel" to "Email address",
-        "otp.emailPlaceholder" to "name@example.com",
-        "otp.send" to "Send code",
-        "otp.sentTo" to "We sent a {n}-digit code to {email}",
-        "otp.verify" to "Verify",
-        "otp.willEmail" to "We'll email you a {n}-digit code.",
-        "pay.payment" to "Payment",
-        "pay.secure" to "Secure checkout by Stripe · opens in your browser",
-        "pay.waiting" to "Waiting for your payment in the browser…",
-        "ranking.help" to "Use the arrows to put them in order.",
-        "ranking.moveDown" to "Move {item} down",
-        "ranking.moveUp" to "Move {item} up",
-        "signature.clear" to "Clear",
-        "signature.drawInstead" to "Draw instead",
-        "signature.fullName" to "Full name",
-        "signature.here" to "Sign here",
-        "signature.label" to "Signature",
-        "signature.namePlaceholder" to "Your full name",
-        "signature.pad" to "Signature pad: draw your signature with your finger",
-        "signature.typeInstead" to "Type instead",
-        "signature.undo" to "Undo"
-    )
-
-    /** A text by key, {name} placeholders filled (web i18n t). */
-    fun t(key: String, vars: Map<String, Any?>? = null): String {
-        val text = EN_TEXT[key] ?: key
-        if (vars == null) return text
-        return Regex("\\{(\\w+)\\}").replace(text) { m -> vars[m.groupValues[1]]?.let { Js.str(it) } ?: m.value }
-    }
+    /**
+     * A text by key in the active language, {name} placeholders filled (web
+     * i18n t; the shared table, core/i18n/I18n.kt).
+     */
+    fun t(key: String, vars: Map<String, Any?>? = null): String = I18n.t(key, vars)
 
     fun plainText(value: Any?): String = FlowText.plainText(value)
 
@@ -363,7 +254,12 @@ object FlowRich {
     fun disabledWeekdaysOf(data: Map<String, Any?>?): List<Int> =
         Js.list(data?.get("disabledWeekdays")).map { Js.number(it) }.filter { it == Math.floor(it) && it in 0.0..6.0 }.map { it.toInt() }
 
-    private fun weekdaysName(wd: Int) = "${WEEKDAYS[wd]}s"
+    /** A weekday's name in the visitor's language (0 = Sunday). */
+    fun weekdayName(wd: Int): String =
+        if (I18n.language == I18n.EN) WEEKDAYS[wd] else I18n.weekdayNames("long", WEEKDAYS).getOrElse(wd) { WEEKDAYS[wd] }
+
+    /** "Saturdays" in English; the plain day name elsewhere ("Samstag"). */
+    private fun weekdaysName(wd: Int) = if (I18n.language == I18n.EN) "${WEEKDAYS[wd]}s" else weekdayName(wd)
 
     /** Why an ISO value isn't allowed, or null. `today` is the visitor's "YYYY-MM-DD". */
     fun dateTimeError(data: Map<String, Any?>?, iso: Any?, today: String): String? {
@@ -406,10 +302,17 @@ object FlowRich {
 
     private fun clock12(h: Int, m: Int) = "${if (h % 12 == 0) 12 else h % 12}:${"%02d".format(m)} ${if (h < 12) "AM" else "PM"}"
 
-    /** The picked value for people (en-US medium date, short time). */
+    /**
+     * The picked value for people: en-US medium date, short time, or the
+     * step's own `locale` / the widget's language as a medium date and short time.
+     */
     fun dateTimeDisplay(data: Map<String, Any?>?, iso: Any?): String {
         val mode = dateMode(data)
         val s = Js.str(iso)
+        val own = Js.str(data?.get("locale")).trim()
+        if (own.isNotEmpty() || I18n.language != I18n.EN) {
+            localDateTime(mode, s, if (own.isNotEmpty()) Locale.forLanguageTag(own) else I18n.locale)?.let { return it }
+        }
         return try {
             if (mode == "time") {
                 val (h, m) = s.split(":").map { it.toInt() }
@@ -427,6 +330,27 @@ object FlowRich {
         } catch (e: Exception) {
             s
         }
+    }
+
+    // DateFormat MEDIUM / SHORT in a locale (no java.time: minSdk 21); null when the value isn't one.
+    private fun localDateTime(mode: String, s: String, locale: Locale): String? = try {
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        if (mode == "time") {
+            val (h, m) = s.split(":").map { it.toInt() }
+            DateFormat.getTimeInstance(DateFormat.SHORT, locale).apply { timeZone = utc }.format(java.util.Date((h * 60L + m) * 60_000L))
+        } else {
+            val dp = s.substringBefore('T')
+            val tp = if (s.contains('T')) s.substringAfter('T') else "00:00"
+            val (y, mo, d) = dp.split("-").map { it.toInt() }
+            val (h, mi) = tp.split(":").map { it.toInt() }
+            val c = java.util.GregorianCalendar(utc).apply { clear(); set(y, mo - 1, d, h, mi) }
+            val f = if (mode == "date") DateFormat.getDateInstance(DateFormat.MEDIUM, locale)
+            else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+            f.timeZone = utc
+            f.format(c.time)
+        }
+    } catch (e: Exception) {
+        null
     }
 
     // ----- (6) ranking -----
@@ -773,14 +697,14 @@ object FlowRich {
         return if (c in PAY_ZERO_DECIMAL) 0 else if (c in PAY_THREE_DECIMAL) 3 else 2
     }
 
-    /** Minor units -> "$25.00" (en-US; falls back to "USD 25.00"). */
+    /** Minor units -> "$25.00" (en-US, else the widget's locale; falls back to "USD 25.00"). */
     fun paymentAmountText(minor: Any?, currency: Any?): String {
         val c = Js.str(currency).trim().uppercase()
         val n = Js.number(minor)
         if (!Regex("^[A-Z]{3}$").matches(c) || !Js.isFinite(n)) return ""
         val major = n / Math.pow(10.0, paymentDecimals(c).toDouble())
         return try {
-            NumberFormat.getCurrencyInstance(Locale.US).apply {
+            NumberFormat.getCurrencyInstance(if (I18n.language == I18n.EN) Locale.US else I18n.locale).apply {
                 this.currency = Currency.getInstance(c)
                 minimumFractionDigits = this.currency!!.defaultFractionDigits
                 maximumFractionDigits = this.currency!!.defaultFractionDigits
