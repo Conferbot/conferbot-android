@@ -14,7 +14,7 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Back"
+        tools:contentDescription="Back"
         android:src="@drawable/ic_back"
         android:tint="@android:color/white" />
 
@@ -24,7 +24,7 @@
         android:layout_width="38dp"
         android:layout_height="38dp"
         android:layout_marginStart="4dp"
-        android:contentDescription="Avatar"
+        tools:contentDescription="Avatar"
         android:scaleType="centerCrop"
         android:visibility="gone"
         tools:src="@drawable/ic_bot_avatar" />
@@ -42,7 +42,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="Support Chat"
+            tools:text="Support Chat"
             android:textColor="@android:color/white"
             android:textSize="16sp"
             android:textStyle="bold" />
