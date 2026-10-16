@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose.messages
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -48,7 +49,7 @@ fun BotAvatar(modifier: Modifier = Modifier) {
     if (avatarUrl != null) {
         AsyncImage(
             model = avatarUrl,
-            contentDescription = "Bot avatar",
+            contentDescription = I18n.t("sdk.message.botAvatar"),
             modifier = modifier
                 .size(avatarSize)
                 .clip(shape),
