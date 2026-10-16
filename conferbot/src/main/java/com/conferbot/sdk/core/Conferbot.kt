@@ -1098,23 +1098,12 @@ object Conferbot {
             Log.d(TAG, "Socket disconnected")
         })
 
-        // Re-join chat room on reconnect (socket.io drops room membership on disconnect)
+        // A reconnect: SocketClient has joined the chat's room again (every
+        // connect) and the connect listener above asked for the chatbot data;
+        // a waiting visitor's place in the queue is asked again at once (#94).
         socketClient?.setReconnectionListener {
             _isConnected.value = true
-            val sessionId = _chatSessionId.value
-            if (sessionId != null) {
-                socketClient?.joinChatRoom(
-                    chatSessionId = sessionId,
-                    deviceInfo = mapOf(
-                        "os" to "Android",
-                        "osVersion" to Build.VERSION.RELEASE,
-                        "sdkVersion" to Build.VERSION.SDK_INT.toString(),
-                        "deviceModel" to Build.MODEL
-                    )
-                )
-                Log.d(TAG, "Rejoined chat room on reconnect: $sessionId")
-            }
-            socketClient?.getChatbotData()
+            liveChat.askQueueNow()
         }
 
         // Fetched chatbot data - contains nodes/edges for the flow graph
