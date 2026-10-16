@@ -74,6 +74,11 @@ class LiveChatExtras(
     private val _csatOpen = MutableStateFlow(false)
     val csatOpen: StateFlow<Boolean> = _csatOpen.asStateFlow()
 
+    // The flow's end asked for the rating: it shows 1.5 s later (web index.ts).
+    private val _csatDue = MutableStateFlow(false)
+    val csatDue: StateFlow<Boolean> = _csatDue.asStateFlow()
+    private var csatDueJob: Job? = null
+
     // What the visitor already sent from a card (kept here, not in the card,
     // so a re-render does not bring the form back).
     private val _leftMessageTo = MutableStateFlow<String?>(null)
@@ -192,6 +197,7 @@ class LiveChatExtras(
         _leadCardOpen.value = false
         _fileRequestedBy.value = null
         _csatOpen.value = false
+        cancelCsatDue()
         _mailOpen.value = false
     }
 
@@ -401,6 +407,35 @@ class LiveChatExtras(
         _csatOpen.value = false
     }
 
+    /**
+     * The flow reached its end (web index.ts, the end of a path that is not
+     * a sub-flow's): the post-chat rating [delayMs] later, as an agent ending
+     * the chat opens it, when the bot has one on, the visitor is not blocked
+     * and none is up or sent for this conversation.
+     */
+    fun flowEnded(delayMs: Long = PostChatRedirect.SETTLE_MS) {
+        if (!rateAfterFlowEnd()) return
+        csatDueJob?.cancel()
+        _csatDue.value = true
+        csatDueJob = scope.launch {
+            delay(delayMs)
+            _csatDue.value = false
+            if (rateAfterFlowEnd()) _csatOpen.value = true
+        }
+    }
+
+    private fun rateAfterFlowEnd() = _csatConfig.value != null && _blocked.value == null && !_csatSent.value && !_csatOpen.value
+
+    private fun cancelCsatDue() {
+        csatDueJob?.cancel()
+        csatDueJob = null
+        _csatDue.value = false
+    }
+
+    /** The post-chat rating is up (or about to be) and not answered yet: the redirect waits for it. */
+    val ratingPending: Boolean
+        get() = _csatConfig.value != null && ((_csatOpen.value && !_csatSent.value) || _csatDue.value)
+
     /** The visitor's file in a live chat, uploaded already: recorded as the web widget does. */
     fun sendLiveFile(url: String, fileName: String?, mimeType: String?) {
         val id = "user-file-${System.currentTimeMillis()}-${(Math.random() * 1e9).toLong().toString(36)}"
@@ -428,6 +463,7 @@ class LiveChatExtras(
         _receiptMarks.value = ReceiptMarks()
         _leadCardOpen.value = false
         _csatOpen.value = false
+        cancelCsatDue()
         _leftMessageTo.value = null
         _leadEmail.value = null
         _csatSent.value = false
