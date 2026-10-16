@@ -524,8 +524,10 @@ private fun AskCard(hl: HomeLook, m: HomeModel, query: String, onQuery: (String)
                             is AskRow.Ask -> Row2(hl, lead = { IconBox(hl, Icons.Filled.AutoAwesome) }, title = {
                                 Text(
                                     buildAnnotatedString {
-                                        append("${Home.ASK_QUERY} ")
+                                        val (before, after) = Home.askQueryParts()
+                                        append(before)
                                         withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("“${r.query}”") }
+                                        append(after)
                                     },
                                     style = hl.text(14.sp, FontWeight.Medium, line = 19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis
                                 )
