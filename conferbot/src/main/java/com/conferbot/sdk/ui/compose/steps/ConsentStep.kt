@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.conferbot.sdk.core.flow.FlowRich
 import com.conferbot.sdk.core.flow.FlowStepAnswer
 import com.conferbot.sdk.core.flow.Js
+import com.conferbot.sdk.core.i18n.t
 import com.conferbot.sdk.core.nodes.NodeUIState
 
 private val MD_LINK = Regex("\\[([^\\]\\n]{1,200})]\\(((?:[^()\\s]|\\([^()\\s]*\\)){1,500})\\)")
@@ -71,7 +72,7 @@ fun ConsentStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, send
                 modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.width(8.dp))
-            val text = consentText(md.ifEmpty { "I agree" }, style)
+            val text = consentText(md.ifEmpty { t("sdk.consent.agree") }, style)
             ClickableText(
                 text = text,
                 style = style.body,
@@ -82,7 +83,7 @@ fun ConsentStep(step: NodeUIState.StepInfo, style: StepLook, busy: Boolean, send
                 }
             )
         }
-        StepStatus(style, step.error, if (required) null else FlowRich.t("common.optional").trim('(', ')').replaceFirstChar { it.uppercase() })
+        StepStatus(style, step.error, if (required) null else t("common.optional").trim('(', ')').replaceFirstChar { it.uppercase() })
         StepActions {
             StepButton(FlowRich.consentContinueLabel(step.node), style, primary = true, enabled = !busy) { send(FlowStepAnswer.consent(agreed)) }
         }
