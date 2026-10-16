@@ -61,8 +61,13 @@ abstract class RichNodeHandler : BaseNodeHandler() {
         return FlowKit.shownText(if (FlowRich.plainText(q).isNotEmpty()) q else fallback)
     }
 
-    protected fun textInput(nodeId: String, question: String, data: Map<String, Any?>, type: NodeUIState.TextInput.InputType = NodeUIState.TextInput.InputType.TEXT, placeholder: String? = null) =
-        NodeUIState.TextInput(questionText = question, inputType = type, placeholder = placeholder, nodeId = nodeId, answerKey = Js.str(data["answerVariable"]))
+    protected fun textInput(
+        nodeId: String, question: String, data: Map<String, Any?>, type: NodeUIState.TextInput.InputType = NodeUIState.TextInput.InputType.TEXT,
+        placeholder: String? = null, extra: Map<String, Any?> = emptyMap()
+    ) = NodeUIState.TextInput(
+        questionText = question, inputType = type, placeholder = placeholder, nodeId = nodeId, answerKey = Js.str(data["answerVariable"]),
+        step = if (extra.isEmpty()) null else NodeUIState.StepInfo(extra = extra)
+    )
 }
 
 /**
@@ -353,9 +358,22 @@ class OtpNodeHandler : RichNodeHandler() {
 
     private val stages = mutableMapOf<String, Stage>()
 
-    private fun ui(data: Map<String, Any?>, nodeId: String, stage: String): NodeUIState.TextInput =
-        if (stage == "email") textInput(nodeId, prompt(data).ifEmpty { "Email address" }, data, NodeUIState.TextInput.InputType.EMAIL, "name@example.com")
-        else textInput(nodeId, "Enter the ${FlowRich.OTP_LENGTH}-digit code we sent you", data, NodeUIState.TextInput.InputType.NUMBER, "123456")
+    /** The card: the stage, where the code went and when it may be sent again, Skip. */
+    private fun ui(data: Map<String, Any?>, nodeId: String, stage: String, resendIn: Int = FlowRich.OTP_RESEND_SECONDS): NodeUIState.TextInput {
+        val extra = linkedMapOf<String, Any?>(
+            "stage" to stage,
+            "allowSkip" to Js.truthy(data["allowSkip"]),
+            "skipLabel" to Js.str(data["skipLabel"]).trim().ifEmpty { t("common.skip") }
+        )
+        if (stage == "code") {
+            extra["sentTo"] = com.conferbot.sdk.core.flow.FlowStepAnswer.maskEmail(stages[nodeId]?.email)
+            extra["resendIn"] = resendIn
+        }
+        return if (stage == "email") textInput(nodeId, prompt(data).ifEmpty { "Email address" }, data, NodeUIState.TextInput.InputType.EMAIL, "name@example.com", extra)
+        else textInput(nodeId, "Enter the ${FlowRich.OTP_LENGTH}-digit code we sent you", data, NodeUIState.TextInput.InputType.NUMBER, "123456", extra)
+    }
+
+    private fun seconds(v: Any?): Int = Js.number(v).let { if (Js.isFinite(it) && it > 0) Math.ceil(it).toInt() else FlowRich.OTP_RESEND_SECONDS }
 
     private suspend fun finish(data: Map<String, Any?>, nodeId: String, verified: Boolean, email: String, reason: String? = null): NodeResult {
         val text = FlowRich.otpReplyText(verified, email)
@@ -383,8 +401,8 @@ class OtpNodeHandler : RichNodeHandler() {
         if (r.ok || r.code == "resend_wait") {
             stages[nodeId] = Stage("code", target)
             FlowKit.botSay("We sent a ${FlowRich.OTP_LENGTH}-digit code to ${Js.str(r.data?.get("sentTo") ?: target)}", side = true)
-            if (r.code == "resend_wait") return NodeResult.Invalid(FlowRich.otpErrorText("resend_wait", retryAfter = r.data?.get("retryAfter")), ui(data, nodeId, "code"), inCard = true)
-            return NodeResult.DisplayUI(ui(data, nodeId, "code"))
+            if (r.code == "resend_wait") return NodeResult.Invalid(FlowRich.otpErrorText("resend_wait", retryAfter = r.data?.get("retryAfter")), ui(data, nodeId, "code", seconds(r.data?.get("retryAfter"))), inCard = true)
+            return NodeResult.DisplayUI(ui(data, nodeId, "code", seconds(r.data?.get("resendIn"))))
         }
         if (FlowRich.otpEndsStep(r.code)) {
             return finish(data, nodeId, false, "", when (r.code) {
@@ -441,9 +459,15 @@ class AddressNodeHandler : RichNodeHandler() {
 
     private val results = mutableMapOf<String, List<FlowRich.AddressValue>>()
 
+    /** The card: the search results to pick from, typing by hand, the field's placeholder. */
     private fun ui(data: Map<String, Any?>, nodeId: String, found: List<FlowRich.AddressValue> = emptyList()): NodeUIState.TextInput {
         val list = if (found.isEmpty()) "" else "\n" + found.mapIndexed { i, a -> "${i + 1}. ${a.formatted}" }.joinToString("\n")
-        return textInput(nodeId, prompt(data) + list, data, NodeUIState.TextInput.InputType.LOCATION, "Street address")
+        val extra = mapOf(
+            "results" to found.map { it.formatted },
+            "allowManual" to (data["allowManual"] != false),
+            "placeholder" to Js.str(data["placeholder"]).trim()
+        )
+        return textInput(nodeId, prompt(data) + list, data, NodeUIState.TextInput.InputType.LOCATION, "Street address", extra)
     }
 
     private suspend fun finish(data: Map<String, Any?>, nodeId: String, value: FlowRich.AddressValue, source: String): NodeResult {
@@ -786,7 +810,16 @@ class PaymentNodeHandler : RichNodeHandler() {
         val choices = mutableListOf(NodeUIState.SingleChoice.Choice(id = "open", text = if (s?.amountText?.isNotEmpty() == true) "$label · ${s.amountText}" else label, targetPort = s?.url))
         if (s?.waiting == true) choices.add(NodeUIState.SingleChoice.Choice(id = "check", text = t("pay.ivePaid")))
         choices.add(NodeUIState.SingleChoice.Choice(id = "cancel", text = t("common.cancel")))
-        return NodeUIState.SingleChoice(prompt(data), choices, nodeId, Js.str(data["answerVariable"]))
+        // The card: what is paid for, how much, the Checkout and whether it is open.
+        val extra = mapOf(
+            "checkoutUrl" to (s?.url ?: ""),
+            "waiting" to (s?.waiting == true),
+            "amountText" to (s?.amountText ?: ""),
+            "payLabel" to label,
+            "productName" to FlowRich.plainText(data["productName"]),
+            "description" to FlowRich.plainText(data["description"])
+        )
+        return NodeUIState.SingleChoice(prompt(data), choices, nodeId, Js.str(data["answerVariable"]), step = NodeUIState.StepInfo(extra = extra))
     }
 
     private fun stop(s: Session) {
