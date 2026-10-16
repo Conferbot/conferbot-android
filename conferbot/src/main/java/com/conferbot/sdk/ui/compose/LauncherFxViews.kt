@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -240,7 +241,7 @@ internal object LauncherFxDraw {
 /** The speech bubble over the mascot (.cb-ic-bubble), its tail on the mascot `tail` dp from its left edge. */
 @Composable
 internal fun IdleCallBubble(line: String, tail: Float, onTap: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.semantics { contentDescription = "$line Open the chat" }) {
+    Box(modifier.semantics { contentDescription = "$line ${I18n.t("launcher.openThe")}" }) {
         // The tail: a white square turned 45deg, half under the box.
         Box(
             Modifier
