@@ -65,7 +65,7 @@ class RateLimiterTest {
     @Test
     fun `tryAcquire succeeds after window expires`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 2, perMillis = 100)
+        val limiter = RateLimiter(maxRequests = 2, perMillis = 100, clock = { testScheduler.currentTime })
 
         // Exhaust limit
         assertThat(limiter.tryAcquire()).isTrue()
@@ -84,7 +84,7 @@ class RateLimiterTest {
     @Test
     fun `acquire succeeds within rate limit`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 5, perMillis = 1000)
+        val limiter = RateLimiter(maxRequests = 5, perMillis = 1000, clock = { testScheduler.currentTime })
 
         // When & Then - Should not block
         repeat(5) {
@@ -95,7 +95,7 @@ class RateLimiterTest {
     @Test
     fun `acquire waits when limit exceeded`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 2, perMillis = 1000)
+        val limiter = RateLimiter(maxRequests = 2, perMillis = 1000, clock = { testScheduler.currentTime })
 
         // Exhaust limit
         limiter.acquire()
@@ -113,7 +113,7 @@ class RateLimiterTest {
     @Test
     fun `acquire eventually succeeds after waiting`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 1, perMillis = 100)
+        val limiter = RateLimiter(maxRequests = 1, perMillis = 100, clock = { testScheduler.currentTime })
         limiter.acquire()
 
         // When
@@ -132,7 +132,7 @@ class RateLimiterTest {
     @Test
     fun `tryAcquire with timeout succeeds when permit available`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 5, perMillis = 1000)
+        val limiter = RateLimiter(maxRequests = 5, perMillis = 1000, clock = { testScheduler.currentTime })
 
         // When
         val result = limiter.tryAcquire(timeoutMs = 500)
@@ -144,7 +144,7 @@ class RateLimiterTest {
     @Test
     fun `tryAcquire with timeout succeeds after waiting`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 1, perMillis = 200)
+        val limiter = RateLimiter(maxRequests = 1, perMillis = 200, clock = { testScheduler.currentTime })
         limiter.tryAcquire() // Exhaust limit
 
         // When - Wait up to 500ms
@@ -158,7 +158,7 @@ class RateLimiterTest {
     @Test
     fun `tryAcquire with timeout fails when timeout exceeded`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 1, perMillis = 10000)
+        val limiter = RateLimiter(maxRequests = 1, perMillis = 10000, clock = { testScheduler.currentTime })
         limiter.tryAcquire() // Exhaust limit
 
         // When - Timeout is shorter than window
@@ -186,7 +186,7 @@ class RateLimiterTest {
     @Test
     fun `getCurrentCount decreases as window expires`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 5, perMillis = 100)
+        val limiter = RateLimiter(maxRequests = 5, perMillis = 100, clock = { testScheduler.currentTime })
         repeat(5) { limiter.tryAcquire() }
 
         // When - Wait for window to expire
@@ -257,7 +257,7 @@ class RateLimiterTest {
     @Test
     fun `getTimeUntilNextPermit returns positive when no permits`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 1, perMillis = 1000)
+        val limiter = RateLimiter(maxRequests = 1, perMillis = 1000, clock = { testScheduler.currentTime })
         limiter.tryAcquire()
 
         // When
@@ -424,7 +424,7 @@ class RateLimiterTest {
     @Test
     fun `allows requests after burst window expires`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 5, perMillis = 100)
+        val limiter = RateLimiter(maxRequests = 5, perMillis = 100, clock = { testScheduler.currentTime })
 
         // Burst - exhaust limit
         repeat(5) { limiter.tryAcquire() }
@@ -444,7 +444,7 @@ class RateLimiterTest {
     @Test
     fun `handles concurrent tryAcquire calls`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 100, perMillis = 1000)
+        val limiter = RateLimiter(maxRequests = 100, perMillis = 1000, clock = { testScheduler.currentTime })
         val successCount = AtomicInteger(0)
 
         // When - 200 concurrent requests
@@ -544,7 +544,7 @@ class RateLimiterTest {
     @Test
     fun `handles very short window`() = runTest {
         // Given
-        val limiter = RateLimiter(maxRequests = 10, perMillis = 10)
+        val limiter = RateLimiter(maxRequests = 10, perMillis = 10, clock = { testScheduler.currentTime })
 
         // Exhaust limit
         repeat(10) { limiter.tryAcquire() }
@@ -575,7 +575,7 @@ class RateLimiterTest {
     @Test
     fun `sliding window allows requests as old ones expire`() = runTest {
         // Given - 5 requests per 100ms
-        val limiter = RateLimiter(maxRequests = 5, perMillis = 100)
+        val limiter = RateLimiter(maxRequests = 5, perMillis = 100, clock = { testScheduler.currentTime })
 
         // Make 5 requests
         repeat(5) { limiter.tryAcquire() }
