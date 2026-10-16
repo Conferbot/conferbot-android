@@ -27,6 +27,10 @@ interface HandoverFlow {
     fun submitResponse(response: Any)
     /** A person has the chat (the step's connected state, the survey on chat end). */
     fun handleAgentAccepted(agentName: String)
+    /** The handover step the flow is on, or null. */
+    val handoverNodeId: String? get() = null
+    /** Stop the flow where it is (a blocked visitor). */
+    fun stop() {}
 }
 
 /** What the lifecycle reads and changes in the chat (Conferbot). */
@@ -243,12 +247,61 @@ class HandoverLifecycle(
             waitOver("unavailable")
         }
         s.on("chat-ended") { ended(it) }
+        s.on("live-chat-requeued") { if (own(it)) requeued(it) }
+        // A transfer the server wrote into the record: kept in this copy
+        // too, so the next write keeps it. Not drawn (as on the web): the
+        // requeued line or the next agent's join tells the visitor.
+        s.on("live-chat-transferred") {
+            if (!own(it)) return@on
+            LiveEvents.transferOf(it)?.let { t ->
+                host.saveEntry(
+                    RecordEntry(
+                        id = t.id, shape = "live-chat-transfer", type = "live-chat-transfer", text = t.text,
+                        data = buildMap<String, Any?> { t.kind?.let { k -> put("kind", k) } }.toMutableMap()
+                    )
+                )
+            }
+        }
         s.on("ai-agent-inactive-close") { ended(it) }
         // Left the queue (this device's own leave, or another device of this chat).
         s.on("queue-left") {
             if (!own(it) || it?.get("reason") != "self_service") return@on
             if (flow()?.isAtHandover == true && host.flowWaiting()) leftQueue()
         }
+    }
+
+    /**
+     * live-chat-requeued (web liveTakeover.ts): the agent left and nobody
+     * else owns the chat, so it is back in the queue. "Connecting you to
+     * another agent..." (or the team it went to), and a flow at its handover
+     * step waits again.
+     */
+    fun requeued(data: Map<String, Any?>?) {
+        val id = LiveEvents.eventId("requeued", now().time)
+        val text = LiveEvents.requeuedText(data?.get("teamName"))
+        host.addItem(RecordItem.SystemMessage(id = id, time = now(), text = text, kind = "live-chat-requeued"))
+        host.saveEntry(RecordEntry(id = id, shape = "live-chat-requeued", type = "live-chat-requeued", text = text))
+        host.setAgent(null)
+        val engine = flow()
+        val nodeId = engine?.handoverNodeId
+        if (engine != null && nodeId != null && engine.isAtHandover) {
+            host.setLiveMode(false)
+            engine.waitAt(nodeId, NodeUIState.HumanHandover(NodeUIState.HumanHandover.HandoverState.WAITING_FOR_AGENT, nodeId = nodeId))
+        }
+        queueLeft = false
+        connecting.start()
+    }
+
+    /**
+     * Blocked by the workspace, mid-chat or at the handshake (web
+     * closedState.ts, _applyVisitorBlock): a Connecting line stops its dots,
+     * the wait and the flow are over.
+     */
+    fun blocked() {
+        connecting.end()
+        settle(HandoverOutcome.ENDED)
+        flow()?.stop()
+        host.setLiveMode(false)
     }
 
     private fun ended(data: Map<String, Any?>?) {
