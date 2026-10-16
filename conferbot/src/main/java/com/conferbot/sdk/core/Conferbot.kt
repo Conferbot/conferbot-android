@@ -322,6 +322,19 @@ object Conferbot {
             )
         )
 
+    /**
+     * The language the SDK draws its own words in: the app's
+     * `config.widgetLanguage`, else the owner's `widgetLanguage`, "auto" (and
+     * every bot that never chose) the phone's languages, else English (web
+     * index.ts setWidgetLanguage). Screens redraw on [com.conferbot.sdk.core.i18n.I18n.languageFlow].
+     */
+    private fun applyWidgetLanguage(ownerSetting: Any?) {
+        com.conferbot.sdk.core.i18n.I18n.setWidgetLanguage(config.widgetLanguage ?: ownerSetting)
+    }
+
+    /** The language the SDK's own words are drawn in ("en", "nl", "fr", "de" or "es"). */
+    val widgetLanguage: String get() = com.conferbot.sdk.core.i18n.I18n.language
+
     /** True once the bot's own settings arrived (the screens keep their host-app look until then). */
     val hasServerCustomizations: Boolean get() = _serverCustomizationMap.value.isNotEmpty()
 
@@ -737,6 +750,9 @@ object Conferbot {
             this.apiKey = apiKey
             this.botId = botId
             this.config = config
+            // The SDK's own words: the app's choice, else "auto" until the
+            // bot's settings say otherwise (core/i18n/I18n.kt).
+            applyWidgetLanguage(null)
             this.customization = customization
             this.user = user
             ChatState.visitorContext = user?.toVisitorContext()
@@ -1691,6 +1707,8 @@ object Conferbot {
             _agentBot.value = AgentBotParser.parseAgentBot(chatbotMap)
             @Suppress("UNCHECKED_CAST")
             (chatbotMap["customizations"] as? Map<String, Any?>)?.let {
+                // Before the look is resolved: the stock English texts are drawn in the language.
+                applyWidgetLanguage(it["widgetLanguage"])
                 rawCustomizationMap = it
                 val filled = personalized(it)
                 _serverCustomizationMap.value = filled
