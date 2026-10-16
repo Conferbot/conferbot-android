@@ -94,10 +94,10 @@ class ConferbotNotificationManager(
             // Messages channel
             val messagesChannel = NotificationChannel(
                 CHANNEL_ID_MESSAGES,
-                "Chat Messages",
+                NotificationText.channelMessages,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifications for new chat messages"
+                description = NotificationText.channelMessagesDesc
                 enableVibration(settings.vibrationEnabled)
                 enableLights(true)
                 settings.ledColor?.let { lightColor = it }
@@ -109,20 +109,20 @@ class ConferbotNotificationManager(
             // Agent updates channel
             val agentChannel = NotificationChannel(
                 CHANNEL_ID_AGENT_UPDATES,
-                "Agent Updates",
+                NotificationText.channelAgent,
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Notifications for agent status changes"
+                description = NotificationText.channelAgentDesc
                 enableVibration(settings.vibrationEnabled)
             }
 
             // System channel
             val systemChannel = NotificationChannel(
                 CHANNEL_ID_SYSTEM,
-                "System Notifications",
+                NotificationText.channelSystem,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "System notifications from Conferbot"
+                description = NotificationText.channelSystemDesc
             }
 
             systemNotificationManager.createNotificationChannels(
@@ -176,7 +176,7 @@ class ConferbotNotificationManager(
         if (!settings.enabled || !settings.showNewMessages) return
 
         val chatSessionId = data["chatSessionId"]
-        val displayBody = if (settings.showPreview) body else "New message"
+        val displayBody = if (settings.showPreview) body else NotificationText.newMessage
 
         val notification = buildNotification(
             channelId = CHANNEL_ID_MESSAGES,
@@ -220,14 +220,14 @@ class ConferbotNotificationManager(
         if (!settings.enabled || !settings.showQueueUpdates) return
 
         val message = if (estimatedWait > 0) {
-            "Estimated wait time: $estimatedWait minutes"
+            NotificationText.estimatedWait(estimatedWait)
         } else {
-            "You are in queue for an agent"
+            NotificationText.inQueue
         }
 
         val notification = buildNotification(
             channelId = CHANNEL_ID_AGENT_UPDATES,
-            title = "Waiting for Agent",
+            title = NotificationText.waiting,
             body = message,
             priority = NotificationCompat.PRIORITY_DEFAULT
         )
@@ -269,7 +269,7 @@ class ConferbotNotificationManager(
 
     private fun showNewMessageNotification(notification: ConferbotNotification.NewMessage) {
         val title = notification.from
-        val body = if (settings.showPreview) notification.content else "New message"
+        val body = if (settings.showPreview) notification.content else NotificationText.newMessage
 
         val builder = buildNotificationBuilder(
             channelId = CHANNEL_ID_MESSAGES,
@@ -296,8 +296,8 @@ class ConferbotNotificationManager(
     private fun showAgentJoinedNotification(notification: ConferbotNotification.AgentJoined) {
         val builder = buildNotificationBuilder(
             channelId = CHANNEL_ID_AGENT_UPDATES,
-            title = "Agent Joined",
-            body = "${notification.agentName} has joined the chat",
+            title = NotificationText.agentJoined,
+            body = NotificationText.hasJoined(notification.agentName),
             chatSessionId = notification.chatSessionId,
             priority = NotificationCompat.PRIORITY_DEFAULT
         )
@@ -319,8 +319,8 @@ class ConferbotNotificationManager(
     private fun showAgentLeftNotification(notification: ConferbotNotification.AgentLeft) {
         val systemNotification = buildNotification(
             channelId = CHANNEL_ID_AGENT_UPDATES,
-            title = "Agent Left",
-            body = "${notification.agentName} has left the chat",
+            title = NotificationText.agentLeft,
+            body = NotificationText.hasLeft(notification.agentName),
             chatSessionId = notification.chatSessionId,
             priority = NotificationCompat.PRIORITY_DEFAULT
         )
@@ -331,7 +331,7 @@ class ConferbotNotificationManager(
     private fun showChatEndedNotification(notification: ConferbotNotification.ChatEnded) {
         val systemNotification = buildNotification(
             channelId = CHANNEL_ID_SYSTEM,
-            title = "Chat Ended",
+            title = NotificationText.chatEnded,
             body = notification.reason,
             chatSessionId = notification.chatSessionId,
             priority = NotificationCompat.PRIORITY_LOW
@@ -341,16 +341,11 @@ class ConferbotNotificationManager(
     }
 
     private fun showHandoverQueuedNotification(notification: ConferbotNotification.HandoverQueued) {
-        val message = buildString {
-            append("You are #${notification.position} in queue")
-            notification.estimatedWaitMinutes?.let {
-                append(". Estimated wait: $it minutes")
-            }
-        }
+        val message = NotificationText.position(notification.position, notification.estimatedWaitMinutes)
 
         val systemNotification = buildNotification(
             channelId = CHANNEL_ID_AGENT_UPDATES,
-            title = "Waiting for Agent",
+            title = NotificationText.waiting,
             body = message,
             chatSessionId = notification.chatSessionId,
             priority = NotificationCompat.PRIORITY_DEFAULT
@@ -360,16 +355,11 @@ class ConferbotNotificationManager(
     }
 
     private fun showQueuePositionUpdateNotification(notification: ConferbotNotification.QueuePositionUpdate) {
-        val message = buildString {
-            append("Your position: #${notification.newPosition}")
-            notification.estimatedWaitMinutes?.let {
-                append(". Estimated wait: $it minutes")
-            }
-        }
+        val message = NotificationText.newPosition(notification.newPosition, notification.estimatedWaitMinutes)
 
         val systemNotification = buildNotification(
             channelId = CHANNEL_ID_AGENT_UPDATES,
-            title = "Queue Update",
+            title = NotificationText.queueUpdate,
             body = message,
             chatSessionId = notification.chatSessionId,
             priority = NotificationCompat.PRIORITY_LOW
