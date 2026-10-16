@@ -80,6 +80,7 @@ class WaitingExtrasTest {
                 joined = { handover.phase() == com.conferbot.sdk.core.livechat.HandoverPhase.JOINED },
                 lastItemId = { host.screen.lastOrNull()?.id },
                 leftQueueHelped = { handover.leftQueueHelped() },
+                botId = { "bot1" },
                 timer = clock,
                 now = { clock.now }
             )
@@ -252,5 +253,69 @@ class WaitingExtrasTest {
         s.waiting.reset()
         assertThat(s.help).isNull()
         assertThat(s.games).isNull()
+    }
+
+    private val kbReply = mapOf<String, Any?>(
+        "success" to true, "articleId" to "a9",
+        "article" to mapOf("_id" to "a9", "title" to "Refunds", "content" to "<p>Within 7 days.</p>", "status" to "published")
+    )
+
+    @Test
+    fun `a wait's article the help centre cannot open - fetched by id and shown on its own (#75)`() {
+        val s = Setup(mapOf("get-kb-article" to kbReply), customizations = mapOf("enableKnowledgeBase" to false))
+        s.waiting.openArticleById("a9", "Refunds")
+        assertThat(s.socket.asked.single().first).isEqualTo("get-kb-article")
+        assertThat(s.socket.asked.single().second).isEqualTo(mapOf("chatbotId" to "bot1", "articleId" to "a9"))
+        val a = s.waiting.article.value!!
+        assertThat(a.failed).isFalse()
+        assertThat(a.article!!.title).isEqualTo("Refunds")
+        assertThat(a.article!!.content).isEqualTo("<p>Within 7 days.</p>")
+        s.waiting.closeArticle()
+        assertThat(s.waiting.article.value).isNull()
+    }
+
+    @Test
+    fun `not found or offline - it says so, and Try again asks again (#75)`() {
+        val s = Setup(mapOf("get-kb-article" to mapOf("success" to false, "error" to "Article not found")))
+        s.waiting.openArticleById("a9", "Refunds")
+        assertThat(s.waiting.article.value).isEqualTo(WaitArticleView("a9", "Refunds", failed = true))
+        s.waiting.retryArticle()
+        assertThat(s.socket.asked.count { it.first == "get-kb-article" }).isEqualTo(2)
+        // No socket at all: failed at once, nothing asked.
+        val clock = HandoverWaitingTest.FakeClock()
+        val w = WaitingExtras(
+            socket = { null }, sessionId = { "s1" }, customizations = { emptyMap() }, record = { emptyList() },
+            joined = { false }, lastItemId = { null }, leftQueueHelped = {}, timer = clock
+        )
+        w.openArticleById("a9")
+        assertThat(w.article.value!!.failed).isTrue()
+        w.openArticleById(" ")
+        assertThat(w.article.value!!.id).isEqualTo("a9")
+    }
+
+    @Test
+    fun `an answer for an article closed meanwhile is dropped, and a new conversation closes it (#75)`() {
+        val held = mutableListOf<() -> Unit>()
+        val socket = object : HandoverSocket {
+            override fun on(event: String, fn: (Map<String, Any?>?) -> Unit) {}
+            override fun emit(event: String, data: Map<String, Any?>) {}
+            override fun ask(event: String, data: Map<String, Any?>, timeoutMs: Long, onAnswer: (Map<String, Any?>?) -> Unit) { held += { onAnswer(kbReply) } }
+            override fun joinRoom(chatSessionId: String) {}
+        }
+        val clock = HandoverWaitingTest.FakeClock()
+        val w = WaitingExtras(
+            socket = { socket }, sessionId = { "s1" }, customizations = { emptyMap() }, record = { emptyList() },
+            joined = { false }, lastItemId = { null }, leftQueueHelped = {}, timer = clock
+        )
+        w.openArticleById("a9", "Refunds")
+        assertThat(w.article.value).isEqualTo(WaitArticleView("a9", "Refunds"))
+        w.closeArticle()
+        held.removeAt(0)()
+        assertThat(w.article.value).isNull()
+
+        w.openArticleById("a9", "Refunds")
+        w.reset()
+        held.removeAt(0)()
+        assertThat(w.article.value).isNull()
     }
 }
