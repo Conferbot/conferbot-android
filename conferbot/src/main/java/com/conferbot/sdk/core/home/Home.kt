@@ -1,5 +1,7 @@
 package com.conferbot.sdk.core.home
 
+import com.conferbot.sdk.core.customization.Customizations
+import com.conferbot.sdk.core.customization.MascotArt
 import com.conferbot.sdk.core.customization.ThemeTokens
 import com.conferbot.sdk.core.livechat.ReplyTime
 import com.conferbot.sdk.core.livechat.ReplyTone
@@ -42,8 +44,10 @@ import java.util.Date
  * "For this page" articles and a greeting page rule's own questions; an app
  * has no page address or title, so the agent's own questions are used), the
  * help card's own search's "For this page", and the floating panel's
- * three-article cap (wider than 500px only). The mascot is a later item:
- * [HomeModel.mascot] is where it will go.
+ * three-article cap (wider than 500px only). The web's home draws no mascot
+ * (it appears on the launcher, the greeting card, the typing bubble and the
+ * idle call); [HomeModel.mascot] is the owner's, for an app's own spot
+ * (`HomeScreenView(mascot = { m -> Mascot(m.look, m.accent) })`).
  *
  * Pure: everything the view needs comes out of [Home.model]. The help
  * centre is the raw `knowledgeBaseData` of fetched-chatbot-data (lists of
@@ -118,6 +122,9 @@ data class HomeRequestRow(val id: String, val title: String, val line: String, v
 
 enum class HomeSection { ASK, RESUME, REQUESTS, TALK, HELP, TRUST }
 
+/** The owner's mascot and the colour it is drawn in when they chose none (the launcher's). */
+data class HomeMascot(val look: MascotArt.Look = MascotArt.Look(), val accent: String = "#4f46e5")
+
 data class HomeModel(
     /** "Good afternoon", or "Welcome back, Jamie". */
     val hello: String,
@@ -142,8 +149,8 @@ data class HomeModel(
     val order: List<HomeSection>,
     /** Every article the ask box and the help card search. */
     val articles: List<HelpArticle>,
-    /** Where the home's mascot will go (a later item): null for now. */
-    val mascot: Any? = null
+    /** The owner's mascot (art3d mascotLookOf) and its colour, for an app that draws it on its home; the web's home has none. */
+    val mascot: HomeMascot = HomeMascot()
 ) {
     data class Brand(val logo: String, val name: String)
     data class Talk(
@@ -757,7 +764,8 @@ object Home {
             help = help,
             trust = trust,
             order = order,
-            articles = articles
+            articles = articles,
+            mascot = HomeMascot(MascotArt.lookOf(c), Customizations.mascotAccent(c)),
         )
     }
 }
