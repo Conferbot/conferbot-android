@@ -684,7 +684,7 @@ The help centre follows the bot's settings in the dashboard, as on the web widge
 - Recent articles head the list unless the owner hid them (`hideRecentArticles`).
 - An AI reply that cites a help article, and an agent's article card without a public link, open that article in the Articles tab. Back returns to the conversation.
 
-The categories and articles come with the bot's data. An article's body is fetched when it opens, and search adds matches found inside article text.
+The categories and articles come with the bot's data. An article's body is fetched when it opens, and search adds matches found inside article text. The body is drawn from its HTML as on the web (headings, lists, bold and italic, links, pictures, simple tables), without a WebView; a link opens outside the app.
 
 To show the help centre on its own screen:
 
