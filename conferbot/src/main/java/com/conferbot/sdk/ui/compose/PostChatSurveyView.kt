@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -61,7 +62,7 @@ fun PostChatSurveyView(
         ) {
             // Survey header
             SurveyHeader(
-                title = state.surveyTitle ?: "How was your experience?",
+                title = state.surveyTitle ?: I18n.t("csat.title"),
                 description = state.surveyDescription,
                 primaryColor = primaryColor
             )
@@ -116,10 +117,10 @@ fun PostChatSurveyView(
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Previous"
+                            contentDescription = I18n.t("sdk.common.previous")
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Back")
+                        Text(I18n.t("common.back"))
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
@@ -153,11 +154,11 @@ fun PostChatSurveyView(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text(if (isLastQuestion) "Submit" else "Next")
+                        Text(if (isLastQuestion) I18n.t("common.submit") else I18n.t("sdk.common.next"))
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             imageVector = if (isLastQuestion) Icons.Default.Check else Icons.Default.ArrowForward,
-                            contentDescription = if (isLastQuestion) "Submit" else "Next"
+                            contentDescription = if (isLastQuestion) I18n.t("common.submit") else I18n.t("sdk.common.next")
                         )
                     }
                 }
@@ -171,7 +172,7 @@ fun PostChatSurveyView(
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
                     Text(
-                        text = "Skip survey",
+                        text = I18n.t("sdk.survey.skipLabel"),
                         color = theme.colors.onSurfaceVariant
                     )
                 }
@@ -232,7 +233,7 @@ private fun SurveyProgressIndicator(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Question $currentQuestion of $totalQuestions",
+                text = I18n.t("node.questionOf", "n" to currentQuestion, "total" to totalQuestions),
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.colors.onSurfaceVariant
             )
@@ -277,7 +278,7 @@ private fun SurveyQuestionContent(
         // Required indicator
         if (question.required) {
             Text(
-                text = "* Required",
+                text = I18n.t("sdk.survey.required"),
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.colors.error,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -358,7 +359,7 @@ private fun SurveyRatingQuestion(
                         } else {
                             Icons.Filled.StarOutline
                         },
-                        contentDescription = "Rating $rating",
+                        contentDescription = I18n.tPlural("sdk.survey.stars", rating),
                         tint = if (currentRating != null && rating <= currentRating) {
                             Color(0xFFFFB300) // Gold color for filled stars
                         } else {
@@ -378,12 +379,12 @@ private fun SurveyRatingQuestion(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Poor",
+                text = I18n.t("rating.poor"),
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.colors.onSurfaceVariant
             )
             Text(
-                text = "Excellent",
+                text = I18n.t("rating.excellent"),
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.colors.onSurfaceVariant
             )
@@ -398,12 +399,8 @@ private fun SurveyRatingQuestion(
             ) {
                 Text(
                     text = when (currentRating) {
-                        1 -> "Very Dissatisfied"
-                        2 -> "Dissatisfied"
-                        3 -> "Neutral"
-                        4 -> "Satisfied"
-                        5 -> "Very Satisfied"
-                        else -> "Rating: $currentRating"
+                        1, 2, 3, 4, 5 -> I18n.t("sdk.survey.sat.$currentRating")
+                        else -> "${I18n.t("rating.label")}: $currentRating"
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.bodyMedium,
@@ -430,7 +427,7 @@ private fun SurveyTextQuestion(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 120.dp),
-        placeholder = { Text("Share your feedback...") },
+        placeholder = { Text(I18n.t("sdk.survey.shareFeedback")) },
         keyboardOptions = KeyboardOptions(
             imeAction = ImeAction.Done
         ),
@@ -576,7 +573,7 @@ private fun SurveyMultiChoiceQuestion(
  */
 @Composable
 fun InlinePostChatSurvey(
-    question: String = "How was your experience?",
+    question: String = I18n.t("csat.title"),
     onRatingSubmitted: (Int) -> Unit,
     primaryColor: Color = ConferbotThemeAmbient.current.colors.primary,
     modifier: Modifier = Modifier
@@ -625,7 +622,7 @@ fun InlinePostChatSurvey(
                                 } else {
                                     Icons.Filled.StarOutline
                                 },
-                                contentDescription = "Rating $rating",
+                                contentDescription = I18n.tPlural("sdk.survey.stars", rating),
                                 tint = if (selectedRating != null && rating <= (selectedRating ?: 0)) {
                                     Color(0xFFFFB300)
                                 } else {
@@ -643,13 +640,13 @@ fun InlinePostChatSurvey(
                 ) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Submitted",
+                        contentDescription = I18n.t("sdk.survey.submitted"),
                         tint = Color(0xFF4CAF50),
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Thank you for your feedback!",
+                        text = I18n.t("csat.thanks"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFF4CAF50)
                     )
