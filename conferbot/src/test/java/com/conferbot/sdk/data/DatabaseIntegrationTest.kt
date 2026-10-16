@@ -256,7 +256,7 @@ class DatabaseIntegrationTest {
         repository.saveTranscriptEntry(sessionId, "bot", "Hello")
 
         // Then - Each operation should touch the session
-        coVerify(atLeast = 2) { chatSessionDao.touch(sessionId) }
+        coVerify(atLeast = 2) { chatSessionDao.touch(sessionId, any()) }
     }
 
     @Test
