@@ -1,5 +1,6 @@
 package com.conferbot.sdk.ui.compose
 
+import com.conferbot.sdk.core.i18n.I18n
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -91,7 +92,7 @@ fun FileUploadProgress(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Uploading... ${(animatedProgress * 100).toInt()}%",
+                        text = "${I18n.t("sdk.file.uploading")} ${(animatedProgress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
                         color = theme.colors.onSurfaceVariant
                     )
@@ -104,7 +105,7 @@ fun FileUploadProgress(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Cancel upload",
+                        contentDescription = I18n.t("sdk.upload.cancel"),
                         tint = theme.colors.error
                     )
                 }
@@ -212,7 +213,7 @@ fun UploadSuccessCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Success",
+                    contentDescription = I18n.t("sdk.upload.complete"),
                     tint = Color.White,
                     modifier = Modifier.size(24.dp)
                 )
@@ -222,7 +223,7 @@ fun UploadSuccessCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Upload complete",
+                    text = I18n.t("sdk.upload.complete"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFF2E7D32)
                 )
@@ -269,7 +270,7 @@ fun UploadErrorCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Warning,
-                    contentDescription = "Error",
+                    contentDescription = I18n.t("sdk.common.error"),
                     tint = Color.White,
                     modifier = Modifier.size(24.dp)
                 )
@@ -279,7 +280,7 @@ fun UploadErrorCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Upload failed",
+                    text = I18n.t("sdk.upload.failedTitle"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFFC62828)
                 )
@@ -296,7 +297,7 @@ fun UploadErrorCard(
                 IconButton(onClick = onRetry) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
-                        contentDescription = "Retry",
+                        contentDescription = I18n.t("sdk.common.retry"),
                         tint = Color(0xFFC62828)
                     )
                 }
@@ -335,7 +336,7 @@ fun UploadCancelledCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Cancelled",
+                    contentDescription = I18n.t("action.cancelled"),
                     tint = Color.White,
                     modifier = Modifier.size(24.dp)
                 )
@@ -344,7 +345,7 @@ fun UploadCancelledCard(
             Spacer(modifier = Modifier.width(12.dp))
 
             Text(
-                text = "Upload cancelled",
+                text = I18n.t("sdk.upload.cancelled"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFFFF8F00),
                 modifier = Modifier.weight(1f)
@@ -353,7 +354,7 @@ fun UploadCancelledCard(
             if (onRetry != null) {
                 TextButton(onClick = onRetry) {
                     Text(
-                        text = "Try again",
+                        text = I18n.t("common.tryAgain"),
                         color = Color(0xFFFF8F00)
                     )
                 }
