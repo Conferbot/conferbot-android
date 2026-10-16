@@ -25,8 +25,11 @@ class TestFlowContext(
     private val replies: Map<String, ApiReply> = emptyMap(),
     private val uploadResult: UploadResult = UploadResult(true, "https://api.test/media/f"),
     var clock: Long = 1_792_058_400_000L,
-    private val rand: Double = 0.5
+    private val rand: Double = 0.5,
+    /** The bot's bookings (a calendar's taken slots). */
+    var bookings: List<Map<String, Any?>> = emptyList()
 ) : FlowContext {
+    override val calendarBookings: List<Map<String, Any?>> get() = bookings
     override val stepIndex = 1
     override val visitorTimeZone = "UTC"
     override val pageUrl: String? = "https://shop.example/pricing?utm_source=newsletter"
