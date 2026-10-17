@@ -9,14 +9,13 @@ Add your [Conferbot](https://conferbot.com) chatbot to a native Android app. The
 
 ## Quickstart video
 
-<!-- TODO(video): replace VIDEO_ID with the walkthrough's YouTube id and add docs/media/quickstart.gif (a short clip of it). -->
 <p align="center">
-  <a href="https://youtu.be/VIDEO_ID">
-    <img src="docs/media/quickstart.gif" width="320" alt="Adding Conferbot to an Android app (video walkthrough)" />
+  <a href="https://github.com/Conferbot/conferbot-android/releases/download/2.0.0/sdk-android.mp4">
+    <img src="docs/media/quickstart.gif" width="400" alt="Adding Conferbot to an Android app: the dependency, the bot ID, then the chat opening and answering" />
   </a>
 </p>
 
-<p align="center"><a href="https://youtu.be/VIDEO_ID">Watch the full walkthrough on YouTube</a></p>
+<p align="center"><a href="https://github.com/Conferbot/conferbot-android/releases/download/2.0.0/sdk-android.mp4">Watch the full walkthrough</a> (MP4, 1080p, about 1.5 minutes): install, the bot ID, then the example app on an Android emulator with the launcher, the bot's flow, the AI agent answering from the knowledge base and the handover to a person.</p>
 
 <p align="center">
   <img src="docs/screenshots/chat-compose.png" width="240" alt="Jetpack Compose chat" />
