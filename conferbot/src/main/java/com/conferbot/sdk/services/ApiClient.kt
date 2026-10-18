@@ -45,6 +45,11 @@ interface ConferBotApiService {
         @Path("chatSessionId") chatSessionId: String
     ): Response<ApiResponse<Map<String, Any>>>
 
+    /**
+     * Store-only (embed-server #194): body `{ record, answerVariables, visitorId? }`,
+     * answer `{ success, data: { success, responseId, storeOnly: true } }`, 423
+     * CONVERSATION_LOCKED when an agent locked the chat. It never runs the bot.
+     */
     @POST("session/{chatSessionId}/message")
     suspend fun sendMessage(
         @Path("chatSessionId") chatSessionId: String,
@@ -195,39 +200,72 @@ class ApiClient(
     }
 
     /**
-     * Send a message
+     * Store the conversation record over REST - STORE ONLY.
+     *
+     * POST {mobile base}/session/{chatSessionId}/message with
+     * `{ record, answerVariables, visitorId? }`: the whole record, as the
+     * socket's response-record sends it. The server creates or updates the
+     * conversation and merges the answer variables, but never runs the bot:
+     * no AI agent or bot reply, no live-chat relay (embed-server #194). Its
+     * answer's data carries `storeOnly: true`. A locked conversation (an agent
+     * froze it) stores nothing: success false, error CONVERSATION_LOCKED.
+     * Never throws.
+     *
+     * The SDK does not call this: messages, and the offline queue, go over the
+     * socket (Conferbot.sendMessage), which is where replies arrive.
      */
+    suspend fun sendMessage(
+        chatSessionId: String,
+        record: List<Any?>,
+        answerVariables: List<Any?> = emptyList(),
+        visitorId: String? = null
+    ): ApiResponse<Map<String, Any?>> {
+        return try {
+            val body = mutableMapOf<String, Any?>(
+                "record" to record,
+                "answerVariables" to answerVariables
+            )
+            if (visitorId != null) body["visitorId"] = visitorId
+            val response = api.sendMessage(chatSessionId, body)
+            @Suppress("UNCHECKED_CAST")
+            val data = (response.body()?.data ?: errorBodyOf(response)?.get("data")) as? Map<String, Any?>
+            when {
+                response.isSuccessful -> ApiResponse(success = response.body()?.success ?: false, data = data, error = if (response.body() == null) "Empty response body" else null)
+                response.code() == 423 -> ApiResponse(success = false, data = data, error = "CONVERSATION_LOCKED")
+                else -> ApiResponse(success = false, data = data, error = "Failed to store the record: ${response.code()}")
+            }
+        } catch (e: Exception) {
+            ApiResponse(success = false, error = e.message ?: "Unknown error")
+        }
+    }
+
+    /**
+     * The old single-message form. The route never took `{ message, metadata }`
+     * (it stores a whole record and never answers), so this sends nothing and
+     * returns success false; send messages with Conferbot.sendMessage (the
+     * socket), or store a record with the `record` overload.
+     */
+    @Deprecated(
+        "The REST route is store-only and takes the whole record; send messages with Conferbot.sendMessage (the socket)",
+        ReplaceWith("com.conferbot.sdk.core.Conferbot.sendMessage(message)")
+    )
+    @Suppress("UNUSED_PARAMETER")
     suspend fun sendMessage(
         chatSessionId: String,
         message: String,
         metadata: Map<String, Any>? = null
-    ): ApiResponse<Any> {
-        return try {
-            val body = mutableMapOf<String, Any?>(
-                "message" to message
-            )
-            if (metadata != null) {
-                body["metadata"] = metadata
-            }
+    ): ApiResponse<Any> = ApiResponse(
+        success = false,
+        error = "STORE_ONLY_ROUTE: POST session/{id}/message stores { record, answerVariables } and never sends a message; use Conferbot.sendMessage"
+    )
 
-            val response = api.sendMessage(chatSessionId, body)
-            if (response.isSuccessful) {
-                response.body() ?: ApiResponse(
-                    success = false,
-                    error = "Empty response body"
-                )
-            } else {
-                ApiResponse(
-                    success = false,
-                    error = "Failed to send message: ${response.code()}"
-                )
-            }
-        } catch (e: Exception) {
-            ApiResponse(
-                success = false,
-                error = e.message ?: "Unknown error"
-            )
+    private fun errorBodyOf(response: Response<*>): Map<String, Any?>? = try {
+        response.errorBody()?.string()?.let {
+            @Suppress("UNCHECKED_CAST")
+            gson.fromJson(it, Map::class.java) as? Map<String, Any?>
         }
+    } catch (e: Exception) {
+        null
     }
 
     /**
