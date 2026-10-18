@@ -262,9 +262,15 @@ object LiveChat {
     /** Visitor uploads in a live chat: on unless the owner turned them off. */
     fun visitorUploadsOn(customizations: Map<String, Any?>?): Boolean = customizations?.get("enableVisitorFileUpload") != false
 
-    fun csatConfigOf(raw: Map<String, Any?>?): CsatConfig? {
-        raw ?: return null
-        if (raw["enabled"] != true) return null
+    /**
+     * Post-chat rating, as the web widget decides it (index.ts
+     * postChatFeedbackOff): asked unless the owner turned it off
+     * (enabled = false). Bots that never set it get the stock stars and
+     * wording; the owner's type and words apply only once switched on.
+     */
+    fun csatConfigOf(input: Map<String, Any?>?): CsatConfig? {
+        if (input?.get("enabled") == false) return null
+        val raw: Map<String, Any?> = if (input?.get("enabled") == true) input else emptyMap()
         val type = (raw["ratingType"] as? String)?.takeIf { it in setOf("stars", "thumbs", "emoji", "nps") } ?: "stars"
         // The owner's words, else the web's (postChatRating.ts csat.*) in the visitor's language.
         fun s(field: String, key: String, stock: List<String> = emptyList()) = I18n.ownerTextOr(str(raw[field]), key, stock)
