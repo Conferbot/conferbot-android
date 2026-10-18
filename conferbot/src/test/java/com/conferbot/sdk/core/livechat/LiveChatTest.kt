@@ -109,8 +109,15 @@ class LiveChatTest {
 
     @Test
     fun `reads the rating settings and builds the payload`() {
-        assertThat(LiveChat.csatConfigOf(null)).isNull()
-        assertThat(LiveChat.csatConfigOf(mapOf("ratingType" to "stars"))).isNull()
+        // On unless the owner turned it off, as on the web; never set = stock stars and wording.
+        assertThat(LiveChat.csatConfigOf(mapOf("enabled" to false, "ratingType" to "stars"))).isNull()
+        assertThat(LiveChat.csatConfigOf(null)).isEqualTo(LiveChat.csatConfigOf(mapOf("enabled" to true)))
+        assertThat(LiveChat.csatConfigOf(emptyMap())?.ratingType).isEqualTo("stars")
+        assertThat(LiveChat.csatConfigOf(mapOf("ratingType" to "nps", "titleText" to "Draft")))
+            .isEqualTo(LiveChat.csatConfigOf(mapOf("enabled" to true)))
+        val own = LiveChat.csatConfigOf(mapOf("enabled" to true, "ratingType" to "nps", "titleText" to "How did we do?"))!!
+        assertThat(own.ratingType).isEqualTo("nps")
+        assertThat(own.titleText).isEqualTo("How did we do?")
         val c = LiveChat.csatConfigOf(mapOf("enabled" to true, "ratingType" to "bogus"))!!
         assertThat(c.ratingType).isEqualTo("stars")
         assertThat(c.titleText).isEqualTo("How was your experience?")
