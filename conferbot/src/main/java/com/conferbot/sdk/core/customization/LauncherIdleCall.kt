@@ -139,13 +139,17 @@ object LauncherIdleCall {
     private fun px(x: Number, y: Number) = "${jsNum(x)}px ${jsNum(y)}px"
 
     /** Slide out past the facing edge, hold, slide back - fading in from behind. */
-    private fun slide(dx: Double, dy: Double, total: Int, rotate: String = "0deg"): Track {
+    private fun slide(inward: Int, dx: Double, dy: Double, total: Int, rotate: String = "0deg"): Track {
         val inAt = 380.0 / total
+        // The animated scale replaces the mirror (base sx -1) a left-hand
+        // launcher's mascot is drawn with, so the mirror rides along in it.
+        val small: Any = if (inward == 1) "-0.7 0.7" else 0.7
+        val full: Any = if (inward == 1) "-1 1" else 1
         return Track.of(listOf(
-            mapOf("translate" to "0 0", "rotate" to "0deg", "opacity" to 0, "scale" to 0.7, "easing" to POP),
-            mapOf("translate" to px(dx, dy), "rotate" to rotate, "opacity" to 1, "scale" to 1, "offset" to inAt),
-            mapOf("translate" to px(dx, dy), "rotate" to rotate, "opacity" to 1, "scale" to 1, "offset" to 1 - inAt, "easing" to "ease-in"),
-            mapOf("translate" to "0 0", "rotate" to "0deg", "opacity" to 0, "scale" to 0.7),
+            mapOf("translate" to "0 0", "rotate" to "0deg", "opacity" to 0, "scale" to small, "easing" to POP),
+            mapOf("translate" to px(dx, dy), "rotate" to rotate, "opacity" to 1, "scale" to full, "offset" to inAt),
+            mapOf("translate" to px(dx, dy), "rotate" to rotate, "opacity" to 1, "scale" to full, "offset" to 1 - inAt, "easing" to "ease-in"),
+            mapOf("translate" to "0 0", "rotate" to "0deg", "opacity" to 0, "scale" to small),
         ), duration = total, easing = "linear", fill = "forwards")
     }
 
@@ -252,7 +256,7 @@ object LauncherIdleCall {
                     sayX = g.edgeX + dx,
                     sayY = g.height / 2 - g.unit * 0.1 - w * 0.42,
                     mascot = place(-g.unit * 0.1, "whisper"),
-                    self = listOf(slide(dx, -g.unit * 0.06, total, "${jsNum(g.inward * -6)}deg")),
+                    self = listOf(slide(g.inward, dx, -g.unit * 0.06, total, "${jsNum(g.inward * -6)}deg")),
                     parts = mouth(total, "o", 0.14, 0.82) + mapOf(
                         "brow" to listOf(brows(total, 0.14, 0.8)),
                         "look" to listOf(look(total, listOf(l(0.16, 0, 0), l(0.32, -2.5, -0.5), l(0.44, -2.5, -0.5), l(0.52, 1.5, 0), l(0.72, 0, 0.5)))),
@@ -308,7 +312,7 @@ object LauncherIdleCall {
                     sayX = g.edgeX + dx,
                     sayY = g.height / 2 - g.unit * 0.1 - w * 0.46,
                     mascot = place(-g.unit * 0.08, "wave"),
-                    self = listOf(slide(dx, -g.unit * 0.1, total)),
+                    self = listOf(slide(g.inward, dx, -g.unit * 0.1, total)),
                     parts = mapOf(
                         "body" to listOf(Track.of(listOf(
                             mapOf("scale" to "1 1"),
@@ -348,7 +352,7 @@ object LauncherIdleCall {
                     sayX = g.edgeX + dx,
                     sayY = g.height / 2 - g.unit * 0.08 - w * 0.42,
                     mascot = place(-g.unit * 0.04, "knock"),
-                    self = listOf(slide(dx, -g.unit * 0.08, total)),
+                    self = listOf(slide(g.inward, dx, -g.unit * 0.08, total)),
                     parts = mapOf(
                         "arm" to listOf(Track.of(buildList {
                             add(mapOf("translate" to "0 0", "rotate" to "0deg"))
@@ -404,7 +408,7 @@ object LauncherIdleCall {
             sayX = g.edgeX + dx,
             sayY = g.height / 2 - w * 0.42,
             mascot = place(-g.unit * 0.02, "reach"),
-            self = listOf(slide(dx, 0.0, total)),
+            self = listOf(slide(g.inward, dx, 0.0, total)),
             parts = mapOf(
                 "arm" to listOf(Track.of(buildList {
                     add(mapOf("translate" to "0 0"))
