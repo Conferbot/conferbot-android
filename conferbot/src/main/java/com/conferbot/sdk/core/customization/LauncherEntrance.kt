@@ -831,7 +831,9 @@ object LauncherEntrance {
             children = listOf(FxSprite(
                 x = 0.0, y = -s.h * 0.2, w = bandW, h = s.h * 1.4, leftOf = s.w,
                 svg = linearBox(bandW, s.h * 1.4, 100.0, stops("transparent", "rgba(255,255,255,0.75)", "transparent")),
-                tracks = listOf(play(listOf(kf("left" to "-40%"), kf("left" to "115%")), duration = 520, delay = 1050, easing = "ease-in-out", fill = "forwards")),
+                // fill "both": the band waits off the left edge through the delay,
+                // not at left 0 (its static place), where it showed as a white streak.
+                tracks = listOf(play(listOf(kf("left" to "-40%"), kf("left" to "115%")), duration = 520, delay = 1050, easing = "ease-in-out", fill = "both")),
             )),
         ))
         return EntrancePlan(
