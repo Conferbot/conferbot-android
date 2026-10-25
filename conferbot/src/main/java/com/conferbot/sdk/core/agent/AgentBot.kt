@@ -364,6 +364,9 @@ object AgentBotParser {
     /** "Helpful?" under AI answers unless the owner turned it off. */
     fun answerFeedbackOn(customizations: Map<String, Any?>?): Boolean = customizations?.get("hideAnswerFeedback") != true
 
+    /** Source cards (pages and help articles) under AI answers unless the owner turned them off. */
+    fun answerSourcesOn(customizations: Map<String, Any?>?): Boolean = customizations?.get("showAnswerSources") != false
+
     /** Only an AI answer stored under its server id can be rated. */
     fun canRate(messageId: String?): Boolean = messageId != null && OBJECT_ID.matches(messageId)
 
