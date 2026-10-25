@@ -198,7 +198,11 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
     val newestRateable = remember(record) { record.lastOrNull { rateable(it) }?.id }
     val showHelpful = rateable(message) && AgentBotParser.answerFeedbackOn(customizations) &&
         com.conferbot.sdk.core.agent.Helpful.showsRow(message.id, message.feedback != null, newestRateable)
-    if ((extras == null || extras.isEmpty) && !showHelpful) return
+    // No source cards when the owner turned them off (live and restored answers alike).
+    val sources = if (AgentBotParser.answerSourcesOn(customizations)) extras?.sources.orEmpty() else emptyList()
+    val nothingElse = extras == null ||
+        (extras.actions.isEmpty() && extras.card == null && extras.resultCard == null && extras.actionRequest == null)
+    if (sources.isEmpty() && nothingElse && !showHelpful) return
 
     Column(
         modifier = modifier.fillMaxWidth().padding(start = theme.spacing.avatarSize + 10.dp).widthIn(max = theme.spacing.maxBubbleWidth),
@@ -209,7 +213,7 @@ fun AgentReplyExtras(message: RecordItem.AgentMessage, modifier: Modifier = Modi
         // not tappable (agentSources.ts; AgentBotParser.sourceTarget).
         val articleHosts by Conferbot.articleHosts.collectAsState()
         val canOpenArticles = Conferbot.canOpenChatArticles(customizations, articleHosts)
-        extras?.sources?.forEach { source ->
+        sources.forEach { source ->
             val target = AgentBotParser.sourceTarget(source, canOpenArticles)
             val inApp = target is com.conferbot.sdk.core.agent.OpenTarget.Article
             Row(
