@@ -352,7 +352,10 @@ fun AgentMessageBubble(
                     // the same bubble, italic at 85% (web isFallback).
                     val fallback = message.extras?.isFallback == true
                     ChatMarkdownText(
-                        text = if (showOriginal && message.translation != null) message.translation.original else message.text,
+                        // An AI answer saved before the server stripped them can carry a "[n]" (live and restored).
+                        text = if (showOriginal && message.translation != null) message.translation.original
+                            else if (message.agentDetails.isAIAgent) com.conferbot.sdk.core.agent.CitationMarkers.stripPlaceholderMarkers(message.text)
+                            else message.text,
                         color = if (fallback) colors.agentBubbleText.copy(alpha = 0.85f) else colors.agentBubbleText,
                         linkColor = colors.agentBubbleText,
                         style = TextStyle(
