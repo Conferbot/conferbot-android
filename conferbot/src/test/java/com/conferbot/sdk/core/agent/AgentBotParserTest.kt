@@ -124,6 +124,11 @@ class AgentBotParserTest {
         assertThat(actions.map { it.label }).containsExactly("Book a demo", "Mail").inOrder()
         assertThat(AgentBotParser.answerFeedbackOn(mapOf("hideAnswerFeedback" to true))).isFalse()
         assertThat(AgentBotParser.answerFeedbackOn(null)).isTrue()
+        // Source cards (#102): on unless the owner sent showAnswerSources: false.
+        assertThat(AgentBotParser.answerSourcesOn(null)).isTrue()
+        assertThat(AgentBotParser.answerSourcesOn(emptyMap())).isTrue()
+        assertThat(AgentBotParser.answerSourcesOn(mapOf("showAnswerSources" to true))).isTrue()
+        assertThat(AgentBotParser.answerSourcesOn(mapOf("showAnswerSources" to false))).isFalse()
         assertThat(AgentBotParser.canRate("0123456789abcdef01234567")).isTrue()
         assertThat(AgentBotParser.canRate("agent-greeting-s1")).isFalse()
         assertThat(AgentBotParser.conversionEventOf("Book a demo")).isEqualTo("demo_booked")
